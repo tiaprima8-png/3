@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Heavy Equipment Excavator/Dozer Silhouette with Tracking Gauge inside safe zone (28 to 80) -->
+    <!-- Cabin and Body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,50 L48,34 L62,34 L64,50 Z" />
+    <!-- Cabin Window Cutout -->
+    <path
+        android:fillColor="#047857"
+        android:pathData="M43,48 L50,37 L60,37 L60,48 Z" />
+    <!-- Excavator Boom & Arm -->
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M60,46 L75,32 L81,37 L67,52 Z" />
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M75,32 L84,40 L79,45 L72,36 Z" />
+    <!-- Bucket -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M83,41 L88,48 L80,55 L77,49 Z" />
+    <!-- Main Body Chassis -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,50 L68,50 L68,60 L32,60 Z" />
+    <!-- Continuous Track Belt (Crawler) -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M28,62 C28,59 30,57 33,57 L67,57 C70,57 72,59 72,62 L72,67 C72,70 70,72 67,72 L33,72 C30,72 28,70 28,67 Z" />
+    <!-- Track Wheels -->
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M33,64.5 A2.5,2.5 0 1,0 33,64.49 Z M42,64.5 A2.5,2.5 0 1,0 42,64.49 Z M50,64.5 A2.5,2.5 0 1,0 50,64.49 Z M58,64.5 A2.5,2.5 0 1,0 58,64.49 Z M67,64.5 A2.5,2.5 0 1,0 67,64.49 Z" />
+    <!-- Digital Gauge / Pulse Signal on top left -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M32,32 L36,32 L38,36 L40,28 L42,35 L44,32 L48,32 L48,34 L45,34 L42.5,39 L40,30 L38,38 L35,34 L32,34 Z" />
+</vector>

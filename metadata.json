@@ -1,0 +1,8 @@
+{
+  "name": "RKCE",
+  "description": "RKCE (Rencana Kerja Unit Civil Engineering) - Sistem pelaporan aktivitas alat berat lapangan yang terintegrasi langsung dengan database perusahaan dan web admin.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
