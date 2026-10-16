@@ -1343,6 +1343,8 @@ class HeavyTrackRepository(
         draftDao.deleteDraftByRencanaId(rencanaId)
     }
 
+    fun getAllDrafts(): Flow<List<com.example.data.local.entity.DraftRealisasiEntity>> = draftDao.getAllDrafts()
+
     suspend fun addOrUpdateUnit(unit: UnitEntity) = withContext(Dispatchers.IO) {
         if (!com.example.data.model.UnitConstants.isJenisUnitValid(unit.unitType)) {
             throw IllegalArgumentException("Jenis unit tidak valid atau telah dihapus")

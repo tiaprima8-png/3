@@ -82,9 +82,62 @@ import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate600
+import android.content.Context
+import android.content.Intent
+import androidx.compose.material.icons.filled.Share
 import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate900
 import java.io.File
+
+/**
+ * Format and share activity report via Android Intent.ACTION_SEND
+ */
+fun shareReportDetails(context: Context, report: ActivityReportEntity, nomorSpk: String?) {
+    val spk = if (!nomorSpk.isNullOrBlank()) nomorSpk else "-"
+    val statusSync = if (report.isSynced) "✅ Tersinkron Server" else "⏳ Offline (Menunggu Sinkron)"
+    val kendalaText = if (!report.catatanKendala.isNullOrBlank() || !report.kendalaNama.isNullOrBlank()) {
+        "${report.kendalaNama ?: "-"} (${report.catatanKendala ?: ""})"
+    } else "Tidak Ada Kendala"
+
+    val shareText = """
+📋 *RKCE - LAPORAN REALISASI AKTIVITAS*
+────────────────────────────
+🚜 *Unit:* ${report.unitCode} (${report.unitType})
+👷 *Operator:* ${report.operatorName}
+👔 *Pengawas:* ${report.supervisorName}
+📅 *Tanggal:* ${report.reportDate} | Shift ${report.shift}
+📍 *Lokasi:* ${report.workLocation} (${report.wilayah})
+📝 *Nomor SPK:* $spk
+⚙️ *Aktivitas:* ${report.activityName} (${report.sapCode})
+⏱️ *Durasi:* ${report.workDurationHours} Jam | Status: ${report.unitStatus}
+
+📊 *Pencatatan Jam (HM):*
+• HM Awal: ${report.hmAwal}
+• HM Akhir: ${report.hmAkhir}
+• Running HM: ${report.hmDailyRunning} Jam
+
+⛽ *BBM / Solar:*
+• Stik Awal: ${report.stikSolarAwal} cm
+• Stik Akhir: ${report.stikSolarAkhir} cm
+• Pemakaian: ${report.pemakaianSolar} L
+${if (report.isRefueled) "• Tambahan Solar: ${report.fuelLiters} L\n" else ""}
+🚧 *Kendala Lapangan:*
+$kendalaText
+
+📈 *Hasil Kerja:* ${report.workOutput} ${report.unitOfMeasure}
+💬 *Catatan:* ${report.notes.ifBlank { "-" }}
+────────────────────────────
+Status Data: $statusSync
+Dikirim via RKCE Mobile System
+""".trimIndent()
+
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "Laporan Realisasi RKCE - ${report.unitCode} (${report.reportDate})")
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    context.startActivity(Intent.createChooser(intent, "Bagikan Laporan Realisasi"))
+}
 
 @Composable
 fun ReportDetailDialog(
@@ -134,11 +187,19 @@ fun ReportDetailDialog(
                             style = MaterialTheme.typography.bodySmall.copy(color = Slate500, fontSize = 11.sp)
                         )
                     }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Tutup", tint = Slate500)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { shareReportDetails(context, report, nomorSpk) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Bagikan Laporan", tint = Emerald700)
+                        }
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Tutup", tint = Slate500)
+                        }
                     }
                 }
 
@@ -575,7 +636,7 @@ fun ReportDetailDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 18.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (!isReadOnly) {
                         OutlinedButton(
@@ -587,13 +648,27 @@ fun ReportDetailDialog(
                             border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRose.copy(alpha = 0.5f)),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(0.9f)
                                 .height(44.dp)
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Hapus", fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Hapus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
+                    }
+
+                    OutlinedButton(
+                        onClick = { shareReportDetails(context, report, nomorSpk) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Emerald700),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Emerald600),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1.1f)
+                            .height(44.dp)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, tint = Emerald700, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Bagikan", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
 
                     Button(
@@ -601,10 +676,10 @@ fun ReportDetailDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
-                            .weight(if (isReadOnly) 1f else 1.5f)
+                            .weight(1f)
                             .height(44.dp)
                     ) {
-                        Text(if (isReadOnly) "Tutup Tinjauan" else "Tutup", fontWeight = FontWeight.Bold)
+                        Text("Tutup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }

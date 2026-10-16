@@ -97,7 +97,7 @@ fun AnalyticsScreen(
             .fillMaxSize()
             .background(Color(0xFFF8FAFC)) // Clean Slate-50 background
             .testTag("analytics_screen"),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // 1. HEADER & FILTER PERIODE + UNIT

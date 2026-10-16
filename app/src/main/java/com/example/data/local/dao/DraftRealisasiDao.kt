@@ -21,6 +21,9 @@ interface DraftRealisasiDao {
     @Query("DELETE FROM draft_realisasi WHERE rencana_id = :rencanaId")
     suspend fun deleteDraftByRencanaId(rencanaId: Long)
 
+    @Query("SELECT * FROM draft_realisasi")
+    fun getAllDrafts(): Flow<List<DraftRealisasiEntity>>
+
     @Query("DELETE FROM draft_realisasi")
     suspend fun clearAllDrafts()
 }

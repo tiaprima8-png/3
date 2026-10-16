@@ -251,6 +251,9 @@ class HeavyTrackViewModel(
         .flatMapLatest { supervisor -> repository.getRencanaForSupervisor(supervisor) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allDrafts: StateFlow<List<com.example.data.local.entity.DraftRealisasiEntity>> = repository.getAllDrafts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Selector Unit: Status informatif 3 Kasus (Kasus A: Backlog Kemarin, Kasus B: Belum Ada Rencana Hari Ini, Kasus C: Sudah Ada Rencana Hari Ini / Tambah Susulan)
     val availableUnitsForRencana: StateFlow<List<UnitPlanStatus>> = combine(
         units,

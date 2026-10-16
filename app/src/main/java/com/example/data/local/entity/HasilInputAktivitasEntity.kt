@@ -2,9 +2,18 @@ package com.example.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "hasil_input_aktivitas")
+@Entity(
+    tableName = "hasil_input_aktivitas",
+    indices = [
+        Index(value = ["rencana_id"]),
+        Index(value = ["kode_unit"]),
+        Index(value = ["supervisor_name"]),
+        Index(value = ["created_at"])
+    ]
+)
 data class HasilInputAktivitasEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

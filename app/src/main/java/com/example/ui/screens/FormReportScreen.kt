@@ -165,6 +165,7 @@ fun FormReportScreen(
     val kendalaList by viewModel.kendalaList.collectAsState()
     val activeRencanaList by viewModel.activeRencanaList.collectAsState()
     val allRencanaList by viewModel.allRencanaList.collectAsState()
+    val allDraftsList by viewModel.allDrafts.collectAsState()
 
     val rencanaState by viewModel.rencanaFormState.collectAsState()
     val realisasiState by viewModel.realisasiFormState.collectAsState()
@@ -281,7 +282,7 @@ fun FormReportScreen(
             .fillMaxSize()
             .background(com.example.ui.theme.BackgroundGreyBlue)
             .testTag("form_report_screen"),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // ======================================================================
@@ -498,7 +499,7 @@ fun FormReportScreen(
 
                         // 2. Unit Alat Berat Searchable Selector (Otomatis Tanggal, Deteksi Backlog & Tambah Susulan)
                         SelectorFieldTrigger(
-                            label = "2. Unit Alat Berat",
+                            label = "Unit",
                             selectedValue = rencanaState.selectedUnit?.let { u ->
                                 when {
                                     rencanaState.isBacklog -> "${u.unitCode} - ${u.brandModel} [Backlog Kemarin]"
@@ -596,9 +597,9 @@ fun FormReportScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // 3. Operator Pelaksana
+                        // Operator Pelaksana
                         SelectorFieldTrigger(
-                            label = "3. Operator Pelaksana",
+                            label = "Operator",
                             selectedValue = rencanaState.selectedOperator?.name,
                             placeholder = "Pilih Nama Operator Pelaksana...",
                             leadingIcon = Icons.Default.Person,
@@ -612,9 +613,9 @@ fun FormReportScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // 4. Aktivitas / Jenis Pekerjaan (Cascading sesuai Jenis Unit)
+                        // Aktivitas (Cascading sesuai Jenis Unit)
                         SelectorFieldTrigger(
-                            label = "4. Aktivitas / Jenis Pekerjaan",
+                            label = "Aktivitas",
                             selectedValue = rencanaState.selectedActivity?.let { "${it.activityName} (${it.sapCode})" },
                             placeholder = if (rencanaState.selectedUnit == null)
                                 "Pilih Unit terlebih dahulu..."
@@ -632,9 +633,9 @@ fun FormReportScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // 5. Lokasi Kerja Lapangan
+                        // Lokasi
                         SelectorFieldTrigger(
-                            label = "5. Lokasi Kerja Lapangan",
+                            label = "Lokasi",
                             selectedValue = rencanaState.selectedLokasi?.kodeLokasi,
                             placeholder = "Pilih Kode Lokasi (misal: 001A)...",
                             leadingIcon = Icons.Default.LocationOn,
@@ -647,9 +648,9 @@ fun FormReportScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // 6. Shift Kerja Toggle Pill [SIANG] | [MALAM]
+                        // Shift Kerja Toggle Pill [SIANG] | [MALAM]
                         Text(
-                            text = "6. Shift Kerja",
+                            text = "Shift Kerja",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = Slate700
@@ -806,7 +807,7 @@ fun FormReportScreen(
 
                                         // Sub 2: Aktivitas (Cascading sesuai Jenis Unit)
                                         SelectorFieldTrigger(
-                                            label = "Aktivitas / Jenis Pekerjaan #${index + 2}",
+                                            label = "Aktivitas #${index + 2}",
                                             selectedValue = sub.selectedActivity?.let { "${it.activityName} (${it.sapCode})" },
                                             placeholder = if (rencanaState.selectedUnit == null)
                                                 "Pilih Unit terlebih dahulu..."
@@ -826,7 +827,7 @@ fun FormReportScreen(
 
                                         // Sub 3: Lokasi
                                         SelectorFieldTrigger(
-                                            label = "Lokasi Kerja Lapangan #${index + 2}",
+                                            label = "Lokasi #${index + 2}",
                                             selectedValue = sub.selectedLokasi?.kodeLokasi,
                                             placeholder = "Pilih Kode Lokasi (misal: 001A)...",
                                             leadingIcon = Icons.Default.LocationOn,
@@ -911,7 +912,7 @@ fun FormReportScreen(
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "+ Tambah Rencana Kerja (Multi-Rencana)",
+                                text = "Tambah Rencana Kerja",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -1104,6 +1105,26 @@ fun FormReportScreen(
                                     fontSize = 11.sp,
                                     color = Slate600
                                 )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Emerald600,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Draft tersimpan otomatis",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Emerald800,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
                             }
                         }
 
@@ -1158,7 +1179,7 @@ fun FormReportScreen(
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Column {
                                             Text(
-                                                text = "1. Nomor SPK (Surat Perintah Kerja)",
+                                                text = "1. Nomor SPK",
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Slate800
@@ -1357,37 +1378,6 @@ fun FormReportScreen(
                                             }
                                         }
 
-                                        // Tombol Simulasi Terbitkan SPK (Test)
-                                        val selectedRen = realisasiState.selectedRencana
-                                        if (selectedRen != null) {
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = Emerald50,
-                                                border = androidx.compose.foundation.BorderStroke(1.dp, Emerald200),
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .clickable { viewModel.adminSimulatePublishSpk(selectedRen.id, selectedRen.kodeUnit) }
-                                                    .testTag("btn_simulate_spk")
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Bolt,
-                                                        contentDescription = null,
-                                                        tint = Emerald700,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(2.dp))
-                                                    Text(
-                                                        text = "Test",
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Emerald800
-                                                    )
-                                                }
-                                            }
                                         }
                                     }
                                 }
@@ -1396,22 +1386,9 @@ fun FormReportScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // ==========================================
-                        // FLEKSIBILITAS KONDISI LAPANGAN
-                        // FIELD LOKASI & AKTIVITAS DAPAT DIEDIT
-                        // ==========================================
-                        Text(
-                            text = "2. Fleksibilitas Lapangan (Aktivitas & Lokasi Aktual)",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = Slate700
-                            ),
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-
                         // Editable Dropdown Aktivitas (Cascading dari Rencana Terpilih)
                         SelectorFieldTrigger(
-                            label = "Aktivitas / Jenis Pekerjaan Aktual",
+                            label = "2. Aktivitas",
                             selectedValue = realisasiState.selectedActivity?.let { "${it.activityName} (${it.sapCode})" }
                                 ?: realisasiState.selectedRencana?.namaAktivitas,
                             placeholder = if (realisasiState.selectedRencana == null)
@@ -1419,13 +1396,12 @@ fun FormReportScreen(
                             else
                                 "Pilih Aktivitas Aktual Lapangan...",
                             leadingIcon = Icons.Default.Assignment,
-                            badgeText = if (realisasiState.selectedRencana != null) "Dapat Diubah" else null,
                             enabled = realisasiState.selectedRencana != null,
                             testTag = "selector_realisasi_aktivitas_editable",
                             onClick = { isRealisasiActivitySheetOpen = true }
                         )
 
-                        // Status Unit Otomatis (Read-Only Badge)
+                        // Status Unit Otomatis (Read-Only Badge Ringkas)
                         val currentUnitStatus = realisasiState.selectedActivity?.kategoriStatus?.ifBlank { "OPERASI" }
                             ?: realisasiState.selectedRencana?.statusUnit?.ifBlank { "OPERASI" }
                             ?: "OPERASI"
@@ -1445,17 +1421,16 @@ fun FormReportScreen(
                                 }
                             ),
                             modifier = Modifier
-                                .fillMaxWidth()
                                 .padding(vertical = 4.dp)
                                 .testTag("badge_realisasi_status_otomatis")
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(8.dp)
+                                        .size(7.dp)
                                         .background(
                                             when (currentUnitStatus) {
                                                 "OPERASI" -> Emerald600
@@ -1465,22 +1440,18 @@ fun FormReportScreen(
                                             CircleShape
                                         )
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Status: $currentUnitStatus",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     color = when (currentUnitStatus) {
                                         "OPERASI" -> Emerald800
                                         "STANDBY" -> Color(0xFF92400E)
                                         else -> Color(0xFF9F1239)
                                     }
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "(Otomatis dari Master Aktivitas)",
-                                    fontSize = 11.sp,
-                                    color = Slate500
                                 )
                             }
                         }
@@ -1489,7 +1460,7 @@ fun FormReportScreen(
 
                         // Editable Dropdown Lokasi (Cascading dari Rencana Terpilih)
                         SelectorFieldTrigger(
-                            label = "Lokasi Kerja Lapangan Aktual",
+                            label = "Lokasi",
                             selectedValue = realisasiState.selectedLokasi?.kodeLokasi
                                 ?: realisasiState.selectedRencana?.kodeLokasi,
                             placeholder = if (realisasiState.selectedRencana == null)
@@ -1497,7 +1468,6 @@ fun FormReportScreen(
                             else
                                 "Pilih Kode Lokasi (misal: 001A)...",
                             leadingIcon = Icons.Default.LocationOn,
-                            badgeText = if (realisasiState.selectedRencana != null) "Dapat Diubah" else null,
                             enabled = realisasiState.selectedRencana != null,
                             testTag = "selector_realisasi_lokasi_editable",
                             onClick = { isRealisasiLokasiSheetOpen = true }
@@ -2269,13 +2239,12 @@ fun FormReportScreen(
 
                                                         // a. Dropdown Penyebab Kendala (Searchable Selector)
                                                         SelectorFieldTrigger(
-                                                            label = "Penyebab Kendala (Master Kendala)",
+                                                            label = "Kendala",
                                                             selectedValue = item.selectedKendala?.let {
                                                                 "${it.kodeKendala} - ${it.namaKendala} (${it.kategori})"
                                                             },
                                                             placeholder = "Pilih penyebab kendala (Hujan, Breakdown, dll)...",
                                                             leadingIcon = Icons.Default.ReportProblem,
-                                                            badgeText = item.selectedKendala?.kategori,
                                                             isError = item.selectedKendala == null,
                                                             errorMessage = if (item.selectedKendala == null) "Penyebab kendala wajib dipilih" else null,
                                                             testTag = "selector_kendala_${index + 1}",
@@ -2402,6 +2371,8 @@ fun FormReportScreen(
                                                                             text = "Total Hambatan: ${item.durasiLabel} (${item.durasiMenit} Menit)",
                                                                             fontSize = 12.sp,
                                                                             fontWeight = FontWeight.Bold,
+                                                                            maxLines = 1,
+                                                                            softWrap = false,
                                                                             color = Color(0xFF92400E)
                                                                         )
                                                                     }
@@ -2479,7 +2450,7 @@ fun FormReportScreen(
                                                 )
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
-                                                    text = "+ Tambah Kendala Lain",
+                                                    text = "Tambah Kendala Lain",
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 12.sp
                                                 )
@@ -2535,7 +2506,7 @@ fun FormReportScreen(
                                     Icon(Icons.Default.LocalGasStation, contentDescription = null, tint = Emerald600, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "5. Stok Stik Solar & Pemakaian BBM",
+                                        text = "5. Stok Stik Solar (Solar)",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         color = Slate900
@@ -2634,11 +2605,14 @@ fun FormReportScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
                                                 Icon(Icons.Default.LocalGasStation, contentDescription = null, tint = Emerald600, modifier = Modifier.size(16.dp))
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
-                                                    text = "Pengisian Solar BBM Tambahan (Fuel Truck)",
+                                                    text = "Isi Solar Tambahan",
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 12.sp,
                                                     color = Slate900
@@ -2778,7 +2752,7 @@ fun FormReportScreen(
                         val dynamicUnitLabel = realisasiState.selectedActivity?.unitOfMeasure ?: "m3"
 
                         Text(
-                            text = "6. Hasil Kerja Lapangan (${if (isOperasi) "Satuan: $dynamicUnitLabel" else "Non-Aktif untuk Standby/Breakdown"})",
+                            text = "6. Hasil Kerja (${if (isOperasi) (if (dynamicUnitLabel.contains("m3", ignoreCase = true)) "m³" else dynamicUnitLabel) else "Non-Aktif"})",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = Slate700
@@ -2793,7 +2767,7 @@ fun FormReportScreen(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             trailingIcon = {
                                 Text(
-                                    text = dynamicUnitLabel,
+                                    text = if (dynamicUnitLabel.contains("m3", ignoreCase = true)) "m³" else dynamicUnitLabel,
                                     color = if (isOperasi) Emerald700 else Slate400,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
@@ -2813,9 +2787,9 @@ fun FormReportScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // 7. Foto Bukti Lapangan
+                        // 7. Foto
                         Text(
-                            text = "7. Foto Bukti Lapangan",
+                            text = "7. Foto",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = Slate700
@@ -2835,7 +2809,7 @@ fun FormReportScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // 8. Keterangan Lapangan (Anti-tertutup keyboard/QWERTY)
+                        // 8. Keterangan (Anti-tertutup keyboard/QWERTY)
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = Color(0xFFF8FAFC),
@@ -2859,7 +2833,7 @@ fun FormReportScreen(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "8. Keterangan & Catatan Lapangan",
+                                            text = "8. Keterangan",
                                             style = MaterialTheme.typography.labelMedium.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 color = Slate800,
@@ -3047,7 +3021,7 @@ fun FormReportScreen(
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "+ Buat Rencana Kerja Baru",
+                            text = "Buat Rencana Kerja Baru",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3208,8 +3182,10 @@ fun FormReportScreen(
                 }
             } else {
                 items(activeRencanaList, key = { it.id }) { ren ->
+                    val hasDraft = allDraftsList.any { it.rencanaId == ren.id }
                     PendingAssignmentCard(
                         rencana = ren,
+                        hasDraft = hasDraft,
                         onInputRealisasi = {
                             viewModel.selectRencanaForRealisasi(ren)
                             isInputRealisasiOpen = true
@@ -3581,6 +3557,7 @@ fun KendalaTimeInputField(
 @Composable
 fun PendingAssignmentCard(
     rencana: RencanaKerjaEntity,
+    hasDraft: Boolean = false,
     onInputRealisasi: () -> Unit
 ) {
     val isUnitSpkTerbit = rencana.isSpkTerbit
@@ -3600,20 +3577,51 @@ fun PendingAssignmentCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header kartu: "HEH0013" (Bold, besar) di kiri, dan badge "OPERASI" di kanan (Abu-abu/biru muda lembut)
+            // Header kartu: "HEH0013" di kiri (dengan badge Draft jika ada), dan badge "OPERASI" di kanan
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = rencana.kodeUnit,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Slate900,
-                        fontSize = 20.sp
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = rencana.kodeUnit,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Slate900,
+                            fontSize = 20.sp
+                        )
                     )
-                )
+                    if (hasDraft) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Emerald50,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Emerald200)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.EditNote,
+                                    contentDescription = null,
+                                    tint = Emerald700,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "Draft",
+                                    color = Emerald800,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Surface(
                     shape = RoundedCornerShape(8.dp),
@@ -3624,7 +3632,9 @@ fun PendingAssignmentCard(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF334155),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
@@ -3714,7 +3724,7 @@ fun PendingAssignmentCard(
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Lokasi: ${rencana.kodeLokasi} • Wilayah ${rencana.wilayah ?: "Geodesi PG1"}",
+                        text = "Lokasi: ${rencana.kodeLokasi}",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = Slate700
@@ -3766,7 +3776,7 @@ fun PendingAssignmentCard(
                     .testTag("btn_input_realisasi_${rencana.id}")
             ) {
                 Text(
-                    text = "Input Realisasi",
+                    text = if (hasDraft) "Lanjutkan Draft Realisasi" else "Input Realisasi",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )

@@ -98,14 +98,19 @@ fun SelectorFieldTrigger(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 4.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp)
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                     color = if (enabled) Slate700 else Slate400
-                )
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
             if (badgeText != null) {
                 Spacer(modifier = Modifier.width(6.dp))

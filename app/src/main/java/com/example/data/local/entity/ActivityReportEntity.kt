@@ -1,10 +1,20 @@
 package com.example.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-@Entity(tableName = "activity_reports")
+@Entity(
+    tableName = "activity_reports",
+    indices = [
+        Index(value = ["createdAt"]),
+        Index(value = ["unitCode"]),
+        Index(value = ["supervisorName"]),
+        Index(value = ["isSynced"]),
+        Index(value = ["reportDate"])
+    ]
+)
 data class ActivityReportEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val clientUuid: String = UUID.randomUUID().toString(),

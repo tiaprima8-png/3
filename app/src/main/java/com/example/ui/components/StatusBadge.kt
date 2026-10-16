@@ -57,7 +57,9 @@ fun SyncStatusBadge(isSynced: Boolean, modifier: Modifier = Modifier) {
                     text = "✓",
                     color = Emerald900,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }

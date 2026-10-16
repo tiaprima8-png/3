@@ -1,9 +1,17 @@
 package com.example.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "units")
+@Entity(
+    tableName = "units",
+    indices = [
+        Index(value = ["unitType"]),
+        Index(value = ["supervisorAssigned"]),
+        Index(value = ["wilayah"])
+    ]
+)
 data class UnitEntity(
     @PrimaryKey val unitCode: String, // e.g. "HEH0004", "HEH0013", "MGC0001"
     val unitType: String,            // e.g. "EXCAVATOR", "COMPACTOR", "MOTOR GRADER"

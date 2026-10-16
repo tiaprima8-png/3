@@ -2,9 +2,16 @@ package com.example.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "draft_realisasi")
+@Entity(
+    tableName = "draft_realisasi",
+    indices = [
+        Index(value = ["kode_unit"]),
+        Index(value = ["updated_at"])
+    ]
+)
 data class DraftRealisasiEntity(
     @PrimaryKey
     @ColumnInfo(name = "rencana_id")

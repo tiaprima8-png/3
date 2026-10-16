@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,7 +48,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -310,7 +313,7 @@ fun HistoryScreen(
             .fillMaxSize()
             .background(Color(0xFFF8FAFC))
             .testTag("history_screen"),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // ==========================================
@@ -668,6 +671,7 @@ fun CompletedOperationCard(
     onClick: () -> Unit,
     onPhotoClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1026,16 +1030,49 @@ fun CompletedOperationCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Footer Petunjuk Aksi Klik
+            // Footer Petunjuk Aksi Klik & Tombol Bagikan Laporan Cepat
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Emerald50,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Emerald200),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            shareReportDetails(context, record.report, record.nomorSpk)
+                        }
+                        .testTag("btn_share_card_${record.report.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Bagikan Laporan",
+                            tint = Emerald700,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Bagikan",
+                            color = Emerald800,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+
                 Text(
-                    text = "Ketuk untuk audit lengkap, status GPS & bukti foto ➔",
+                    text = "Ketuk untuk audit lengkap ➔",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Emerald700
