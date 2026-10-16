@@ -14,6 +14,12 @@ val Slate700 = Color(0xFF334155)
 val Slate800 = Color(0xFF1E293B)
 val Slate900 = Color(0xFF0F172A)
 
+// Deep Blue & Modern Palette
+val DeepBlue = Color(0xFF1E3A8A)
+val DeepNavy = Color(0xFF0F172A)
+val BackgroundGreyBlue = Color(0xFFF4F6F9)
+
+
 // Emerald & Mint Green
 val Emerald50 = Color(0xFFECFDF5)
 val Emerald100 = Color(0xFFD1FAE5)
@@ -33,3 +39,4 @@ val WarningAmber = Color(0xFFF59E0B)
 val ErrorRose = Color(0xFFEF4444)
 val ErrorRose50 = Color(0xFFFEF2F2)
 val WarningAmber50 = Color(0xFFFFFBEB)
+

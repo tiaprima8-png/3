@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.local.entity.ActivityReportEntity
 import kotlinx.coroutines.flow.Flow
@@ -73,8 +74,29 @@ interface ActivityReportDao {
     @Query("DELETE FROM activity_reports WHERE id = :reportId")
     suspend fun deleteReport(reportId: Long)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(reports: List<ActivityReportEntity>)
+
     @Query("DELETE FROM activity_reports")
     suspend fun clearAllReports()
+
+    @Query("DELETE FROM activity_reports")
+    suspend fun deleteAll(): Int
+
+    @Query("DELETE FROM activity_reports WHERE isSynced = 1")
+    suspend fun deleteAllSynced(): Int
+
+    @Transaction
+    suspend fun replaceAll(listBaru: List<ActivityReportEntity>) {
+        deleteAll()
+        insertReports(listBaru)
+    }
+
+    @Transaction
+    suspend fun replaceAllSynced(listBaru: List<ActivityReportEntity>) {
+        deleteAllSynced()
+        insertReports(listBaru)
+    }
 
     @Query("DELETE FROM activity_reports WHERE unitCode NOT IN (SELECT unitCode FROM units) OR LOWER(unitType) IN ('dump truck', 'bulldozer')")
     suspend fun deleteOrphanedReports(): Int

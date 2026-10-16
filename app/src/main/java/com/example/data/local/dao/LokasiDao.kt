@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.example.data.local.entity.LokasiEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -34,4 +35,10 @@ interface LokasiDao {
 
     @Query("DELETE FROM lokasi")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceAll(listBaru: List<LokasiEntity>) {
+        deleteAll()
+        insertLokasiList(listBaru)
+    }
 }

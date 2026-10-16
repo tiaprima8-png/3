@@ -83,7 +83,9 @@ fun SyncStatusBadge(isSynced: Boolean, modifier: Modifier = Modifier) {
                     text = "Menunggu Sinkron",
                     color = Color(0xFFB45309),
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }
@@ -113,7 +115,9 @@ fun ShiftBadge(shift: String, modifier: Modifier = Modifier) {
                 text = shift.uppercase(),
                 color = if (isDay) Color(0xFF92400E) else Color(0xFF3730A3),
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }
@@ -149,7 +153,9 @@ fun UnitStatusBadge(status: String, modifier: Modifier = Modifier) {
                 text = cleanStatus,
                 color = textColor,
                 fontSize = 10.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }
@@ -180,7 +186,9 @@ fun FuelBadge(liters: Double, modifier: Modifier = Modifier) {
                 text = "Solar: $formattedLiters L",
                 color = Color(0xFF92400E),
                 fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

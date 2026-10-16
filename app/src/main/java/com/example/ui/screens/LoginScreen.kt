@@ -22,12 +22,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrecisionManufacturing
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -50,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -58,13 +58,18 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Supervisor
 import com.example.data.model.SupervisorDirectory
 import com.example.data.remote.LoginResult
+import com.example.ui.theme.BackgroundGreyBlue
+import com.example.ui.theme.DeepBlue
+import com.example.ui.theme.DeepNavy
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald50
+import com.example.ui.theme.Emerald500
 import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Emerald700
 import com.example.ui.theme.Emerald900
@@ -139,23 +144,39 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC))
+            .background(BackgroundGreyBlue)
             .imePadding()
     ) {
+        // 1. Layered Background: Deep Navy to Royal Blue Gradient Header Banner
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(340.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            DeepNavy, // #0F172A
+                            DeepBlue  // #1E3A8A
+                        )
+                    ),
+                    shape = RoundedCornerShape(bottomStart = 36.dp, bottomEnd = 36.dp)
+                )
+        )
+
+        // 2. Scrollable Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp, vertical = 32.dp),
+                .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(36.dp))
 
-            // Brand Header & Logo
+            // Branding & Logo
             Surface(
-                modifier = Modifier.size(76.dp),
-                shape = RoundedCornerShape(22.dp),
-                color = Emerald600, // Emerald Forest #059669
+                modifier = Modifier.size(72.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Emerald500, // #10B981
                 shadowElevation = 8.dp
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -163,46 +184,48 @@ fun LoginScreen(
                         imageVector = Icons.Default.PrecisionManufacturing,
                         contentDescription = "Logo RKCE",
                         tint = Color.White,
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(40.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
                 text = "RKCE",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Slate900,
-                    letterSpacing = (-0.5).sp
-                )
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.sp
             )
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
                 text = "Sistem Manajemen Rencana & Realisasi Alat Berat",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = Slate500,
-                    fontWeight = FontWeight.Medium
-                )
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 32.dp)
             )
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Form Card
+            // 3. Overlapping Elevated Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
                     .testTag("login_card"),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(22.dp)
+                        .padding(24.dp)
                 ) {
                     val isTargetManager = usernameInput.equals("Lutfi", ignoreCase = true) ||
                             usernameInput.contains("manager", ignoreCase = true) ||
@@ -217,19 +240,22 @@ fun LoginScreen(
                             text = if (isTargetManager) "Masuk Sebagai Manager" else "Masuk Sebagai Kasie Lapangan",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = Slate900
+                                color = Slate900,
+                                fontSize = 17.sp
                             )
                         )
                         Surface(
-                            shape = RoundedCornerShape(6.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = if (isTargetManager) Color(0xFFFEF3C7) else Emerald50
                         ) {
                             Text(
                                 text = if (isTargetManager) "MANAGER" else "KASIE AKTIF",
                                 color = if (isTargetManager) Color(0xFF92400E) else Emerald900,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 10.sp,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -239,23 +265,25 @@ fun LoginScreen(
                             "Mode Manager: Memantau riwayat SPK dan analitik seluruh armada tanpa form input." 
                         else 
                             "Mode Kasie Lapangan: Formulir rencana & realisasi tersinkron dengan Web Admin.",
-                        style = MaterialTheme.typography.bodySmall.copy(color = Slate500),
-                        modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = Slate500,
+                            lineHeight = 18.sp
+                        ),
+                        modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
                     )
 
-                    // Quick Select Card (Hanya Akun Kasie Utama: Agung)
+                    // Quick Select Card (Pilih Akun Sinkron Website Admin: Agung)
                     Text(
                         text = "Pilih Akun Sinkron Website Admin:",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = Slate700,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
-                    // Akun Kasie Lapangan Aktif: Agung (Full Width Card)
                     val isAgungActive = usernameInput.equals("Agung", ignoreCase = true)
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         color = if (isAgungActive) Emerald50 else Color(0xFFF8FAFC),
                         border = androidx.compose.foundation.BorderStroke(
                             if (isAgungActive) 1.5.dp else 1.dp,
@@ -284,14 +312,14 @@ fun LoginScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = if (isAgungActive) Emerald600 else Slate200,
-                                    modifier = Modifier.size(40.dp)
+                                    modifier = Modifier.size(42.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Person,
-                                            contentDescription = null,
-                                            tint = if (isAgungActive) Color.White else Slate500,
-                                            modifier = Modifier.size(22.dp)
+                                        Text(
+                                            text = "AG",
+                                            color = if (isAgungActive) Color.White else Slate600,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp
                                         )
                                     }
                                 }
@@ -331,7 +359,7 @@ fun LoginScreen(
                             }
 
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = if (isAgungActive) Emerald600 else Slate100
                             ) {
                                 Text(
@@ -339,21 +367,19 @@ fun LoginScreen(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = if (isAgungActive) Color.White else Slate600,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Error Notification (Pesat Peringatan Jelas: Akun tidak aktif atau kredensial salah)
+                    // Error Notification
                     AnimatedVisibility(visible = errorMessage != null) {
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 16.dp),
-                            shape = RoundedCornerShape(10.dp),
+                                .padding(top = 16.dp),
+                            shape = RoundedCornerShape(12.dp),
                             color = ErrorRose50,
                             border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRose.copy(alpha = 0.5f))
                         ) {
@@ -374,11 +400,13 @@ fun LoginScreen(
                                     text = errorMessage ?: "",
                                     color = ErrorRose,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     // Field 1: Username / NIK Akun
                     Text(
@@ -404,10 +432,10 @@ fun LoginScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Emerald600,
                             unfocusedBorderColor = Slate200,
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White
+                            focusedContainerColor = Color(0xFFF8FAFC),
+                            unfocusedContainerColor = Color(0xFFF8FAFC)
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("input_login_username")
@@ -453,10 +481,10 @@ fun LoginScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Emerald600,
                             unfocusedBorderColor = Slate200,
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White
+                            focusedContainerColor = Color(0xFFF8FAFC),
+                            unfocusedContainerColor = Color(0xFFF8FAFC)
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("input_login_password")
@@ -475,17 +503,18 @@ fun LoginScreen(
                             .fillMaxWidth()
                             .height(52.dp)
                             .testTag("btn_submit_login"),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isTargetManager) Color(0xFF0F766E) else Emerald600
-                        )
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Memverifikasi Kredensial...")
                         } else {
-                            Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = if (isTargetManager) "Masuk Sebagai Manager" else "Masuk Sebagai Kasie",
@@ -499,12 +528,14 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 text = "RKCE • Terintegrasi Otomatis dengan Web Admin API",
-                style = MaterialTheme.typography.bodySmall.copy(color = Slate400, fontSize = 11.sp)
+                style = MaterialTheme.typography.bodySmall.copy(color = Slate500, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
             )
+
+            Spacer(modifier = Modifier.height(36.dp))
         }
     }
 }

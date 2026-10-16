@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.local.entity.OperatorEntity
 import kotlinx.coroutines.flow.Flow
@@ -58,4 +59,10 @@ interface OperatorDao {
 
     @Query("DELETE FROM operators")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceAll(listBaru: List<OperatorEntity>) {
+        deleteAll()
+        insertOperators(listBaru)
+    }
 }

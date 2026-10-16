@@ -148,7 +148,43 @@ object CompanyServerSimulator {
 
     // Central received reports in Web Admin
     val receivedReportsOnServer = CopyOnWriteArrayList<PostActivityReportRequest>()
-    val serverRencanaKerja = CopyOnWriteArrayList<PostRencanaKerjaRequest>()
+    val serverRencanaKerja = CopyOnWriteArrayList<PostRencanaKerjaRequest>().apply {
+        add(
+            PostRencanaKerjaRequest(
+                id = "REN-HEH0013",
+                id_rencana_kerja = "REN-HEH0013",
+                rencana_id = "REN-HEH0013",
+                status_unit = "OPERASI",
+                kode_unit = "HEH0013",
+                unit_kode = "HEH0013",
+                unit = "HEH0013",
+                nama_unit = "Komatsu PC200-8",
+                operator = "Ahmad Fauzi",
+                nama_operator = "Ahmad Fauzi",
+                sap_code = "ACT-SAP-101",
+                kode_sap = "ACT-SAP-101",
+                nama_aktivitas = "Galian Tanah Lunak",
+                aktivitas = "Galian Tanah Lunak",
+                satuan_aktivitas = "m3",
+                satuan = "m3",
+                kode_lokasi = "001A",
+                lokasi = "001A",
+                wilayah = "Geodesi PG1",
+                shift_kerja = "SIANG",
+                shift = "SIANG",
+                keterangan = "Penggalian front cut site A",
+                keterangan_rencana = "Penggalian front cut site A",
+                nomor_spk = null,
+                status_spk = "MENUNGGU_SPK",
+                status_tahap = "RENCANA",
+                is_realized = false,
+                nama_pengawas = "Agung",
+                pengawas = "Agung",
+                tanggal = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()),
+                tanggal_kerja = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+            )
+        )
+    }
     val serverHasilAktivitas = CopyOnWriteArrayList<PostHasilAktivitasRequest>()
 
     suspend fun fetchMasterData(supervisorName: String): ApiResponse<MasterDataPayload> {
@@ -388,6 +424,16 @@ object CompanyServerSimulator {
                 supervisorName = supervisorName
             )
         )
+    }
+
+    /**
+     * Manually triggers admin deleting an activity report (simulates Web Admin deletion)
+     */
+    suspend fun adminDeleteReport(reportId: Long, clientUuid: String = "") {
+        receivedReportsOnServer.removeIf {
+            (clientUuid.isNotBlank() && (it.client_uuid == clientUuid || it.client_transaction_id == clientUuid)) ||
+            (reportId > 0 && it.id_rencana_kerja == reportId)
+        }
     }
 
     fun markRencanaRealized(planId: Long) {

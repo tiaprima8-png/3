@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.example.data.local.entity.HasilInputAktivitasEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -36,6 +37,27 @@ interface HasilInputAktivitasDao {
     @Query("SELECT COUNT(*) FROM hasil_input_aktivitas WHERE is_synced = 0")
     fun getUnsyncedCount(): Flow<Int>
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(hasilList: List<HasilInputAktivitasEntity>)
+
     @Query("DELETE FROM hasil_input_aktivitas WHERE id = :id")
     suspend fun deleteHasil(id: Long)
+
+    @Query("DELETE FROM hasil_input_aktivitas")
+    suspend fun deleteAll(): Int
+
+    @Query("DELETE FROM hasil_input_aktivitas WHERE is_synced = 1")
+    suspend fun deleteAllSynced(): Int
+
+    @Transaction
+    suspend fun replaceAll(listBaru: List<HasilInputAktivitasEntity>) {
+        deleteAll()
+        insertAll(listBaru)
+    }
+
+    @Transaction
+    suspend fun replaceAllSynced(listBaru: List<HasilInputAktivitasEntity>) {
+        deleteAllSynced()
+        insertAll(listBaru)
+    }
 }

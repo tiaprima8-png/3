@@ -118,6 +118,8 @@ fun SelectorFieldTrigger(
                         color = if (enabled) Emerald900 else Slate500,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }

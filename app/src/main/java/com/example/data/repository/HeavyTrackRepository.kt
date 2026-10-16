@@ -412,6 +412,30 @@ class HeavyTrackRepository(
                 )
             )
             reportDao.insertReports(sampleReports)
+
+            val initialPlan = RencanaKerjaEntity(
+                id = 1L,
+                supervisorName = activeSupervisor,
+                pengawas = activeSupervisor,
+                statusUnit = "OPERASI",
+                kodeUnit = "HEH0013",
+                operator = "Ahmad Fauzi",
+                sapCode = "ACT-SAP-101",
+                namaAktivitas = "Galian Tanah Lunak",
+                satuanAktivitas = "m3",
+                kodeLokasi = "001A",
+                wilayah = "Geodesi PG1",
+                shiftKerja = "SIANG",
+                keterangan = "Penggalian front cut site A",
+                nomorSpk = "",
+                statusSpk = "MENUNGGU_SPK",
+                statusTahap = "RENCANA",
+                isRealized = false,
+                statusRealisasi = "BELUM",
+                isSynced = true,
+                tanggalFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+            )
+            rencanaDao.insertRencana(initialPlan)
         }
     }
 
@@ -419,92 +443,75 @@ class HeavyTrackRepository(
         try {
             val (payload, message) = apiClientManager.fetchMasterData(supervisorName)
 
-            // PEMBERSIHAN TABEL LOKAL SQLITE: dao.deleteAll()
-            unitDao.deleteAll()
-            masterUnitDao.deleteAll()
-            activityDao.deleteAll()
-            operatorDao.deleteAll()
-            lokasiDao.deleteAll()
-            kendalaDao.deleteAll()
-            database.cleanDumpTruckAndBulldozerDirect()
-            rencanaDao.deleteAll()
-            reportDao.deleteOrphanedReports()
-
             // 1. Process Units Aktif
             val incomingUnits = (payload.units ?: emptyList())
                 .filter { com.example.data.model.UnitConstants.isJenisUnitValid(it.resolvedUnitType) }
                 .filter { !it.resolvedStatus.equals("Nonaktif", ignoreCase = true) && !it.resolvedStatus.equals("Inactive", ignoreCase = true) }
-            if (incomingUnits.isNotEmpty()) {
-                val unitEntities = incomingUnits.map {
-                    UnitEntity(
-                        unitCode = it.resolvedUnitCode,
-                        unitType = it.resolvedUnitType,
-                        brandModel = it.resolvedBrandModel,
-                        lastHm = it.resolvedLastHm,
-                        supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
-                        status = it.resolvedStatus,
-                        hmMinStandar = it.resolvedHmMinStandar,
-                        hmMaxStandar = it.resolvedHmMaxStandar,
-                        wilayah = it.resolvedWilayah,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                unitDao.insertUnits(unitEntities)
+            val unitEntities = incomingUnits.map {
+                UnitEntity(
+                    unitCode = it.resolvedUnitCode,
+                    unitType = it.resolvedUnitType,
+                    brandModel = it.resolvedBrandModel,
+                    lastHm = it.resolvedLastHm,
+                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
+                    status = it.resolvedStatus,
+                    hmMinStandar = it.resolvedHmMinStandar,
+                    hmMaxStandar = it.resolvedHmMaxStandar,
+                    wilayah = it.resolvedWilayah,
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            unitDao.replaceAll(unitEntities)
+            database.cleanDumpTruckAndBulldozerDirect()
+            reportDao.deleteOrphanedReports()
 
             // 2. Process Activities Aktif
             val incomingActivities = payload.resolvedActivities
                 .filter { !it.resolvedKategoriStatus.equals("Nonaktif", ignoreCase = true) }
-            if (incomingActivities.isNotEmpty()) {
-                val actEntities = incomingActivities.map {
-                    ActivityMasterEntity(
-                        sapCode = it.resolvedSapCode,
-                        activityName = it.resolvedActivityName,
-                        unitOfMeasure = it.resolvedUnitOfMeasure,
-                        description = it.resolvedDescription,
-                        category = it.resolvedCategory,
-                        kategoriStatus = it.resolvedKategoriStatus,
-                        jenisUnit = it.resolvedJenisUnit,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                activityDao.insertActivities(actEntities)
+            val actEntities = incomingActivities.map {
+                ActivityMasterEntity(
+                    sapCode = it.resolvedSapCode,
+                    activityName = it.resolvedActivityName,
+                    unitOfMeasure = it.resolvedUnitOfMeasure,
+                    description = it.resolvedDescription,
+                    category = it.resolvedCategory,
+                    kategoriStatus = it.resolvedKategoriStatus,
+                    jenisUnit = it.resolvedJenisUnit,
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            activityDao.replaceAll(actEntities)
 
             // 3. Process Operators Aktif
             val incomingOperators = (payload.operators ?: emptyList())
                 .filter { it.resolvedStatus.equals("Aktif", ignoreCase = true) || it.resolvedStatus.equals("Active", ignoreCase = true) || it.resolvedStatus.isBlank() }
-            if (incomingOperators.isNotEmpty()) {
-                val opEntities = incomingOperators.map {
-                    OperatorEntity(
-                        operatorId = it.resolvedOperatorId,
-                        name = it.resolvedName,
-                        badgeNumber = it.resolvedBadgeNumber,
-                        supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
-                        skillLevel = it.resolvedSkillLevel,
-                        status = it.resolvedStatus,
-                        wilayah = it.resolvedWilayah,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                operatorDao.insertOperators(opEntities)
+            val opEntities = incomingOperators.map {
+                OperatorEntity(
+                    operatorId = it.resolvedOperatorId,
+                    name = it.resolvedName,
+                    badgeNumber = it.resolvedBadgeNumber,
+                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
+                    skillLevel = it.resolvedSkillLevel,
+                    status = it.resolvedStatus,
+                    wilayah = it.resolvedWilayah,
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            operatorDao.replaceAll(opEntities)
 
             // 4. Process Lokasi
             val incomingLokasi = payload.resolvedLokasi
-            if (incomingLokasi.isNotEmpty()) {
-                val lokasiEntities = incomingLokasi.map {
-                    LokasiEntity(
-                        kodeLokasi = it.resolvedKode,
-                        wilayah = it.resolvedWilayah,
-                        luasBruto = it.resolvedLuasBruto,
-                        luasNetto = it.resolvedLuasNetto,
-                        keterangan = it.keterangan ?: "",
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                lokasiDao.insertLokasiList(lokasiEntities)
+            val lokasiEntities = incomingLokasi.map {
+                LokasiEntity(
+                    kodeLokasi = it.resolvedKode,
+                    wilayah = it.resolvedWilayah,
+                    luasBruto = it.resolvedLuasBruto,
+                    luasNetto = it.resolvedLuasNetto,
+                    keterangan = it.keterangan ?: "",
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            lokasiDao.replaceAll(lokasiEntities)
 
             // 5. Process Kendala
             val incomingKendala = payload.kendala ?: emptyList()
@@ -518,15 +525,11 @@ class HeavyTrackRepository(
                         updatedAt = System.currentTimeMillis()
                     )
                 }
-                kendalaDao.insertKendalaList(kendalaEntities)
-            } else {
-                // Jika payload kendala kosong dari API luar, pastikan database lokal memiliki 15 master kendala standar
-                val currentCount = kendalaDao.getAllKendala()
-                // Tidak menghapus jika lokal sudah ada data
+                kendalaDao.replaceAll(kendalaEntities)
             }
 
             _lastSyncTimeMillis.value = System.currentTimeMillis()
-            val summary = "${incomingUnits.size} Unit, ${incomingActivities.size} Aktivitas, ${incomingOperators.size} Operator, ${incomingLokasi.size} Lokasi, ${incomingKendala.size} Kendala"
+            val summary = "${unitEntities.size} Unit, ${actEntities.size} Aktivitas, ${opEntities.size} Operator, ${lokasiEntities.size} Lokasi"
             addLog("GET /api/master-data", "GET", "200 OK", summary, true)
 
             Result.success("$message ($summary)")
@@ -547,90 +550,77 @@ class HeavyTrackRepository(
             // 1. Process Master Data
             val master = payload.resolvedMasterData
 
-            // PEMBERSIHAN TABEL LOKAL SQLITE: dao.deleteAll() sesuai arahan sinkronisasi
-            unitDao.deleteAll()
-            masterUnitDao.deleteAll()
-            activityDao.deleteAll()
-            operatorDao.deleteAll()
-            lokasiDao.deleteAll()
-            kendalaDao.deleteAll()
-            database.cleanDumpTruckAndBulldozerDirect()
-            rencanaDao.deleteAll()
-            reportDao.deleteOrphanedReports()
-
-            // 1. Process Master Data Aktif
+            // Units
             val incomingUnits = (master.units ?: emptyList())
                 .filter { com.example.data.model.UnitConstants.isJenisUnitValid(it.resolvedUnitType) }
                 .filter { !it.resolvedStatus.equals("Nonaktif", ignoreCase = true) && !it.resolvedStatus.equals("Inactive", ignoreCase = true) }
-            if (incomingUnits.isNotEmpty()) {
-                val unitEntities = incomingUnits.map {
-                    UnitEntity(
-                        unitCode = it.resolvedUnitCode,
-                        unitType = it.resolvedUnitType,
-                        brandModel = it.resolvedBrandModel,
-                        lastHm = it.resolvedLastHm,
-                        supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
-                        status = it.resolvedStatus,
-                        hmMinStandar = it.resolvedHmMinStandar,
-                        hmMaxStandar = it.resolvedHmMaxStandar,
-                        wilayah = it.resolvedWilayah,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                unitDao.insertUnits(unitEntities)
+            val unitEntities = incomingUnits.map {
+                UnitEntity(
+                    unitCode = it.resolvedUnitCode,
+                    unitType = it.resolvedUnitType,
+                    brandModel = it.resolvedBrandModel,
+                    lastHm = it.resolvedLastHm,
+                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
+                    status = it.resolvedStatus,
+                    hmMinStandar = it.resolvedHmMinStandar,
+                    hmMaxStandar = it.resolvedHmMaxStandar,
+                    wilayah = it.resolvedWilayah,
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            unitDao.replaceAll(unitEntities)
+            database.cleanDumpTruckAndBulldozerDirect()
+            reportDao.deleteOrphanedReports()
 
+            // Activities
             val incomingActivities = master.resolvedActivities
                 .filter { !it.resolvedKategoriStatus.equals("Nonaktif", ignoreCase = true) }
-            if (incomingActivities.isNotEmpty()) {
-                val actEntities = incomingActivities.map {
-                    ActivityMasterEntity(
-                        sapCode = it.resolvedSapCode,
-                        activityName = it.resolvedActivityName,
-                        unitOfMeasure = it.resolvedUnitOfMeasure,
-                        description = it.resolvedDescription,
-                        category = it.resolvedCategory,
-                        kategoriStatus = it.resolvedKategoriStatus,
-                        jenisUnit = it.resolvedJenisUnit,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                activityDao.insertActivities(actEntities)
+            val actEntities = incomingActivities.map {
+                ActivityMasterEntity(
+                    sapCode = it.resolvedSapCode,
+                    activityName = it.resolvedActivityName,
+                    unitOfMeasure = it.resolvedUnitOfMeasure,
+                    description = it.resolvedDescription,
+                    category = it.resolvedCategory,
+                    kategoriStatus = it.resolvedKategoriStatus,
+                    jenisUnit = it.resolvedJenisUnit,
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            activityDao.replaceAll(actEntities)
 
+            // Operators
             val incomingOperators = (master.operators ?: emptyList())
                 .filter { it.resolvedStatus.equals("Aktif", ignoreCase = true) || it.resolvedStatus.equals("Active", ignoreCase = true) || it.resolvedStatus.isBlank() }
-            if (incomingOperators.isNotEmpty()) {
-                val opEntities = incomingOperators.map {
-                    OperatorEntity(
-                        operatorId = it.resolvedOperatorId,
-                        name = it.resolvedName,
-                        badgeNumber = it.resolvedBadgeNumber,
-                        supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
-                        skillLevel = it.resolvedSkillLevel,
-                        status = it.resolvedStatus,
-                        wilayah = it.resolvedWilayah,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                operatorDao.insertOperators(opEntities)
+            val opEntities = incomingOperators.map {
+                OperatorEntity(
+                    operatorId = it.resolvedOperatorId,
+                    name = it.resolvedName,
+                    badgeNumber = it.resolvedBadgeNumber,
+                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
+                    skillLevel = it.resolvedSkillLevel,
+                    status = it.resolvedStatus,
+                    wilayah = it.resolvedWilayah,
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            operatorDao.replaceAll(opEntities)
 
+            // Lokasi
             val incomingLokasi = master.resolvedLokasi
-            if (incomingLokasi.isNotEmpty()) {
-                val lokasiEntities = incomingLokasi.map {
-                    LokasiEntity(
-                        kodeLokasi = it.resolvedKode,
-                        wilayah = it.resolvedWilayah,
-                        luasBruto = it.resolvedLuasBruto,
-                        luasNetto = it.resolvedLuasNetto,
-                        keterangan = it.keterangan ?: "",
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                lokasiDao.insertLokasiList(lokasiEntities)
+            val lokasiEntities = incomingLokasi.map {
+                LokasiEntity(
+                    kodeLokasi = it.resolvedKode,
+                    wilayah = it.resolvedWilayah,
+                    luasBruto = it.resolvedLuasBruto,
+                    luasNetto = it.resolvedLuasNetto,
+                    keterangan = it.keterangan ?: "",
+                    updatedAt = System.currentTimeMillis()
+                )
             }
+            lokasiDao.replaceAll(lokasiEntities)
 
+            // Kendala
             val incomingKendala = master.kendala ?: emptyList()
             if (incomingKendala.isNotEmpty()) {
                 val kendalaEntities = incomingKendala.mapIndexed { index, it ->
@@ -642,23 +632,13 @@ class HeavyTrackRepository(
                         updatedAt = System.currentTimeMillis()
                     )
                 }
-                kendalaDao.insertKendalaList(kendalaEntities)
+                kendalaDao.replaceAll(kendalaEntities)
             }
 
-            // 2. Process Rencana Aktif -> Prune and Upsert into rencana_kerja
+            // 2. Process Rencana Aktif -> ATOMIC CLEAR AND REPLACE via Room DAO
             val incomingRencana = payload.resolvedRencanaAktif
-            val activeServerIds = incomingRencana.mapNotNull { it.numericId.takeIf { id -> id > 0L } }
-            if (activeServerIds.isNotEmpty()) {
-                rencanaDao.deletePrunedRencana(supervisorName, activeServerIds)
-            } else if (incomingRencana.isEmpty() && (payload.master_data != null || payload.masterData != null)) {
-                rencanaDao.clearActiveRencanaForSupervisor(supervisorName)
-            }
-
-            var rencanaUpsertedCount = 0
-            for (renReq in incomingRencana) {
-                val kodeUnitVal = renReq.resolvedUnitKode.takeIf { it.isNotBlank() && it != "UNIT" } ?: renReq.kode_unit ?: continue
-                val existing = rencanaDao.findRencana(supervisorName, kodeUnitVal, tanggal)
-                    ?: rencanaDao.getRencanaByUnit(kodeUnitVal)
+            val rencanaEntities = incomingRencana.mapIndexed { index, renReq ->
+                val kodeUnitVal = renReq.resolvedUnitKode.takeIf { it.isNotBlank() && it != "UNIT" } ?: renReq.kode_unit ?: "UNIT-${index + 1}"
                 val spkNum = renReq.nomor_spk?.trim() ?: ""
                 val spkStatus = when {
                     !renReq.status_spk.isNullOrBlank() -> renReq.status_spk
@@ -667,13 +647,9 @@ class HeavyTrackRepository(
                 }
 
                 val serverId = renReq.numericId
-                if (existing != null && serverId > 0 && existing.id != serverId) {
-                    rencanaDao.deleteRencana(existing.id)
-                }
+                val targetId = if (serverId > 0) serverId else (index + 1).toLong()
 
-                val targetId = if (serverId > 0) serverId else (existing?.id ?: 0L)
-
-                val entity = RencanaKerjaEntity(
+                RencanaKerjaEntity(
                     id = targetId,
                     supervisorName = supervisorName,
                     pengawas = supervisorName,
@@ -693,31 +669,26 @@ class HeavyTrackRepository(
                     statusRealisasi = if (renReq.is_realized == true) "SUDAH" else "BELUM",
                     isRealized = renReq.is_realized ?: false,
                     isSynced = true,
-                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                    createdAt = System.currentTimeMillis() - (index * 1000L),
                     tanggalFormat = renReq.tanggal?.takeIf { it.isNotBlank() } ?: renReq.tanggal_kerja?.takeIf { it.isNotBlank() } ?: tanggal
                 )
-                rencanaDao.insertRencana(entity)
-                rencanaUpsertedCount++
             }
+            rencanaDao.replaceAll(rencanaEntities)
 
-            // 3. Process Riwayat Aktivitas -> Insert / Upsert into activity_reports dengan isSynced = true
+            // 3. Process Riwayat Aktivitas -> ATOMIC CLEAR AND REPLACE (Synced) via Room DAO
             val incomingReports = payload.resolvedRiwayatAktivitas
-            var reportsUpsertedCount = 0
-            for (repReq in incomingReports) {
-                val unitCodeVal = repReq.kode_unit ?: repReq.unit_code ?: continue
+            val reportEntities = incomingReports.mapIndexed { index, repReq ->
+                val unitCodeVal = repReq.kode_unit ?: repReq.unit_code ?: "UNIT"
                 val hmAkhirVal = repReq.hm_akhir ?: 0.0
                 val reportDateVal = repReq.tanggal ?: repReq.report_date ?: tanggal
-                val clientUuidVal = repReq.client_uuid ?: repReq.client_transaction_id ?: "SRV-${supervisorName}-${unitCodeVal}-${hmAkhirVal}-${reportDateVal}"
+                val clientUuidVal = repReq.client_uuid ?: repReq.client_transaction_id ?: "SRV-${supervisorName}-${unitCodeVal}-${hmAkhirVal}-${reportDateVal}-${index}"
+                val targetId = (index + 1).toLong()
 
-                val existingByUuid = reportDao.getReportByUuid(clientUuidVal)
-                val existingByMatch = if (existingByUuid == null) reportDao.findExistingReport(supervisorName, unitCodeVal, hmAkhirVal) else null
-                val existing = existingByUuid ?: existingByMatch
-
-                val entity = ActivityReportEntity(
-                    id = existing?.id ?: 0L,
+                ActivityReportEntity(
+                    id = targetId,
                     clientUuid = clientUuidVal,
                     reportDate = reportDateVal,
-                    supervisorName = supervisorName,
+                    supervisorName = repReq.nama_pengawas ?: repReq.supervisor_name ?: supervisorName,
                     unitCode = unitCodeVal,
                     unitType = repReq.jenis_unit ?: repReq.unit_type ?: "EXCAVATOR",
                     activityName = repReq.nama_aktivitas ?: repReq.activity_name ?: "",
@@ -747,22 +718,17 @@ class HeavyTrackRepository(
                     photoBase64 = repReq.foto_bukti ?: repReq.photo_base64,
                     photoSizeKb = repReq.photo_size_kb,
                     photoDimensions = repReq.photo_dimensions,
-                    isSynced = true, // Flagged is_synced = true agar tidak dianggap tertunda sync
+                    isSynced = true,
                     isHmAwalCorrected = repReq.is_hm_awal_corrected ?: false,
                     alasanKoreksiHm = repReq.alasan_koreksi_hm,
-                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                    createdAt = System.currentTimeMillis() - (index * 1000L),
                     syncedAt = System.currentTimeMillis()
                 )
-                if (existing != null) {
-                    reportDao.updateReport(entity)
-                } else {
-                    reportDao.insertReport(entity)
-                }
-                reportsUpsertedCount++
             }
+            reportDao.replaceAllSynced(reportEntities)
 
             _lastSyncTimeMillis.value = System.currentTimeMillis()
-            val summary = "$rencanaUpsertedCount Rencana Aktif, $reportsUpsertedCount Riwayat disinkronkan"
+            val summary = "${rencanaEntities.size} Rencana Aktif, ${reportEntities.size} Riwayat disinkronkan (Clear & Replace)"
             addLog("GET /api/mobile/bootstrap-data", "GET", "200 OK", summary, true)
             Result.success("$message ($summary)")
         } catch (e: Exception) {
@@ -868,16 +834,12 @@ class HeavyTrackRepository(
      */
     suspend fun fetchAndReplaceActiveRencana(supervisorName: String): Result<Pair<List<RencanaKerjaEntity>, String>> = withContext(Dispatchers.IO) {
         try {
-            // 1. Mekanisme Sinkronisasi Bersih: Kosongkan tabel rencana kerja lokal terlebih dahulu
-            val deletedCount = rencanaDao.deleteAll()
-            android.util.Log.d("HeavyTrackRepository", "Clear & Replace: $deletedCount rencana kerja dibersihkan dari SQLite lokal")
-
-            // 2. Ambil data rencana kerja resmi terbaru dari server
+            // 1. Ambil data rencana kerja resmi terbaru dari server Web Admin (REST API /api/rencana-kerja)
             val (incomingRequests, msg) = apiClientManager.fetchActiveRencanaKerja(supervisorName)
             val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
 
-            // 3. Simpan data rencana kerja resmi terbaru dari server ke Room SQLite
-            val upsertedEntities = mutableListOf<RencanaKerjaEntity>()
+            // 2. Petakan data rencana kerja terbaru dari server
+            val serverEntities = mutableListOf<RencanaKerjaEntity>()
             for ((index, renReq) in incomingRequests.withIndex()) {
                 val kodeUnitVal = renReq.resolvedUnitKode.ifBlank { "UNIT-${index + 1}" }
                 val spkNum = renReq.nomor_spk?.trim() ?: ""
@@ -888,7 +850,7 @@ class HeavyTrackRepository(
                 }
 
                 val serverId = renReq.numericId
-                val targetId = if (serverId > 0) serverId else 0L
+                val targetId = if (serverId > 0) serverId else (index + 1).toLong()
 
                 val entity = RencanaKerjaEntity(
                     id = targetId,
@@ -913,16 +875,18 @@ class HeavyTrackRepository(
                     createdAt = System.currentTimeMillis() - (index * 1000L),
                     tanggalFormat = renReq.tanggal?.takeIf { it.isNotBlank() } ?: renReq.tanggal_kerja?.takeIf { it.isNotBlank() } ?: today
                 )
-
-                val savedId = rencanaDao.insertRencana(entity)
-                upsertedEntities.add(entity.copy(id = if (targetId > 0) targetId else savedId))
+                serverEntities.add(entity)
             }
 
+            // 3. ATOMIC CLEAR AND REPLACE via Room DAO:
+            // JANGAN gunakan upsert biasa. Panggil replaceAll agar data lama yang sudah tidak ada di website otomatis musnah dari Room SQLite lokal.
+            rencanaDao.replaceAll(serverEntities)
+
             _lastSyncTimeMillis.value = System.currentTimeMillis()
-            addLog("GET /api/mobile/rencana-kerja/active", "GET", "200 OK", "${upsertedEntities.size} Rencana Aktif disinkronkan", true)
-            Result.success(Pair(upsertedEntities, msg))
+            addLog("GET /api/rencana-kerja", "GET", "200 OK", "${serverEntities.size} Rencana Kerja Aktif (Clear & Replace)", true)
+            Result.success(Pair(serverEntities, msg))
         } catch (e: Exception) {
-            addLog("GET /api/mobile/rencana-kerja/active", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)
+            addLog("GET /api/rencana-kerja", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)
             Result.failure(e)
         }
     }

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.local.entity.UnitEntity
 import kotlinx.coroutines.flow.Flow
@@ -88,6 +89,12 @@ interface UnitDao {
 
     @Query("DELETE FROM units")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceAll(listBaru: List<UnitEntity>) {
+        deleteAll()
+        insertUnits(listBaru)
+    }
 
     @Query("DELETE FROM units WHERE LOWER(unitType) IN ('dump truck', 'bulldozer') OR LOWER(unitType) LIKE '%dump%' OR LOWER(unitType) LIKE '%bulldozer%'")
     suspend fun deleteDumpTruckAndBulldozer(): Int

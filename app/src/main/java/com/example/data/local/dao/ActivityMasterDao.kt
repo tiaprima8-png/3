@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.local.entity.ActivityMasterEntity
 import kotlinx.coroutines.flow.Flow
@@ -42,4 +43,10 @@ interface ActivityMasterDao {
 
     @Query("DELETE FROM master_activities")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceAll(listBaru: List<ActivityMasterEntity>) {
+        deleteAll()
+        insertActivities(listBaru)
+    }
 }

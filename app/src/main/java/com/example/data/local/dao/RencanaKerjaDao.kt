@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.local.entity.RencanaKerjaEntity
 import kotlinx.coroutines.flow.Flow
@@ -65,6 +66,21 @@ interface RencanaKerjaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRencanaList(list: List<RencanaKerjaEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(list: List<RencanaKerjaEntity>)
+
+    @Transaction
+    suspend fun replaceAll(listBaru: List<RencanaKerjaEntity>) {
+        deleteAll()
+        insertAll(listBaru)
+    }
+
+    @Transaction
+    suspend fun replaceForSupervisor(namaPengawas: String, listBaru: List<RencanaKerjaEntity>) {
+        clearActiveRencanaForSupervisor(namaPengawas)
+        insertAll(listBaru)
+    }
 
     @Update
     suspend fun updateRencana(rencana: RencanaKerjaEntity)

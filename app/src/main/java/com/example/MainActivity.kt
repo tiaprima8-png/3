@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrecisionManufacturing
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
@@ -100,6 +101,7 @@ import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald50
+import com.example.ui.theme.Emerald500
 import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Emerald700
 import com.example.ui.theme.Emerald900
@@ -219,7 +221,7 @@ fun HeavyTrackApp() {
                 val activeSupervisorName by viewModel.activeSupervisor.collectAsState()
 
                 Column {
-                    // Header (Top App Bar) RKCE Ringkas, Bersih, dan Fungsional
+                    // Header (Top App Bar) Deep Blue (#1E3A8A)
                     TopAppBar(
                         title = {
                             Row(
@@ -228,7 +230,7 @@ fun HeavyTrackApp() {
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
-                                    color = Emerald600,
+                                    color = Emerald500,
                                     modifier = Modifier.size(36.dp),
                                     shadowElevation = 2.dp
                                 ) {
@@ -246,17 +248,17 @@ fun HeavyTrackApp() {
                                     Text(
                                         text = "RKCE",
                                         style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.Black,
-                                            color = Slate900,
-                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 18.sp,
                                             letterSpacing = (-0.3).sp
                                         )
                                     )
                                     Text(
                                         text = "Rencana Kerja Civil Engineering",
                                         style = MaterialTheme.typography.bodySmall.copy(
-                                            color = Slate500,
-                                            fontWeight = FontWeight.Medium,
+                                            color = Color.White.copy(alpha = 0.8f),
+                                            fontWeight = FontWeight.Normal,
                                             fontSize = 10.sp
                                         )
                                     )
@@ -264,27 +266,27 @@ fun HeavyTrackApp() {
                             }
                         },
                         actions = {
-                            // 1. Tombol "Unduh APK" versi pembaruan resmi
+                            // 1. Tombol "Unduh APK" (Hijau Emerald, rounded-lg, dengan ikon download putih kecil)
                             Surface(
-                                shape = RoundedCornerShape(20.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = Emerald600,
                                 shadowElevation = 1.dp,
                                 modifier = Modifier
                                     .padding(end = 6.dp)
                                     .height(34.dp)
-                                    .clip(RoundedCornerShape(20.dp))
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable { showDistributionDialog = true }
                                     .testTag("appbar_download_installer_btn")
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Download,
                                         contentDescription = "Unduh APK",
                                         tint = Color.White,
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
@@ -296,68 +298,15 @@ fun HeavyTrackApp() {
                                 }
                             }
 
-                            // 2. Ikon Sinkron / Refresh (berputar saat memproses sync data master terbaru)
-                            val isSyncing = isSyncingMaster || isSyncingPending
-                            val infiniteTransition = rememberInfiniteTransition(label = "sync_spin")
-                            val spinAngle by infiniteTransition.animateFloat(
-                                initialValue = 0f,
-                                targetValue = 360f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(1000, easing = LinearEasing),
-                                    repeatMode = RepeatMode.Restart
-                                ),
-                                label = "sync_angle"
-                            )
-
+                            // 2. Tombol "Keluar" (Putih transparan dengan ikon logout)
                             Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (isSyncing) Emerald100 else Color(0xFFF1F5F9),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (isSyncing) Emerald600 else Slate200
-                                ),
-                                modifier = Modifier
-                                    .padding(end = 6.dp)
-                                    .height(34.dp)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .clickable {
-                                        if (!isSyncing) {
-                                            viewModel.triggerHeaderSync()
-                                        }
-                                    }
-                                    .testTag("appbar_sync_status_chip")
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CloudSync,
-                                        contentDescription = "Sinkronkan Data",
-                                        tint = if (isSyncing) Emerald700 else Slate700,
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .rotate(if (isSyncing) spinAngle else 0f)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (isSyncing) "Sinkron..." else "Sinkron",
-                                        fontSize = 11.sp,
-                                        color = if (isSyncing) Emerald900 else Slate800,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            // 3. Tombol / Ikon "Keluar" (Logout sesi)
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = ErrorRose50,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRose.copy(alpha = 0.35f)),
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White.copy(alpha = 0.15f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
                                 modifier = Modifier
                                     .padding(end = 8.dp)
                                     .height(34.dp)
-                                    .clip(RoundedCornerShape(20.dp))
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable { showLogoutDialog = true }
                                     .testTag("appbar_logout_btn")
                             ) {
@@ -368,139 +317,110 @@ fun HeavyTrackApp() {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Logout,
                                         contentDescription = "Keluar",
-                                        tint = ErrorRose,
+                                        tint = Color.White,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "Keluar",
-                                        color = ErrorRose,
+                                        color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp
                                     )
                                 }
                             }
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = com.example.ui.theme.DeepBlue),
                         modifier = Modifier.testTag("main_app_bar")
                     )
 
-                    // Baris Info Pengguna: Avatar inisial bulat, nama Kasie, serta badge wilayah kerja aktif (contoh: "Agung • Geodesi 1")
-                    Surface(
-                        color = Color(0xFFF8FAFC),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
+                    // 3. DATA PENGGUNA (USER CARD) - Tampil terpisah tepat di bawah Top Bar
+                    val rawSpvName = supervisorSession?.namaLengkap?.ifBlank { null }
+                        ?: supervisorSession?.name
+                        ?: activeSupervisorName
+                    val initials = getInitials(rawSpvName)
+                    val wilayahDisplay = supervisorSession?.wilayah ?: "Geodesi PG1"
+
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .background(com.example.ui.theme.BackgroundGreyBlue)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                             .testTag("active_supervisor_identity_bar")
                     ) {
-                        Row(
+                        Card(
+                            shape = CircleShape,
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(CircleShape)
                                 .clickable { showProfilePopup = true }
-                                .padding(horizontal = 14.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            val rawSpvName = supervisorSession?.namaLengkap?.ifBlank { null }
-                                ?: supervisorSession?.name
-                                ?: activeSupervisorName
-                            val initials = getInitials(rawSpvName)
-                            val isSuperAdmin = supervisorSession?.isSuperAdmin == true
-                            val isMgr = supervisorSession?.isManager == true
-
-                            val avatarBg = when {
-                                isSuperAdmin -> Color(0xFF6366F1)
-                                isMgr -> Color(0xFFF59E0B)
-                                else -> Emerald600
-                            }
-
-                            val wilayahDisplay = supervisorSession?.wilayah ?: "Geodesi 1"
-
                             Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                // Avatar inisial bulat
-                                Surface(
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .testTag("avatar_initials_circle"),
-                                    shape = CircleShape,
-                                    color = avatarBg,
-                                    shadowElevation = 1.dp
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = initials,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 12.sp
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.width(10.dp))
-
-                                Column {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    // Avatar bulat hijau dengan inisial "AG" (teks putih)
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .testTag("avatar_initials_circle"),
+                                        shape = CircleShape,
+                                        color = Emerald600,
+                                        shadowElevation = 1.dp
                                     ) {
-                                        Text(
-                                            text = rawSpvName,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = Slate900
-                                        )
-
-                                        // Badge wilayah kerja aktif (contoh: "Agung • Geodesi 1")
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (isMgr) Color(0xFFFEF3C7) else Emerald100,
-                                            border = androidx.compose.foundation.BorderStroke(
-                                                1.dp,
-                                                if (isMgr) Color(0xFFF59E0B).copy(alpha = 0.5f) else Emerald600.copy(alpha = 0.4f)
-                                            )
-                                        ) {
+                                        Box(contentAlignment = Alignment.Center) {
                                             Text(
-                                                text = if (isMgr) "Manager Operasional" else wilayahDisplay,
-                                                fontSize = 10.sp,
+                                                text = initials.ifBlank { "AG" },
+                                                color = Color.White,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (isMgr) Color(0xFF92400E) else Emerald900,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                fontSize = 12.sp
                                             )
                                         }
                                     }
 
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    // "Agung • Geodesi PG1" (Teks gelap, medium)
                                     Text(
-                                        text = if (isMgr) "Seluruh Wilayah • Monitoring SPK & Analitik" else "Shift ${supervisorSession?.defaultShift ?: "SIANG"} • Realisasi Lapangan",
-                                        fontSize = 10.sp,
-                                        color = Slate500
+                                        text = "$rawSpvName • $wilayahDisplay",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                        color = Slate900
                                     )
                                 }
-                            }
 
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFFECFDF5),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                // Badge "Aktif" (Hijau emerald lembut, teks hijau gelap)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Emerald50,
+                                    modifier = Modifier.padding(start = 6.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .background(Color(0xFF10B981), CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Aktif",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF065F46)
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(Emerald500, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Aktif",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF065F46)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -508,111 +428,117 @@ fun HeavyTrackApp() {
                 }
             },
             bottomBar = {
-                // Bottom Navigation Bar: HANYA Memuat 3 Tab Utama yang Esensial
-                NavigationBar(
-                    containerColor = Color.White,
-                    tonalElevation = 8.dp,
-                    modifier = Modifier.testTag("main_navigation_bar")
-                ) {
-                    // 1. [Formulir] (Input Realisasi Lapangan)
-                    NavigationBarItem(
-                        selected = currentTab == 0,
-                        onClick = {
-                            currentTab = 0
-                            viewModel.autoFetchMasterDataOnResume()
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Assignment,
-                                contentDescription = "Formulir",
-                                modifier = Modifier.size(24.dp)
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = "Formulir",
-                                fontWeight = if (currentTab == 0) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 11.sp
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Emerald900,
-                            selectedTextColor = Emerald900,
-                            indicatorColor = Emerald100,
-                            unselectedIconColor = Slate500,
-                            unselectedTextColor = Slate500
-                        ),
-                        modifier = Modifier.testTag("nav_item_form")
+                // Bottom Navigation Bar: Berlatar putih bersih dengan garis pembatas atas sangat tipis
+                Column {
+                    androidx.compose.material3.HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = Slate200
                     )
+                    NavigationBar(
+                        containerColor = Color.White,
+                        tonalElevation = 0.dp,
+                        modifier = Modifier.testTag("main_navigation_bar")
+                    ) {
+                        // 1. [Formulir] (Ikon clipboard aktif hijau, dengan background chip bulat tipis)
+                        NavigationBarItem(
+                            selected = currentTab == 0,
+                            onClick = {
+                                currentTab = 0
+                                viewModel.autoFetchMasterDataOnResume()
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.Assignment,
+                                    contentDescription = "Formulir",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = "Formulir",
+                                    fontWeight = if (currentTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 11.sp
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Emerald700,
+                                selectedTextColor = Slate900,
+                                indicatorColor = Emerald100,
+                                unselectedIconColor = Slate400,
+                                unselectedTextColor = Slate500
+                            ),
+                            modifier = Modifier.testTag("nav_item_form")
+                        )
 
-                    // 2. [Riwayat] (Log & Monitoring Pekerjaan)
-                    NavigationBarItem(
-                        selected = currentTab == 1,
-                        onClick = { currentTab = 1 },
-                        icon = {
-                            BadgedBox(
-                                badge = {
-                                    if (unsyncedCount > 0) {
-                                        Badge(
-                                            containerColor = WarningAmber,
-                                            contentColor = Slate900
-                                        ) {
-                                            Text("$unsyncedCount", fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                        // 2. [Riwayat] (Ikon jam)
+                        NavigationBarItem(
+                            selected = currentTab == 1,
+                            onClick = { currentTab = 1 },
+                            icon = {
+                                BadgedBox(
+                                    badge = {
+                                        if (unsyncedCount > 0) {
+                                            Badge(
+                                                containerColor = WarningAmber,
+                                                contentColor = Slate900
+                                            ) {
+                                                Text("$unsyncedCount", fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                            }
                                         }
                                     }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = "Riwayat",
+                                        modifier = Modifier.size(22.dp)
+                                    )
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.History,
-                                    contentDescription = "Riwayat",
-                                    modifier = Modifier.size(24.dp)
+                            },
+                            label = {
+                                Text(
+                                    text = "Riwayat",
+                                    fontWeight = if (currentTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 11.sp
                                 )
-                            }
-                        },
-                        label = {
-                            Text(
-                                text = "Riwayat",
-                                fontWeight = if (currentTab == 1) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 11.sp
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Emerald900,
-                            selectedTextColor = Emerald900,
-                            indicatorColor = Emerald100,
-                            unselectedIconColor = Slate500,
-                            unselectedTextColor = Slate500
-                        ),
-                        modifier = Modifier.testTag("nav_item_history")
-                    )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Emerald700,
+                                selectedTextColor = Slate900,
+                                indicatorColor = Emerald100,
+                                unselectedIconColor = Slate400,
+                                unselectedTextColor = Slate500
+                            ),
+                            modifier = Modifier.testTag("nav_item_history")
+                        )
 
-                    // 3. [Analitik] (Grafik & Rangkuman HM/Jam Kerja)
-                    NavigationBarItem(
-                        selected = currentTab == 2,
-                        onClick = { currentTab = 2 },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.BarChart,
-                                contentDescription = "Analitik",
-                                modifier = Modifier.size(24.dp)
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = "Analitik",
-                                fontWeight = if (currentTab == 2) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 11.sp
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Emerald900,
-                            selectedTextColor = Emerald900,
-                            indicatorColor = Emerald100,
-                            unselectedIconColor = Slate500,
-                            unselectedTextColor = Slate500
-                        ),
-                        modifier = Modifier.testTag("nav_item_analytics")
-                    )
+                        // 3. [Analitik] (Ikon grafik batang)
+                        NavigationBarItem(
+                            selected = currentTab == 2,
+                            onClick = { currentTab = 2 },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.BarChart,
+                                    contentDescription = "Analitik",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = "Analitik",
+                                    fontWeight = if (currentTab == 2) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 11.sp
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Emerald700,
+                                selectedTextColor = Slate900,
+                                indicatorColor = Emerald100,
+                                unselectedIconColor = Slate400,
+                                unselectedTextColor = Slate500
+                            ),
+                            modifier = Modifier.testTag("nav_item_analytics")
+                        )
+                    }
                 }
             }
         ) { innerPadding ->

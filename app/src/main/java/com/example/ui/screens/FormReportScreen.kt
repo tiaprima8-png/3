@@ -279,7 +279,7 @@ fun FormReportScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC))
+            .background(com.example.ui.theme.BackgroundGreyBlue)
             .testTag("form_report_screen"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -292,7 +292,7 @@ fun FormReportScreen(
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     modifier = Modifier.fillMaxWidth().testTag("card_shift_progress_tracker")
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -305,7 +305,7 @@ fun FormReportScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = if (fleetProgress.isAllCompleted) Emerald100 else Color(0xFFFEF3C7),
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(38.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
@@ -316,12 +316,12 @@ fun FormReportScreen(
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
                                         text = "Progres Input Unit",
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
+                                        fontSize = 15.sp,
                                         color = Slate900
                                     )
                                     Text(
@@ -332,31 +332,33 @@ fun FormReportScreen(
                                 }
                             }
 
-                            // Badge status progres
+                            // Badge status progres: misal "0% TEREALISASI" dengan latar kuning/oranye lembut
+                            val pct = (fleetProgress.progressPercentage * 100).toInt()
+                            val badgeText = if (fleetProgress.isAllCompleted) "100% SELESAI" else "$pct% TEREALISASI"
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = CircleShape,
                                 color = if (fleetProgress.isAllCompleted) Emerald100 else Color(0xFFFEF3C7)
                             ) {
                                 Text(
-                                    text = if (fleetProgress.isAllCompleted) "100% SELESAI" else "${(fleetProgress.progressPercentage * 100).toInt()}% TEREALISASI",
+                                    text = badgeText,
                                     color = if (fleetProgress.isAllCompleted) Emerald900 else Color(0xFF92400E),
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                        // Progress bar visual (hijau jika 100% selesai, kuning jika masih ada unit tertunda)
+                        // Progress bar tipis (linear) dengan warna tracking abu-abu muda dan indicator hijau
                         androidx.compose.material3.LinearProgressIndicator(
                             progress = { fleetProgress.progressPercentage },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = if (fleetProgress.isAllCompleted) Emerald600 else Color(0xFFF59E0B),
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = Emerald600,
                             trackColor = Color(0xFFE2E8F0)
                         )
 
@@ -3021,106 +3023,90 @@ fun FormReportScreen(
         // TAMPILAN AWAL TAB FORMULIR: TOMBOL BUAT RENCANA & DAFTAR RENCANA KERJA YANG SUDAH DIBUAT
         // ==========================================
         if (!isInputRealisasiOpen && !showNewPlanForm) {
-            // 1. KARTU AKSI UTAMA: BUAT RENCANA KERJA
+            // 1. TOMBOL AKSI UTAMA
             item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("card_penugasan_berjalan_header")
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    // TOMBOL UTAMA BESAR: "+ Buat Rencana Kerja Baru" (Hijau emerald solid, rounded-xl, tinggi 48.dp, bayangan halus)
+                    Button(
+                        onClick = { showNewPlanForm = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Emerald600,
+                            contentColor = Color.White
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("btn_buat_rencana_utama")
+                            .testTag("btn_tambah_rencana_baru")
                     ) {
-                        // TOMBOL UTAMA BESAR: "+ BUAT RENCANA KERJA BARU"
-                        Button(
-                            onClick = { showNewPlanForm = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Emerald600,
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .testTag("btn_buat_rencana_utama")
-                                .testTag("btn_tambah_rencana_baru")
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Buat Rencana Kerja Baru",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "+ Buat Rencana Kerja Baru",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
-                        // Tombol Sekunder: Tarik Rencana dari Server
-                        OutlinedButton(
-                            onClick = { viewModel.syncActivePlansFromServer() },
-                            shape = RoundedCornerShape(10.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Slate300),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(38.dp)
-                                .testTag("btn_tarik_rencana_server")
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Slate700, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Tarik Rencana Terbaru dari Web Admin",
-                                fontSize = 12.sp,
-                                color = Slate700,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                    // TOMBOL SEKUNDER: "Tarik Rencana Terbaru" (Outline/border tipis hijau, latar belakang putih/transparan)
+                    OutlinedButton(
+                        onClick = { viewModel.syncActivePlansFromServer() },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.White,
+                            contentColor = Emerald700
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Emerald600),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("btn_tarik_rencana_server")
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Emerald600, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Tarik Rencana Terbaru",
+                            fontSize = 13.sp,
+                            color = Emerald700,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
 
-            // 2. HEADER DAFTAR RENCANA KERJA MENUNGGU REALISASI
+            // 2. SEKSI DAFTAR RENCANA KERJA MENUNGGU REALISASI
             item {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Rencana Kerja Menunggu Realisasi",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp,
-                                color = Slate900
-                            )
-                            Text(
-                                text = "Daftar tugas lapangan aktif yang belum selesai dikerjakan",
-                                fontSize = 11.sp,
-                                color = Slate500
-                            )
-                        }
+                    Text(
+                        text = "Rencana Kerja Menunggu Realisasi",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = Slate900
+                    )
 
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (activeRencanaList.isNotEmpty()) Color(0xFFFEF3C7) else Color(0xFFF1F5F9),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (activeRencanaList.isNotEmpty()) Color(0xFFFDE68A) else Slate200
-                            )
-                        ) {
-                            Text(
-                                text = "${activeRencanaList.size} Menunggu",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (activeRencanaList.isNotEmpty()) Color(0xFF92400E) else Slate700,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
-                            )
-                        }
+                    val waitingCount = if (activeRencanaList.isNotEmpty()) activeRencanaList.size else 0
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFFFEF3C7)
+                    ) {
+                        Text(
+                            text = "$waitingCount Menunggu",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF92400E),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
                     }
                 }
             }
@@ -3606,205 +3592,184 @@ fun PendingAssignmentCard(
             .testTag("pending_assignment_card_${rencana.id}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header: Kode Unit, Model, Badge Operasi
+            // Header kartu: "HEH0013" (Bold, besar) di kiri, dan badge "OPERASI" di kanan (Abu-abu/biru muda lembut)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = rencana.kodeUnit,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Slate900,
-                            fontSize = 18.sp
-                        )
+                Text(
+                    text = rencana.kodeUnit,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Slate900,
+                        fontSize = 20.sp
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFF1F5F9)
-                    ) {
-                        Text(
-                            text = "HE",
-                            color = Slate700,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
+                )
 
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (rencana.statusUnit == "OPERASI") Emerald50 else Color(0xFFFEF3C7),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (rencana.statusUnit == "OPERASI") Emerald200 else Color(0xFFFDE68A)
-                    )
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFF1F5F9)
                 ) {
                     Text(
-                        text = rencana.statusUnit,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (rencana.statusUnit == "OPERASI") Emerald900 else Color(0xFFB45309),
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                        text = rencana.statusUnit.ifBlank { "OPERASI" },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF334155),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
             }
 
-            // Status SPK Badge
+            // Badge status: "Menunggu SPK Admin (SPK Menyusul)" berlatar kuning lembut, memanjang di bawah kode HEH0013
             Surface(
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = if (isUnitSpkTerbit) Color(0xFFDCFCE7) else Color(0xFFFEF3C7),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (isUnitSpkTerbit) Color(0xFF86EFAC) else Color(0xFFFDE68A)
-                )
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = if (isUnitSpkTerbit) Icons.Default.CheckCircle else Icons.Default.Schedule,
                         contentDescription = null,
                         tint = if (isUnitSpkTerbit) Color(0xFF166534) else Color(0xFFB45309),
-                        modifier = Modifier.size(12.dp)
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(modifier = Modifier.width(5.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (isUnitSpkTerbit)
                             "SPK: ${rencana.nomorSpk} (Terbit Resmi)"
                         else
                             "Menunggu SPK Admin (SPK Menyusul)",
                         color = if (isUnitSpkTerbit) Color(0xFF166534) else Color(0xFF92400E),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
 
-            // Info Penugasan Grid
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFFF8FAFC),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
+            // List Detail (Operator, Lokasi, Aktivitas):
+            // Gunakan ikon monokrom/bulat tipis di sebelah kiri tiap baris.
+            // Teks rapi dan berjarak (gunakan spacer yang pas).
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                // Baris 1: Operator
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFFF1F5F9),
+                        modifier = Modifier.size(28.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.Person, contentDescription = null, tint = Emerald600, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Operator: ${rencana.operator}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Slate800,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                        Surface(shape = RoundedCornerShape(4.dp), color = Emerald50) {
-                            Text(
-                                text = "Shift ${rencana.shiftKerja}",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Emerald900,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Operator",
+                                tint = Slate600,
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Operator: ${rencana.operator}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Slate800
+                    )
+                }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                // Baris 2: Lokasi
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFFF1F5F9),
+                        modifier = Modifier.size(28.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = Emerald600, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Lokasi: ${rencana.kodeLokasi}",
-                                fontSize = 11.sp,
-                                color = Slate600,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = "Lokasi",
+                                tint = Slate600,
+                                modifier = Modifier.size(15.dp)
                             )
                         }
-                        Text(
-                            text = rencana.tanggalFormat,
-                            fontSize = 10.sp,
-                            color = Slate500
-                        )
                     }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Lokasi: ${rencana.kodeLokasi} • Wilayah ${rencana.wilayah ?: "Geodesi PG1"}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Slate700
+                    )
+                }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                // Baris 3: Aktivitas
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFFF1F5F9),
+                        modifier = Modifier.size(28.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.Assignment, contentDescription = null, tint = Emerald600, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Aktivitas: ${rencana.namaAktivitas.ifBlank { rencana.sapCode }}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Slate800,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Assignment,
+                                contentDescription = "Aktivitas",
+                                tint = Slate600,
+                                modifier = Modifier.size(15.dp)
                             )
                         }
-                        if (rencana.sapCode.isNotBlank()) {
-                            Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFF1F5F9)) {
-                                Text(
-                                    text = "SAP: ${rencana.sapCode}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Slate600,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
                     }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Aktivitas: ${rencana.namaAktivitas.ifBlank { rencana.sapCode }}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Slate800
+                    )
                 }
             }
 
-            // Tombol Jelas: "Input Realisasi"
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Tombol Bawah: "Input Realisasi" (Hijau emerald solid, memenuhi lebar kartu, rounded-xl, tinggi 44.dp)
             Button(
                 onClick = onInputRealisasi,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Emerald600,
                     contentColor = Color.White
                 ),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp)
                     .testTag("btn_input_realisasi_${rencana.id}")
             ) {
-                Icon(Icons.Default.TaskAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Input Realisasi", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Input Realisasi",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

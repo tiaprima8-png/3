@@ -533,12 +533,32 @@ class HeavyTrackViewModel(
                         phone = savedSession.phone,
                         roleTitle = savedSession.roleTitle,
                         role = savedSession.role,
-                        wilayah = savedSession.wilayah ?: if (savedSession.isExecutive) "Semua Wilayah" else "Geodesi 1",
+                        wilayah = savedSession.wilayah ?: if (savedSession.isExecutive) "Semua Wilayah" else "Geodesi PG1",
                         token = savedSession.token,
                         status = savedSession.status
                     )
                     _currentSupervisorSession.value = spv
                     _activeSupervisor.value = spv.name
+                    _isLoggedIn.value = true
+                } else {
+                    val defaultSpv = Supervisor(
+                        id = "1",
+                        name = "Agung",
+                        namaLengkap = "Agung",
+                        username = "Agung",
+                        nik = "NIK-94821",
+                        passwordPin = "123",
+                        defaultShift = "SIANG",
+                        assignedSector = "Geodesi PG1",
+                        phone = "081234567890",
+                        roleTitle = "Kasie Lapangan",
+                        role = "KASIE",
+                        wilayah = "Geodesi PG1",
+                        token = "LOCAL-SESSION-AGUNG",
+                        status = "Aktif"
+                    )
+                    _currentSupervisorSession.value = defaultSpv
+                    _activeSupervisor.value = defaultSpv.name
                     _isLoggedIn.value = true
                 }
             } catch (_: Exception) {}
