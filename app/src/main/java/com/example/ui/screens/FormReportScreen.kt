@@ -1377,8 +1377,6 @@ fun FormReportScreen(
                                                 )
                                             }
                                         }
-
-                                        }
                                     }
                                 }
                             }
@@ -2974,7 +2972,7 @@ fun FormReportScreen(
                                         hasIncompleteKendala -> "Lengkapi Baris Kendala yang Diisi"
                                         realisasiState.isRefuelLitersMissing -> "Isi Jumlah Liter Pengisian BBM"
                                         realisasiState.isSolarConsumptionNegative -> "Konsumsi Solar Negatif (Periksa Stik)"
-                                        !isSpkTerbit -> "Kirim Realisasi Kerja (SPK Menyusul)"
+                                        !realisasiState.isSpkTerbit -> "Kirim Realisasi Kerja (SPK Menyusul)"
                                         else -> "Kirim Realisasi Kerja (Selesai)"
                                     },
                                     fontWeight = FontWeight.Bold,
