@@ -127,7 +127,7 @@ class ApiClientManager(val context: Context) {
         }
 
     var useSimulationFallback: Boolean
-        get() = prefs.getBoolean(KEY_USE_MOCK_FALLBACK, true)
+        get() = prefs.getBoolean(KEY_USE_MOCK_FALLBACK, false)
         set(value) = prefs.edit().putBoolean(KEY_USE_MOCK_FALLBACK, value).apply()
 
     private val moshi = Moshi.Builder()
@@ -140,8 +140,15 @@ class ApiClientManager(val context: Context) {
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
+        .writeTimeout(12, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                .header("Pragma", "no-cache")
+                .build()
+            chain.proceed(request)
+        }
         .addInterceptor(loggingInterceptor)
         .build()
 
@@ -299,6 +306,7 @@ class ApiClientManager(val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.w("ApiClientManager", "Live getMobileBootstrapData error: ${e.message}")
+            throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
         }
 
         if (useSimulationFallback) {
@@ -307,9 +315,7 @@ class ApiClientManager(val context: Context) {
             return@withContext Pair(converted, "Web Admin remote tidak merespons. Menggunakan data sinkronisasi terpadu lokal.")
         }
 
-        val simResponse = CompanyServerSimulator.getMobileBootstrapResponse(supervisorName, tanggal)
-        val converted = parseCentralizedBootstrapPayload(simResponse.data, supervisorName, tanggal)
-        Pair(converted, "Data master terpadu berhasil disinkronkan.")
+        throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
     }
 
     private fun parseCentralizedBootstrapPayload(
@@ -1099,7 +1105,7 @@ class ApiClientManager(val context: Context) {
             }
             if (!matchedUser.isAktif) {
                 return@withContext LoginResult.Error(
-                    "Akun '${matchedUser.resolvedNamaLengkap}' berstatus Nonaktif di Website Admin. Silakan hubungi Super Admin untuk mengaktifkan kembali."
+                    "Akun tidak terdaftar atau telah dinonaktifkan oleh Admin."
                 )
             }
         }

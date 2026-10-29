@@ -1082,9 +1082,33 @@ class HeavyTrackViewModel(
             }
 
             result.onSuccess { summary ->
-                _uiEvents.emit(UiMessage.Success("Sinkronisasi Selesai: $summary"))
+                _uiEvents.emit(UiMessage.Success("Data aplikasi berhasil disinkronkan."))
             }.onFailure { err ->
-                _uiEvents.emit(UiMessage.Info("Mode Offline: ${err.message ?: "Data dimuat dari SQLite lokal"}"))
+                _uiEvents.emit(UiMessage.Error("Gagal terhubung ke Web Admin. Periksa koneksi internet."))
+            }
+        }
+    }
+
+    fun forceSyncWithServer() {
+        viewModelScope.launch {
+            _isSyncingMaster.value = true
+            val nowMs = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+            val currentSupervisor = _activeSupervisor.value
+
+            val pendingCount = repository.getUnsyncedCountValue()
+            if (pendingCount > 0) {
+                _isSyncingPending.value = true
+                repository.syncAllPendingOperationalData()
+                _isSyncingPending.value = false
+            }
+
+            val result = repository.fetchBootstrapData(currentSupervisor, nowMs)
+            _isSyncingMaster.value = false
+
+            result.onSuccess { summary ->
+                _uiEvents.emit(UiMessage.Success("Data aplikasi berhasil disinkronkan."))
+            }.onFailure { err ->
+                _uiEvents.emit(UiMessage.Error("Gagal terhubung ke Web Admin. Periksa koneksi internet."))
             }
         }
     }

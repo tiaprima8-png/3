@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.BarChart
@@ -271,6 +273,51 @@ fun HeavyTrackApp() {
                             }
                         },
                         actions = {
+                            // 0. Tombol "Sinkronisasi Cepat" (🔄 dengan animasi rotasi 360 derajat)
+                            val infiniteTransition = rememberInfiniteTransition(label = "sync_spin")
+                            val syncAngle by infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 360f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(1000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                ),
+                                label = "sync_angle"
+                            )
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White.copy(alpha = 0.18f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                                modifier = Modifier
+                                    .padding(end = 6.dp)
+                                    .height(34.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { viewModel.forceSyncWithServer() }
+                                    .testTag("appbar_quick_sync_btn")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Sync,
+                                        contentDescription = "Sinkronisasi Data",
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .graphicsLayer { rotationZ = if (isSyncingMaster) syncAngle else 0f }
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isSyncingMaster) "Sinkron..." else "Sinkron",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
                             // 1. Tombol "Unduh APK" (Hijau Emerald, rounded-lg, dengan ikon download putih kecil)
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
