@@ -2,6 +2,7 @@ package com.example.data.remote
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.model.SupervisorDirectory
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -31,7 +32,10 @@ interface CompanyApiService {
     suspend fun getRencanaKerja(): Response<ResponseBody>
 
     @GET("api/mobile/bootstrap-data")
-    suspend fun getMobileBootstrapData(): Response<ResponseBody>
+    suspend fun getMobileBootstrapData(
+        @Query("pengawas") pengawas: String? = null,
+        @Query("tanggal") tanggal: String? = null
+    ): Response<ResponseBody>
 
     @GET("api/mobile/bootstrap-data")
     suspend fun getBootstrapData(
@@ -214,7 +218,6 @@ class ApiClientManager(val context: Context) {
                 return@withContext Pair(data, "Berhasil sinkron master data dari Web Admin API (${response.code()})")
             }
         } catch (e: Exception) {
-            // If real network fails and fallback is enabled, use simulator
             if (useSimulationFallback) {
                 val simResponse = CompanyServerSimulator.fetchMasterData(supervisor)
                 return@withContext Pair(
@@ -222,12 +225,10 @@ class ApiClientManager(val context: Context) {
                     "Web Admin remote tidak merespons (${e.localizedMessage}). Menggunakan data sinkronisasi lokal."
                 )
             }
-            throw e
+            throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
         }
 
-        // Fallback to local simulator
-        val simResponse = CompanyServerSimulator.fetchMasterData(supervisor)
-        Pair(simResponse.data ?: MasterDataPayload(), "Data master berhasil disinkronkan.")
+        throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
     }
 
     suspend fun fetchMasterUnit(supervisor: String? = null): Pair<List<UnitPayload>, String> = withContext(Dispatchers.IO) {
@@ -250,11 +251,10 @@ class ApiClientManager(val context: Context) {
                     "Web Admin remote tidak merespons (${e.localizedMessage}). Menggunakan data sinkronisasi lokal."
                 )
             }
-            throw e
+            throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
         }
 
-        val simResp = CompanyServerSimulator.getMasterUnit(supervisor)
-        Pair(simResp.data ?: emptyList(), "Master unit berhasil disinkronkan.")
+        throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
     }
 
     suspend fun fetchBootstrapData(pengawas: String, tanggal: String): Pair<BootstrapDataPayload, String> = withContext(Dispatchers.IO) {
@@ -276,11 +276,10 @@ class ApiClientManager(val context: Context) {
                     "Web Admin remote tidak merespons (${e.localizedMessage}). Menggunakan data sinkronisasi lokal."
                 )
             }
-            throw e
+            throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
         }
 
-        val simResponse = CompanyServerSimulator.fetchBootstrapData(pengawas, tanggal)
-        Pair(simResponse.data ?: BootstrapDataPayload(), "Data bootstrap operasional berhasil disinkronkan.")
+        throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
     }
 
     /**
@@ -296,13 +295,20 @@ class ApiClientManager(val context: Context) {
         }
 
         try {
-            val response = apiService.getMobileBootstrapData()
+            val response = apiService.getMobileBootstrapData(
+                pengawas = supervisorName.ifBlank { null },
+                tanggal = tanggal.ifBlank { null }
+            )
             if (response.isSuccessful && response.body() != null) {
                 val bodyStr = response.body()!!.string()
                 val parsed = parseCentralizedBootstrapJson(bodyStr, supervisorName, tanggal)
-                if (parsed != null && (parsed.units.isNotEmpty() || parsed.users.isNotEmpty())) {
+                if (parsed != null && (parsed.units.isNotEmpty() || parsed.users.isNotEmpty() || parsed.aktivitas.isNotEmpty())) {
                     return@withContext Pair(parsed, "Berhasil sinkron seluruh data master dari Web Admin (${response.code()} OK)")
+                } else {
+                    android.util.Log.e("ApiClientManager", "Parsed bootstrap data returned empty dataset from Web Admin! Body length: ${bodyStr.length}")
                 }
+            } else {
+                android.util.Log.w("ApiClientManager", "Web Admin response unsuccesful: ${response.code()} ${response.message()}")
             }
         } catch (e: Exception) {
             android.util.Log.w("ApiClientManager", "Live getMobileBootstrapData error: ${e.message}")
@@ -483,15 +489,23 @@ class ApiClientManager(val context: Context) {
         return try {
             val root = JSONObject(trimmed)
             val dataObj = root.optJSONObject("data") ?: root
+            val masterDataObj = root.optJSONObject("master_data") ?: dataObj.optJSONObject("master_data")
 
-            // 1. Users
-            val userList = mutableListOf<com.example.data.local.entity.UserEntity>()
-            val userArr = dataObj.optJSONArray("users")
-            if (userArr != null) {
-                for (i in 0 until userArr.length()) {
-                    val u = userArr.optJSONObject(i) ?: continue
+            // 1. Users & Kasie (Gabungkan master_data.users dan master_data.kasie)
+            val userMap = mutableMapOf<String, com.example.data.local.entity.UserEntity>()
+            val userArrays = listOfNotNull(
+                masterDataObj?.optJSONArray("users"),
+                dataObj.optJSONArray("users"),
+                root.optJSONArray("users"),
+                masterDataObj?.optJSONArray("kasie"),
+                dataObj.optJSONArray("kasie"),
+                root.optJSONArray("kasie")
+            )
+            for (arr in userArrays) {
+                for (i in 0 until arr.length()) {
+                    val u = arr.optJSONObject(i) ?: continue
                     val uname = optStringFirst(u, "username").removePrefix("@").trim()
-                    if (uname.isBlank()) continue
+                    if (uname.isBlank() || userMap.containsKey(uname.lowercase())) continue
                     val status = optStringFirst(u, "status").ifBlank { "Aktif" }
                     val statusAktif = u.opt("status_aktif")
                     val isAktif = when (statusAktif) {
@@ -503,41 +517,52 @@ class ApiClientManager(val context: Context) {
                     val nama = optStringFirst(u, "nama_lengkap", "name").ifBlank { uname }
                     val role = optStringFirst(u, "role", "hak_akses").uppercase()
                     val wil = optStringFirst(u, "wilayah").ifBlank { "Geodesi PG1" }
-                    userList.add(
-                        com.example.data.local.entity.UserEntity(
-                            username = uname,
-                            id = optStringFirst(u, "id").ifBlank { (i + 1).toString() },
-                            token = "SYNC-$uname",
-                            name = nama,
-                            namaLengkap = nama,
-                            nik = uname,
-                            role = if (role.contains("SUPER")) "SUPER ADMIN" else if (role.contains("MANAGER")) "MANAGER" else "KASIE",
-                            roleTitle = if (role.contains("SUPER")) "Super Admin" else if (role.contains("MANAGER")) "Manager Operasional" else "Kasie Lapangan",
-                            wilayah = wil,
-                            status = "Aktif",
-                            isActiveSession = false,
-                            lastLoginAt = System.currentTimeMillis()
-                        )
+                    userMap[uname.lowercase()] = com.example.data.local.entity.UserEntity(
+                        username = uname,
+                        id = optStringFirst(u, "id").ifBlank { (userMap.size + 1).toString() },
+                        token = "SYNC-$uname",
+                        name = nama,
+                        namaLengkap = nama,
+                        nik = uname,
+                        role = if (role.contains("SUPER")) "SUPER ADMIN" else if (role.contains("MANAGER")) "MANAGER" else "KASIE",
+                        roleTitle = if (role.contains("SUPER")) "Super Admin" else if (role.contains("MANAGER")) "Manager Operasional" else "Kasie Lapangan",
+                        wilayah = wil,
+                        status = "Aktif",
+                        isActiveSession = false,
+                        lastLoginAt = System.currentTimeMillis()
                     )
                 }
             }
+            val userList = userMap.values.toList()
 
-            // 2. Units (with kasie_penanggung_jawab)
+            // 2. Units (Mendukung master_data.unit, master_data.units, dll)
             val unitList = mutableListOf<com.example.data.local.entity.UnitEntity>()
-            val unitArr = dataObj.optJSONArray("units")
+            val unitArr = masterDataObj?.optJSONArray("unit")
+                ?: masterDataObj?.optJSONArray("units")
+                ?: dataObj.optJSONArray("units")
+                ?: dataObj.optJSONArray("unit")
+                ?: root.optJSONArray("unit")
+                ?: root.optJSONArray("units")
             if (unitArr != null) {
                 for (i in 0 until unitArr.length()) {
                     val un = unitArr.optJSONObject(i) ?: continue
                     val code = optStringFirst(un, "kode_unit", "unit_code", "unitCode")
                     if (code.isBlank()) continue
-                    val uType = optStringFirst(un, "jenis_unit", "unit_type", "unitType").ifBlank { "Excavator Standar" }
+                    val uType = optStringFirst(un, "model_unit", "brand_model", "jenis_unit", "unit_type", "unitType").ifBlank { "Excavator Standar" }
                     if (!com.example.data.model.UnitConstants.isJenisUnitValid(uType)) continue
+                    val statusAktif = un.opt("status_aktif")
+                    val isAktif = when (statusAktif) {
+                        is Boolean -> statusAktif
+                        is Number -> statusAktif.toInt() == 1
+                        else -> true
+                    }
+                    if (!isAktif) continue
                     val status = optStringFirst(un, "status").ifBlank { "OPERASIONAL" }
                     if (status.equals("Nonaktif", ignoreCase = true) || status.equals("Inactive", ignoreCase = true)) continue
-                    val kasieSpv = optStringFirst(un, "kasie_penanggung_jawab", "nama_pengawas", "supervisor_assigned", "supervisorAssigned").ifBlank { supervisorName }
+                    val kasieSpv = optStringFirst(un, "kasie", "nama_pengawas", "kasie_penanggung_jawab", "supervisor_assigned", "supervisorAssigned").ifBlank { supervisorName }
                     val wil = optStringFirst(un, "wilayah").ifBlank { "Geodesi PG1" }
                     val brand = optStringFirst(un, "brand_model", "model_unit", "brandModel")
-                    val lastHm = un.optDouble("last_hm", un.optDouble("hm_unit_terakhir_diinputkan", 0.0))
+                    val lastHm = un.optDouble("hm_terakhir", un.optDouble("hm_unit_terakhir_diinputkan", un.optDouble("last_hm", 0.0)))
                     val minHm = un.optDouble("hm_min_standar", if (uType.contains("Compactor") || uType.contains("Grader")) 5.0 else 6.0)
                     val maxHm = un.optDouble("hm_max_standar", if (uType.contains("Compactor") || uType.contains("Grader")) 8.5 else 10.0)
                     unitList.add(
@@ -557,19 +582,25 @@ class ApiClientManager(val context: Context) {
                 }
             }
 
-            // 3. Operators
+            // 3. Operators (Mendukung master_data.operator, master_data.operators, dll)
             val opList = mutableListOf<com.example.data.local.entity.OperatorEntity>()
-            val opArr = dataObj.optJSONArray("operators")
+            val opArr = masterDataObj?.optJSONArray("operator")
+                ?: masterDataObj?.optJSONArray("operators")
+                ?: dataObj.optJSONArray("operators")
+                ?: dataObj.optJSONArray("operator")
+                ?: root.optJSONArray("operator")
+                ?: root.optJSONArray("operators")
             if (opArr != null) {
                 for (i in 0 until opArr.length()) {
                     val op = opArr.optJSONObject(i) ?: continue
                     val name = optStringFirst(op, "nama_operator", "name", "nama")
                     if (name.isBlank()) continue
-                    val status = optStringFirst(op, "status").ifBlank { "AKTIF" }
+                    val isAktif = op.optInt("status_aktif", 1) == 1
+                    val status = optStringFirst(op, "status").ifBlank { if (isAktif) "AKTIF" else "NONAKTIF" }
                     if (!status.equals("AKTIF", ignoreCase = true) && !status.equals("ACTIVE", ignoreCase = true)) continue
-                    val opId = optStringFirst(op, "operator_id", "operatorId", "nik").ifBlank { "OPR-${i + 1}" }
-                    val badge = optStringFirst(op, "badge_number", "badgeNumber", "nik").ifBlank { "NIK-${i + 1}" }
-                    val spv = optStringFirst(op, "kasie_penanggung_jawab", "kasiePenanggungJawab", "kasie", "nama_pengawas", "supervisor_assigned", "supervisorAssigned").ifBlank { supervisorName }
+                    val opId = optStringFirst(op, "nik", "operator_id", "operatorId", "id").ifBlank { "OPR-${i + 1}" }
+                    val badge = optStringFirst(op, "nik", "badge_number", "badgeNumber").ifBlank { "NIK-${i + 1}" }
+                    val spv = optStringFirst(op, "kasie", "nama_pengawas", "kasie_penanggung_jawab", "kasiePenanggungJawab", "supervisor_assigned", "supervisorAssigned").ifBlank { supervisorName }
                     val skill = optStringFirst(op, "jabatan", "skill_level", "skillLevel").ifBlank { "Class A" }
                     val wil = optStringFirst(op, "wilayah").ifBlank { "Geodesi PG1" }
                     opList.add(
@@ -588,17 +619,21 @@ class ApiClientManager(val context: Context) {
                 }
             }
 
-            // 4. Aktivitas
+            // 4. Aktivitas (Mendukung master_data.aktivitas, master_data.activities, dll)
             val actList = mutableListOf<com.example.data.local.entity.ActivityMasterEntity>()
-            val actArr = dataObj.optJSONArray("aktivitas") ?: dataObj.optJSONArray("activities")
+            val actArr = masterDataObj?.optJSONArray("aktivitas")
+                ?: masterDataObj?.optJSONArray("activities")
+                ?: dataObj.optJSONArray("aktivitas")
+                ?: dataObj.optJSONArray("activities")
+                ?: root.optJSONArray("aktivitas")
             if (actArr != null) {
                 for (i in 0 until actArr.length()) {
                     val a = actArr.optJSONObject(i) ?: continue
-                    val sap = optStringFirst(a, "kode_sap", "sap_code", "sapCode")
+                    val sap = optStringFirst(a, "kode_sap", "sap_code", "sapCode", "id")
                     if (sap.isBlank()) continue
                     val name = optStringFirst(a, "nama_aktivitas", "activity_name", "activityName").ifBlank { sap }
-                    val katStatus = optStringFirst(a, "kategori_status", "kategoriStatus").ifBlank { "OPERASI" }
-                    if (katStatus.equals("Nonaktif", ignoreCase = true)) continue
+                    val katStatus = optStringFirst(a, "kategori_status", "status_unit", "kategoriStatus").ifBlank { "OPERASI" }
+                    if (katStatus.equals("Nonaktif", ignoreCase = true) || a.optInt("status_aktif", 1) == 0) continue
                     val sat = optStringFirst(a, "satuan", "unit_of_measure", "unitOfMeasure").ifBlank { "m3" }
                     val desc = optStringFirst(a, "description", "keterangan")
                     val cat = optStringFirst(a, "kategori", "category").ifBlank { "PRODUKSI" }
@@ -618,13 +653,15 @@ class ApiClientManager(val context: Context) {
                 }
             }
 
-            // 5. Kendala
+            // 5. Kendala (Mendukung master_data.kendala)
             val kndList = mutableListOf<com.example.data.local.entity.KendalaEntity>()
-            val kndArr = dataObj.optJSONArray("kendala")
+            val kndArr = masterDataObj?.optJSONArray("kendala")
+                ?: dataObj.optJSONArray("kendala")
+                ?: root.optJSONArray("kendala")
             if (kndArr != null) {
                 for (i in 0 until kndArr.length()) {
                     val k = kndArr.optJSONObject(i) ?: continue
-                    val kode = optStringFirst(k, "kode_kendala", "kode", "id_kendala").ifBlank { "${i + 1}.0" }
+                    val kode = optStringFirst(k, "kode_kendala", "kode", "id_kendala").ifBlank { "${k.optInt("id", i + 1)}.0" }
                     val nama = optStringFirst(k, "nama_kendala", "nama").ifBlank { "Kendala $kode" }
                     val cat = optStringFirst(k, "kategori").ifBlank { "OPERASIONAL" }
                     val desc = optStringFirst(k, "deskripsi", "keterangan")
@@ -640,9 +677,12 @@ class ApiClientManager(val context: Context) {
                 }
             }
 
-            // 6. Lokasi
+            // 6. Lokasi (Mendukung master_data.lokasi)
             val lokList = mutableListOf<com.example.data.local.entity.LokasiEntity>()
-            val lokArr = dataObj.optJSONArray("lokasi") ?: dataObj.optJSONArray("locations")
+            val lokArr = masterDataObj?.optJSONArray("lokasi")
+                ?: masterDataObj?.optJSONArray("locations")
+                ?: dataObj.optJSONArray("lokasi")
+                ?: root.optJSONArray("lokasi")
             if (lokArr != null) {
                 for (i in 0 until lokArr.length()) {
                     val l = lokArr.optJSONObject(i) ?: continue
@@ -651,7 +691,7 @@ class ApiClientManager(val context: Context) {
                     val bruto = l.optDouble("luas_bruto", 0.0)
                     val netto = l.optDouble("luas_netto", 0.0)
                     val ket = optStringFirst(l, "keterangan")
-                    val stat = optStringFirst(l, "status").ifBlank { "Aktif" }
+                    val stat = if (l.optInt("status_aktif", 1) == 1) "Aktif" else optStringFirst(l, "status").ifBlank { "Aktif" }
                     lokList.add(
                         com.example.data.local.entity.LokasiEntity(
                             kodeLokasi = kode,
@@ -974,19 +1014,7 @@ class ApiClientManager(val context: Context) {
 
     suspend fun fetchMasterUsers(): Pair<List<UserApiPayload>, String> = withContext(Dispatchers.IO) {
         if (CompanyServerSimulator.isSimulatedOffline) {
-            val localList = com.example.data.model.SupervisorDirectory.predefinedSupervisors.map { spv ->
-                UserApiPayload(
-                    id = spv.id,
-                    nama_lengkap = spv.namaLengkap,
-                    username = spv.username,
-                    hak_akses = spv.roleTitle,
-                    role = spv.role,
-                    wilayah = spv.wilayah,
-                    status_aktif = if (spv.isAktif) 1 else 0,
-                    status = spv.status
-                )
-            }
-            return@withContext Pair(localList, "Mode Offline: Data master pengguna lokal")
+            throw java.io.IOException("Mode Offline Lapangan aktif: Data diambil dari SQLite lokal")
         }
 
         try {
@@ -998,6 +1026,7 @@ class ApiClientManager(val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.w("ApiClientManager", "fetchMasterUsers error: ${e.message}")
+            throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
         }
 
         try {
@@ -1010,29 +1039,14 @@ class ApiClientManager(val context: Context) {
                     return@withContext Pair(list, "Berhasil sinkron ${list.size} pengguna dari Master Data Web Admin")
                 }
             }
-        } catch (e: Exception) {
-            android.util.Log.w("ApiClientManager", "fetchMasterData fallback error: ${e.message}")
-        }
+        } catch (_: Exception) {}
 
-        val localList = com.example.data.model.SupervisorDirectory.predefinedSupervisors.map { spv ->
-            UserApiPayload(
-                id = spv.id,
-                nama_lengkap = spv.namaLengkap,
-                username = spv.username,
-                hak_akses = spv.roleTitle,
-                role = spv.role,
-                wilayah = spv.wilayah,
-                status_aktif = if (spv.isAktif) 1 else 0,
-                status = spv.status
-            )
-        }
-        Pair(localList, "Menggunakan data master pengguna tersimpan lokal.")
+        throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
     }
 
     suspend fun executeLogin(username: String, password: String): LoginResult = withContext(Dispatchers.IO) {
         val rawUsername = username.trim()
         val cleanUsername = rawUsername.removePrefix("@").trim()
-        val cleanBaseUsername = cleanUsername.replace(Regex("\\d+$"), "").trim()
         val trimmedPassword = password.trim()
 
         if (cleanUsername.isBlank()) {
@@ -1042,167 +1056,128 @@ class ApiClientManager(val context: Context) {
             return@withContext LoginResult.Error("Silakan masukkan Password / PIN")
         }
 
-        // 1. Ambil data master user terbaru dari Web Admin (https://1-portalce.ai.studio/api/users)
-        var allUsers = emptyList<UserApiPayload>()
-        try {
-            val userResp = apiService.getUsers()
-            if (userResp.isSuccessful && userResp.body() != null) {
-                allUsers = userResp.body()!!
-                com.example.data.model.SupervisorDirectory.updateFromApiUsers(allUsers)
-            }
-        } catch (_: Exception) {}
-
-        if (allUsers.isEmpty()) {
-            try {
-                val mdResp = apiService.getMasterData()
-                if (mdResp.isSuccessful && mdResp.body()?.data != null) {
-                    val md = mdResp.body()!!.data!!
-                    allUsers = if (!md.users.isNullOrEmpty()) md.users!! else (md.kasie ?: emptyList())
-                    if (allUsers.isNotEmpty()) {
-                        com.example.data.model.SupervisorDirectory.updateFromApiUsers(allUsers)
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        // Cocokkan input pengguna secara fleksibel (mendukung username dengan/tanpa @, nama_lengkap, huruf besar/kecil, atau tanpa angka belakang seperti 'yono' -> 'yono1')
-        val matchedFromApi = allUsers.find {
-            it.resolvedUsername.equals(cleanUsername, ignoreCase = true) ||
-            it.resolvedNamaLengkap.equals(cleanUsername, ignoreCase = true)
-        } ?: allUsers.find {
-            cleanBaseUsername.isNotBlank() && (
-                it.resolvedUsername.replace(Regex("\\d+$"), "").equals(cleanBaseUsername, ignoreCase = true) ||
-                it.resolvedNamaLengkap.replace(Regex("\\d+$"), "").equals(cleanBaseUsername, ignoreCase = true)
-            )
-        } ?: allUsers.find {
-            cleanUsername.length >= 3 && (
-                it.resolvedUsername.startsWith(cleanUsername, ignoreCase = true) ||
-                it.resolvedNamaLengkap.startsWith(cleanUsername, ignoreCase = true)
-            )
-        }
-
-        val matchedFromDirectory = com.example.data.model.SupervisorDirectory.findUserByUsername(cleanUsername)
-        val matchedUser: UserApiPayload? = matchedFromApi ?: matchedFromDirectory?.let {
-            UserApiPayload(
-                id = it.id,
-                nama_lengkap = it.namaLengkap,
-                username = it.username,
-                password = it.passwordPin,
-                hak_akses = it.roleTitle,
-                role = it.role,
-                wilayah = it.wilayah,
-                status_aktif = if (it.isAktif) 1 else 0,
-                status = it.status
-            )
-        }
-
-        // Validasi awal Role & Status jika user ditemukan di Master Data
-        if (matchedUser != null) {
-            if (matchedUser.isExecutive) {
-                return@withContext LoginResult.Error(
-                    "Akses Ditolak: Akun '${matchedUser.resolvedNamaLengkap}' adalah ${matchedUser.resolvedRole} (Akses Khusus Web Admin). Aplikasi mobile RKCE ini khusus untuk Kasie Lapangan."
-                )
-            }
-            if (!matchedUser.isAktif) {
-                return@withContext LoginResult.Error(
-                    "Akun tidak terdaftar atau telah dinonaktifkan oleh Admin."
-                )
-            }
-        }
-
-        // Jika mode simulasi offline aktif, langsung gunakan simulator lokal
+        // Jika mode simulasi offline aktif secara manual
         if (CompanyServerSimulator.isSimulatedOffline) {
-            return@withContext CompanyServerSimulator.authenticate(matchedUser?.resolvedUsername ?: cleanUsername, trimmedPassword)
+            return@withContext CompanyServerSimulator.authenticate(cleanUsername, trimmedPassword)
         }
 
-        // 2. Autentikasi ke endpoint Web Admin Portal CE: POST /api/auth/login menggunakan canonical username
-        val canonicalUsername = matchedUser?.resolvedUsername?.ifBlank { cleanUsername } ?: cleanUsername
-        var authResponseCode = 0
-        var authResponseBody: String? = null
+        // 1. Kirim autentikasi langsung ke server Web Admin
+        val loginReq = LoginRequest(cleanUsername, trimmedPassword)
+        val authReq = AuthLoginRequest(cleanUsername, trimmedPassword)
+
+        var statusCode = 0
+        var responseBodyStr: String? = null
+        var isNetworkError = false
+
         try {
-            val authReq = AuthLoginRequest(canonicalUsername, trimmedPassword)
-            val authResp = apiService.authLogin(authReq)
-            authResponseCode = authResp.code()
-            if (authResp.isSuccessful && authResp.body() != null) {
-                authResponseBody = authResp.body()!!.string()
-            } else if (authResp.errorBody() != null) {
-                authResponseBody = authResp.errorBody()!!.string()
+            // Coba POST /api/login terlebih dahulu
+            val resp = apiService.login(loginReq)
+            statusCode = resp.code()
+            responseBodyStr = if (resp.isSuccessful) resp.body()?.string() else resp.errorBody()?.string()
+
+            // Jika /api/login 404, coba endpoint alternatif POST /api/auth/login
+            if (statusCode == 404) {
+                val authResp = apiService.authLogin(authReq)
+                statusCode = authResp.code()
+                responseBodyStr = if (authResp.isSuccessful) authResp.body()?.string() else authResp.errorBody()?.string()
             }
         } catch (e: Exception) {
-            android.util.Log.w("ApiClientManager", "Live authLogin network error: ${e.message}")
+            isNetworkError = true
+            android.util.Log.w("ApiClientManager", "Login network exception: ${e.message}")
         }
 
-        // KASUS 1: HTTP 200 dari server
-        if (authResponseCode == 200 && !authResponseBody.isNullOrBlank()) {
-            val bodyUpper = authResponseBody.uppercase()
-            val isBodyExecutive = (bodyUpper.contains("\"SUPER ADMIN\"") || bodyUpper.contains("\"SUPER_ADMIN\"") || bodyUpper.contains("\"MANAGER\"")) &&
-                matchedUser?.isKasie != true
-            if (matchedUser?.isExecutive == true || isBodyExecutive) {
-                return@withContext LoginResult.Error(
-                    "Akses Ditolak: Akun Super Admin & Manager hanya dapat digunakan pada Website Portal Admin (https://1-portalce.ai.studio/). Aplikasi mobile RKCE ini khusus untuk Kasie Lapangan."
-                )
-            }
-            if (matchedUser != null && matchedUser.isKasie && matchedUser.isAktif) {
+        // Jika server menolak autentikasi karena akun tidak ada atau salah password
+        if (statusCode == 401 || statusCode == 404) {
+            return@withContext LoginResult.Error("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
+        }
+
+        // Jika status HTTP 403 Forbidden dari Web Admin
+        if (statusCode == 403) {
+            val bodyLower = (responseBodyStr ?: "").lowercase()
+            // Server website menolak akun Kasie di website portal dan secara eksplisit mengarahkan ke Aplikasi Android RKCE Mobile:
+            // "Akses ditolak: Hanya Super Admin dan Manager yang berhak login ke website portal ini. Akun Kasie/Pengawas lapangan hanya dapat digunakan pada aplikasi Android HeavyTrack Mobile."
+            if (bodyLower.contains("aplikasi android") || bodyLower.contains("kasie") || bodyLower.contains("pengawas") || bodyLower.contains("heavytrack")) {
+                val foundKasie = SupervisorDirectory.findUserByUsername(cleanUsername)
+                val nama = foundKasie?.resolvedNamaLengkap ?: cleanUsername.replaceFirstChar { it.uppercase() }
+                val wil = foundKasie?.wilayah ?: "RC PG1"
+                val uid = foundKasie?.id ?: "37"
+
                 return@withContext LoginResult.Success(
-                    token = "JWT-MOBILE-${System.currentTimeMillis()}",
+                    token = "JWT-MOBILE-KASIE-${uid}-${System.currentTimeMillis()}",
                     user = UserProfileDto(
-                        id = matchedUser.numericOrStringId,
-                        nama_lengkap = matchedUser.resolvedNamaLengkap,
-                        username = matchedUser.resolvedUsername,
+                        id = uid,
+                        nama_lengkap = nama,
+                        username = cleanUsername,
                         role = "KASIE",
-                        wilayah = matchedUser.wilayah ?: "Geodesi PG1",
+                        wilayah = wil,
                         status = "Aktif"
                     ),
                     message = "Login berhasil sebagai Kasie Lapangan"
                 )
             }
+
+            if (bodyLower.contains("nonaktif") || bodyLower.contains("inactive")) {
+                return@withContext LoginResult.Error("Akun '${cleanUsername}' berstatus Nonaktif di Website Admin.")
+            }
+
+            return@withContext LoginResult.Error("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
         }
 
-        // KASUS 2: HTTP 403 (Kredensial Password Kasie Valid di Database Server Web Admin)
-        val isKasieAuthenticatedByServer = authResponseCode == 403 &&
-                (authResponseBody?.contains("Akses ditolak", ignoreCase = true) == true ||
-                 authResponseBody?.contains("HeavyTrack Mobile", ignoreCase = true) == true ||
-                 authResponseBody?.contains("Kasie", ignoreCase = true) == true)
+        // Jika login server berhasil (HTTP 200)
+        if (statusCode == 200 && !responseBodyStr.isNullOrBlank()) {
+            try {
+                val jsonObj = JSONObject(responseBodyStr)
+                val userObj = jsonObj.optJSONObject("user") ?: jsonObj.optJSONObject("data") ?: jsonObj
+                val role = (userObj.optString("role", "").ifBlank { userObj.optString("hak_akses", "") }).uppercase()
 
-        if (isKasieAuthenticatedByServer && matchedUser != null) {
-            val userProfile = UserProfileDto(
-                id = matchedUser.numericOrStringId,
-                nama_lengkap = matchedUser.resolvedNamaLengkap,
-                username = matchedUser.resolvedUsername,
-                role = "KASIE",
-                wilayah = matchedUser.wilayah ?: "Geodesi PG1",
-                status = "Aktif"
-            )
-            return@withContext LoginResult.Success(
-                token = "JWT-MOBILE-${System.currentTimeMillis()}",
-                user = userProfile,
-                message = "Login berhasil sebagai Kasie Lapangan"
-            )
+                // Cek apakah akun adalah Executive (Super Admin / Manager)
+                if (role.contains("SUPER") || role.contains("MANAGER")) {
+                    return@withContext LoginResult.Error(
+                        "Akses Ditolak: Akun Super Admin & Manager hanya dapat digunakan pada Website Portal Admin (https://1-portalce.ai.studio/). Aplikasi mobile RKCE ini khusus untuk Kasie Lapangan."
+                    )
+                }
+
+                val status = userObj.optString("status", "Aktif")
+                val statusAktif = userObj.opt("status_aktif")
+                val isAktif = when (statusAktif) {
+                    is Boolean -> statusAktif
+                    is Number -> statusAktif.toInt() == 1
+                    else -> !status.equals("Nonaktif", ignoreCase = true) && !status.equals("Inactive", ignoreCase = true)
+                }
+
+                if (!isAktif) {
+                    return@withContext LoginResult.Error("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
+                }
+
+                val uname = userObj.optString("username", cleanUsername).removePrefix("@")
+                val nama = userObj.optString("nama_lengkap", userObj.optString("name", uname)).ifBlank { uname }
+                val wil = userObj.optString("wilayah", "Geodesi PG1").ifBlank { "Geodesi PG1" }
+                val uid = userObj.optString("id", (userObj.optLong("id", 1L)).toString())
+                val token = jsonObj.optString("token", "JWT-MOBILE-${System.currentTimeMillis()}")
+
+                return@withContext LoginResult.Success(
+                    token = token,
+                    user = UserProfileDto(
+                        id = uid,
+                        nama_lengkap = nama,
+                        username = uname,
+                        role = "KASIE",
+                        wilayah = wil,
+                        status = "Aktif"
+                    ),
+                    message = "Login berhasil sebagai Kasie Lapangan"
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("ApiClientManager", "Parse login response error: ${e.message}")
+            }
         }
 
-        // KASUS 3: Resolusi fleksibel melalui direktori pengguna Master Data yang telah disinkronkan
-        val (localMatch, localError) = com.example.data.model.SupervisorDirectory.authenticateKasie(cleanUsername, trimmedPassword)
-        if (localMatch != null) {
-            return@withContext LoginResult.Success(
-                token = "LOCAL-JWT-${System.currentTimeMillis()}",
-                user = UserProfileDto(
-                    id = localMatch.userId,
-                    nama_lengkap = localMatch.namaLengkap,
-                    username = localMatch.username,
-                    role = localMatch.role,
-                    wilayah = localMatch.wilayah,
-                    status = localMatch.status
-                ),
-                message = "Login berhasil sebagai Kasie Lapangan"
-            )
-        } else if (localError != null) {
-            return@withContext LoginResult.Error(localError)
+        // Jika respons server selain 200/401/404/403 (tetapi server terhubung)
+        if (!isNetworkError && statusCode != 0) {
+            return@withContext LoginResult.Error("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
         }
 
-        if (authResponseCode == 401) {
-            return@withContext LoginResult.Error("Username atau kata sandi tidak sesuai dengan data Website Admin.")
-        }
-
-        return@withContext LoginResult.Error("Gagal Masuk: Akun tidak terdaftar atau kata sandi salah di Website Admin.")
+        // Jika network error (koneksi gagal/timeout)
+        return@withContext LoginResult.Error("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
     }
 }

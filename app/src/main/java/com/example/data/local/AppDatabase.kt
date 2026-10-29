@@ -63,11 +63,11 @@ abstract class AppDatabase : RoomDatabase() {
     fun aktivitasDao(): ActivityMasterDao = activityMasterDao()
 
     @androidx.room.Transaction
-    open suspend fun syncAllMasterData(bootstrap: com.example.data.remote.BootstrapResponseData) {
+    open suspend fun refreshLocalCacheOnly(bootstrap: com.example.data.remote.BootstrapResponseData) {
         val currentUser = userDao().getActiveUser()
         val activeUsername = currentUser?.username
 
-        // 1. Kosongkan seluruh tabel master lokal
+        // 1. Kosongkan seluruh tabel master lokal (Room SQLite only)
         userDao().deleteAll()
         unitDao().deleteAll()
         operatorDao().deleteAll()
@@ -108,10 +108,19 @@ abstract class AppDatabase : RoomDatabase() {
         userDao().insertAll(mappedUsers)
         unitDao().insertAll(bootstrap.units)
         operatorDao().insertAll(bootstrap.operators)
-        aktivitasDao().insertAll(bootstrap.aktivitas)
+        bootstrap.aktivitas.chunked(250).forEach { chunk ->
+            aktivitasDao().insertAll(chunk)
+        }
         kendalaDao().insertAll(bootstrap.kendala)
-        lokasiDao().insertAll(bootstrap.lokasi)
+        bootstrap.lokasi.chunked(250).forEach { chunk ->
+            lokasiDao().insertAll(chunk)
+        }
         rencanaKerjaDao().insertAll(sanitizedRencana)
+    }
+
+    @androidx.room.Transaction
+    open suspend fun syncAllMasterData(bootstrap: com.example.data.remote.BootstrapResponseData) {
+        refreshLocalCacheOnly(bootstrap)
     }
 
     fun cleanDumpTruckAndBulldozerDirect() {

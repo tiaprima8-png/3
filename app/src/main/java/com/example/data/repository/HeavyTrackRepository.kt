@@ -272,198 +272,8 @@ class HeavyTrackRepository(
         try {
             fetchMasterData(activeSupervisor)
         } catch (_: Exception) {
-            val initialUnits = listOf(
-                UnitEntity("HEH0004", "Excavator Mini", "Kubota U50-5", 6.0, activeSupervisor, "OPERASIONAL", 6.0, 10.5, "Geodesi PG1"),
-                UnitEntity("HEH0013", "Excavator Standar", "Komatsu PC200-8", 12.0, activeSupervisor, "OPERASIONAL", 6.0, 10.0, "Geodesi PG1"),
-                UnitEntity("HEH0015", "Excavator Standar", "Kobelco SK200", 25.0, activeSupervisor, "OPERASIONAL", 6.0, 10.0, "Geodesi PG1"),
-                UnitEntity("HEH0029", "Excavator Long Arm", "Caterpillar 320D Long Arm", 18.0, activeSupervisor, "OPERASIONAL", 6.0, 10.0, "Geodesi PG1"),
-                UnitEntity("SCC0001", "Compactor", "Bomag BW211 D-40", 15.0, activeSupervisor, "OPERASIONAL", 5.0, 8.5, "Geodesi PG1"),
-                UnitEntity("EXC-09", "Excavator Standar", "Hitachi ZX210-5G", 3990.2, "Zainudin", "OPERASIONAL", 6.0, 10.0, "Geodesi PG2"),
-                UnitEntity("GRD-02", "Motor Grader", "CAT 140M", 2300.0, "Zainudin", "OPERASIONAL", 5.0, 9.0, "Geodesi PG2"),
-                UnitEntity("CMP-02", "Compactor", "Sakai SV520", 1750.0, "Jaidi", "OPERASIONAL", 5.0, 8.5, "Geodesi PG3")
-            )
-            unitDao.insertUnits(initialUnits)
-
-            val initialActivities = listOf(
-                ActivityMasterEntity("ACT-SAP-101", "Galian Tanah Lunak", "m3", "Galian area cut", "PRODUKSI", "OPERASI", "Excavator Standar"),
-                ActivityMasterEntity("ACT-SAP-102", "Pekerjaan Parit & Saluran", "m3", "Saluran drainase", "PRODUKSI", "OPERASI", "Excavator Mini"),
-                ActivityMasterEntity("ACT-SAP-103", "Pekerjaan Slope Long Arm", "m3", "Lereng cuting", "PRODUKSI", "OPERASI", "Excavator Long Arm"),
-                ActivityMasterEntity("ACT-SAP-201", "Pemadatan Subgrade", "m2", "Pemadatan jalan & disposal", "SUPPORT", "OPERASI", "Compactor"),
-                ActivityMasterEntity("ACT-SAP-202", "Grading Mainroad Tambang", "m", "Perawatan jalan", "INFRASTRUKTUR", "OPERASI", "Motor Grader"),
-                ActivityMasterEntity("ACT-SAP-STB-01", "Standby Hujan / Cuaca Buruk", "jam", "Hambatan cuaca buruk / licin", "STANDBY", "STANDBY", "ALL"),
-                ActivityMasterEntity("ACT-SAP-STB-02", "Standby Tunggu Trailler", "jam", "Menunggu lowbed mobilisasi", "STANDBY", "STANDBY", "ALL"),
-                ActivityMasterEntity("ACT-SAP-BDN-01", "Breakdown Kerusakan Unit", "jam", "Perbaikan kerusakan mekanikal", "BREAKDOWN", "BREAKDOWN", "ALL")
-            )
-            activityDao.insertActivities(initialActivities)
-
-            val initialOperators = listOf(
-                OperatorEntity("OPR-001", "Ahmad Fauzi", "NIK-94821", activeSupervisor, "Class A - Excavator", "AKTIF", "Geodesi PG1"),
-                OperatorEntity("OPR-002", "Bambang Sudrajat", "NIK-88234", "Agus Wijaya", "Class A - Compactor", "AKTIF", "Geodesi PG2"),
-                OperatorEntity("OPR-003", "Dedi Supriyadi", "NIK-77412", "Rudi Hermawan", "Class A - Grader", "AKTIF", "RC PG1"),
-                OperatorEntity("OPR-004", "Suryanto", "NIK-99120", activeSupervisor, "Class A - Excavator Mini", "AKTIF", "Geodesi PG1"),
-                OperatorEntity("OPR-005", "Hasan Basri", "NIK-55101", "Dedi Irawan", "Grader Operator", "AKTIF", "RC PG1"),
-                OperatorEntity("OPR-006", "Bayu Nugroho", "NIK-55104", "Ilham Saputra", "Compactor Operator", "AKTIF", "LEBUNG PG12")
-            )
-            operatorDao.insertOperators(initialOperators)
-
-            val initialLokasi = listOf(
-                LokasiEntity("001A", "Geodesi PG1", 10.5, 8.2, "Area Front Utama"),
-                LokasiEntity("002B", "Geodesi PG1", 14.0, 11.5, "Disposal North"),
-                LokasiEntity("100A", "Geodesi PG2", 20.0, 16.8, "Pit Cut Site B"),
-                LokasiEntity("101B", "Geodesi PG2", 18.5, 15.0, "Loading Area 2"),
-                LokasiEntity("201C", "RC PG1", 25.0, 21.4, "Hauling Route South"),
-                LokasiEntity("301D", "RC PG1", 15.0, 12.0, "Pit West Front"),
-                LokasiEntity("401G", "LEBUNG PG12", 30.0, 26.0, "Lebung Wetland Area"),
-                LokasiEntity("MAINROAD-01", "Geodesi PG1", 30.0, 28.0, "Jalan Tambang Utama")
-            )
-            lokasiDao.insertLokasiList(initialLokasi)
-
-            val initialKendala = listOf(
-                KendalaEntity(kodeKendala = "1.0", namaKendala = "Antar - jemput", kategori = "OPERASIONAL", deskripsi = "Mobilisasi personel antar - jemput"),
-                KendalaEntity(kodeKendala = "2.0", namaKendala = "Cek unit, Implement Pemanasan mesin", kategori = "OPERASIONAL", deskripsi = "P2H dan pemanasan unit"),
-                KendalaEntity(kodeKendala = "3.0", namaKendala = "Transport", kategori = "OPERASIONAL", deskripsi = "Transport unit ke front kerja"),
-                KendalaEntity(kodeKendala = "4.0", namaKendala = "Kerja", kategori = "OPERASIONAL", deskripsi = "Aktivitas kerja"),
-                KendalaEntity(kodeKendala = "5.0", namaKendala = "Istirahat", kategori = "OPERASIONAL", deskripsi = "Istirahat operator"),
-                KendalaEntity(kodeKendala = "6.0", namaKendala = "Perbaikan Unit", kategori = "MEKANIKAL", deskripsi = "Perbaikan kerusakan unit"),
-                KendalaEntity(kodeKendala = "7.0", namaKendala = "Perbaikan Implement", kategori = "MEKANIKAL", deskripsi = "Perbaikan attachment/implement"),
-                KendalaEntity(kodeKendala = "8.0", namaKendala = "Perawatan Unit", kategori = "MEKANIKAL", deskripsi = "Servis berkala unit"),
-                KendalaEntity(kodeKendala = "9.0", namaKendala = "Perawatan Implement", kategori = "MEKANIKAL", deskripsi = "Perawatan attachment/implement"),
-                KendalaEntity(kodeKendala = "10.0", namaKendala = "Ganti Implement", kategori = "OPERASIONAL", deskripsi = "Ganti attachment unit"),
-                KendalaEntity(kodeKendala = "11.0", namaKendala = "Tunggu Solar", kategori = "LOGISTIK", deskripsi = "Menunggu pengisian bahan bakar"),
-                KendalaEntity(kodeKendala = "12.0", namaKendala = "Tunggu Mekanik", kategori = "MEKANIKAL", deskripsi = "Menunggu kedatangan mekanik"),
-                KendalaEntity(kodeKendala = "13.0", namaKendala = "Tunggu Trailler", kategori = "LOGISTIK", deskripsi = "Menunggu lowbed / trailler"),
-                KendalaEntity(kodeKendala = "14.0", namaKendala = "Tunggu Lokasi", kategori = "OPERASIONAL", deskripsi = "Menunggu kesiapan front kerja"),
-                KendalaEntity(kodeKendala = "15.0", namaKendala = "Tunggu Cuaca", kategori = "CUACA", deskripsi = "Menunggu cuaca membaik / hujan / slippery")
-            )
-            kendalaDao.clearAll()
-            kendalaDao.insertKendalaList(initialKendala)
-
-            val sampleReports = listOf(
-                ActivityReportEntity(
-                    id = 201L,
-                    clientUuid = "SEED-REP-01",
-                    reportDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()),
-                    supervisorName = "Agung",
-                    unitCode = "HEH0013",
-                    unitType = "Excavator Standar",
-                    activityName = "Galian Tanah Lunak",
-                    sapCode = "ACT-SAP-101",
-                    unitOfMeasure = "m3",
-                    operatorName = "Ahmad Fauzi",
-                    workLocation = "001A",
-                    wilayah = "Geodesi PG1",
-                    shift = "SIANG",
-                    workDurationHours = 8.0,
-                    hmAwal = 4125.5,
-                    hmAkhir = 4133.5,
-                    hmDailyRunning = 8.0,
-                    workOutput = 450.0,
-                    notes = "Operasi lancar cuaca cerah",
-                    unitStatus = "OPERASI",
-                    isRefueled = true,
-                    fuelLiters = 180.0,
-                    isSynced = true
-                ),
-                ActivityReportEntity(
-                    id = 202L,
-                    clientUuid = "SEED-REP-02",
-                    reportDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()),
-                    supervisorName = "Agus Wijaya",
-                    unitCode = "EXC-09",
-                    unitType = "Excavator Standar",
-                    activityName = "Galian Tanah Lunak",
-                    sapCode = "ACT-SAP-101",
-                    unitOfMeasure = "m3",
-                    operatorName = "Bambang Sudrajat",
-                    workLocation = "100A",
-                    wilayah = "Geodesi PG2",
-                    shift = "SIANG",
-                    workDurationHours = 7.5,
-                    hmAwal = 3982.7,
-                    hmAkhir = 3990.2,
-                    hmDailyRunning = 7.5,
-                    workOutput = 380.0,
-                    notes = "Galian pit B",
-                    unitStatus = "OPERASI",
-                    isRefueled = true,
-                    fuelLiters = 140.0,
-                    isSynced = true
-                ),
-                ActivityReportEntity(
-                    id = 203L,
-                    clientUuid = "SEED-REP-03",
-                    reportDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()),
-                    supervisorName = "Rudi Hermawan",
-                    unitCode = "CMP-02",
-                    unitType = "Compactor",
-                    activityName = "Pemadatan Subgrade",
-                    sapCode = "ACT-SAP-201",
-                    unitOfMeasure = "m2",
-                    operatorName = "Dedi Supriyadi",
-                    workLocation = "201C",
-                    wilayah = "RC PG1",
-                    shift = "SIANG",
-                    workDurationHours = 6.0,
-                    hmAwal = 1744.0,
-                    hmAkhir = 1750.0,
-                    hmDailyRunning = 6.0,
-                    workOutput = 950.0,
-                    notes = "Pemadatan jalan hauling",
-                    unitStatus = "OPERASI",
-                    isRefueled = true,
-                    fuelLiters = 85.0,
-                    isSynced = true
-                ),
-                ActivityReportEntity(
-                    id = 204L,
-                    clientUuid = "SEED-REP-04",
-                    reportDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()),
-                    supervisorName = "Agus Wijaya",
-                    unitCode = "GRD-02",
-                    unitType = "Motor Grader",
-                    activityName = "Grading Mainroad Tambang",
-                    sapCode = "ACT-SAP-202",
-                    unitOfMeasure = "m",
-                    operatorName = "Joko Susilo",
-                    workLocation = "101B",
-                    wilayah = "Geodesi PG2",
-                    shift = "SIANG",
-                    workDurationHours = 5.0,
-                    hmAwal = 2295.0,
-                    hmAkhir = 2300.0,
-                    hmDailyRunning = 5.0,
-                    workOutput = 1100.0,
-                    notes = "Grading area front loading",
-                    unitStatus = "OPERASI",
-                    isRefueled = false,
-                    isSynced = true
-                )
-            )
-            reportDao.insertReports(sampleReports)
-
-            val initialPlan = RencanaKerjaEntity(
-                id = 1L,
-                supervisorName = activeSupervisor,
-                pengawas = activeSupervisor,
-                statusUnit = "OPERASI",
-                kodeUnit = "HEH0013",
-                operator = "Ahmad Fauzi",
-                sapCode = "ACT-SAP-101",
-                namaAktivitas = "Galian Tanah Lunak",
-                satuanAktivitas = "m3",
-                kodeLokasi = "001A",
-                wilayah = "Geodesi PG1",
-                shiftKerja = "SIANG",
-                keterangan = "Penggalian front cut site A",
-                nomorSpk = "",
-                statusSpk = "MENUNGGU_SPK",
-                statusTahap = "RENCANA",
-                isRealized = false,
-                statusRealisasi = "BELUM",
-                isSynced = true,
-                tanggalFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-            )
-            rencanaDao.insertRencana(initialPlan)
+            // JANGAN pernah menimpa Room SQLite dengan 12 user/39 unit/107 aktivitas tiruan.
+            // Biarkan data lokal SQLite yang ada tetap tampil apa adanya.
         }
     }
 
@@ -564,20 +374,25 @@ class HeavyTrackRepository(
             Result.success("$message ($summary)")
         } catch (e: Exception) {
             addLog("GET /api/master-data", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)
-            Result.failure(e)
+            Result.failure(Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet."))
         }
     }
 
     @androidx.room.Transaction
-    suspend fun syncAllMasterData(bootstrap: BootstrapResponseData) = withContext(Dispatchers.IO) {
-        // 1. Eksekusi transaksi Clear and Replace Room di SQLite
-        database.syncAllMasterData(bootstrap)
+    suspend fun refreshLocalCacheOnly(bootstrap: BootstrapResponseData) = withContext(Dispatchers.IO) {
+        // Eksekusi transaksi Clear and Replace Room HANYA di SQLite internal perangkat Android
+        database.refreshLocalCacheOnly(bootstrap)
         database.cleanDumpTruckAndBulldozerDirect()
         reportDao.deleteOrphanedReports()
 
         _lastSyncTimeMillis.value = System.currentTimeMillis()
         val summary = "${bootstrap.users.size} Pengguna, ${bootstrap.units.size} Unit, ${bootstrap.operators.size} Operator, ${bootstrap.aktivitas.size} Aktivitas, ${bootstrap.kendala.size} Kendala, ${bootstrap.lokasi.size} Lokasi, ${bootstrap.rencanaKerja.size} Rencana"
         addLog("GET /api/mobile/bootstrap-data", "GET", "200 OK", "Clear & Replace: $summary", true)
+    }
+
+    @androidx.room.Transaction
+    suspend fun syncAllMasterData(bootstrap: BootstrapResponseData) = withContext(Dispatchers.IO) {
+        refreshLocalCacheOnly(bootstrap)
     }
 
     suspend fun syncBootstrapData(supervisorName: String, tanggal: String): Result<String> = withContext(Dispatchers.IO) {
@@ -587,12 +402,11 @@ class HeavyTrackRepository(
     suspend fun fetchBootstrapData(supervisorName: String, tanggal: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             val (bootstrapData, message) = apiClientManager.fetchCentralizedBootstrap(supervisorName, tanggal)
-            syncAllMasterData(bootstrapData)
-            val summary = "${bootstrapData.users.size} Pengguna, ${bootstrapData.units.size} Unit, ${bootstrapData.operators.size} Operator, ${bootstrapData.aktivitas.size} Aktivitas, ${bootstrapData.kendala.size} Kendala, ${bootstrapData.lokasi.size} Lokasi, ${bootstrapData.rencanaKerja.size} Rencana"
-            Result.success("$message ($summary)")
+            refreshLocalCacheOnly(bootstrapData)
+            Result.success("Data aplikasi berhasil disinkronkan.")
         } catch (e: Exception) {
             addLog("GET /api/mobile/bootstrap-data", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)
-            Result.failure(e)
+            Result.failure(Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet."))
         }
     }
 

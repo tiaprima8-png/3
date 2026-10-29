@@ -102,6 +102,8 @@ import com.example.ui.screens.FormReportScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.theme.Emerald100
+import com.example.ui.theme.Emerald200
+import com.example.ui.theme.Emerald400
 import com.example.ui.theme.Emerald50
 import com.example.ui.theme.Emerald500
 import com.example.ui.theme.Emerald600
@@ -158,6 +160,7 @@ fun HeavyTrackApp() {
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val isManagerSession by viewModel.isManagerSession.collectAsState()
     val unsyncedCount by viewModel.unsyncedCount.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
     val isSyncingMaster by viewModel.isSyncingMaster.collectAsState()
     val isSyncingPending by viewModel.isSyncingPending.collectAsState()
     val isBootstrapping by viewModel.isBootstrapping.collectAsState()
@@ -287,13 +290,13 @@ fun HeavyTrackApp() {
 
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = Color.White.copy(alpha = 0.18f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                                color = Emerald500.copy(alpha = 0.22f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Emerald400.copy(alpha = 0.45f)),
                                 modifier = Modifier
                                     .padding(end = 6.dp)
                                     .height(34.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .clickable { viewModel.forceSyncWithServer() }
+                                    .clickable(enabled = !isSyncing) { viewModel.forceSyncWithServer() }
                                     .testTag("appbar_quick_sync_btn")
                             ) {
                                 Row(
@@ -303,14 +306,14 @@ fun HeavyTrackApp() {
                                     Icon(
                                         imageVector = Icons.Outlined.Sync,
                                         contentDescription = "Sinkronisasi Data",
-                                        tint = Color.White,
+                                        tint = Emerald200,
                                         modifier = Modifier
                                             .size(16.dp)
-                                            .graphicsLayer { rotationZ = if (isSyncingMaster) syncAngle else 0f }
+                                            .graphicsLayer { rotationZ = if (isSyncing) syncAngle else 0f }
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = if (isSyncingMaster) "Sinkron..." else "Sinkron",
+                                        text = if (isSyncing) "Sinkron..." else "Sinkron",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White

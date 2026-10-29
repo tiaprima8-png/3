@@ -101,14 +101,16 @@ class HeavyTrackViewModel(
 
     companion object {
         const val INTERNAL_WEB_ADMIN_URL = "https://1-portalce.ai.studio"
-        const val GITHUB_REPO_URL = "https://github.com/tiaprima8-png/tes"
-        const val APK_DIRECT_DOWNLOAD_URL = "https://github.com/tiaprima8-png/tes/releases/latest/download/app-release.apk"
-        const val GITHUB_RELEASES_PAGE_URL = "https://github.com/tiaprima8-png/tes/releases"
-        const val APK_DEBUG_DOWNLOAD_URL = "https://github.com/tiaprima8-png/tes/releases/latest/download/app-debug.apk"
+        const val WEB_ADMIN_APK_DOWNLOAD_PAGE = "https://1-portalce.ai.studio/download-apk"
+        const val WEB_ADMIN_APK_DIRECT_URL = "https://1-portalce.ai.studio/download-apk?download=true"
+        const val GITHUB_REPO_URL = "https://github.com/tiaprima8-png/3"
+        const val GITHUB_RELEASES_PAGE_URL = "https://github.com/tiaprima8-png/3/releases"
+        const val APK_DIRECT_DOWNLOAD_URL = "https://1-portalce.ai.studio/download-apk?download=true"
+        const val APK_DEBUG_DOWNLOAD_URL = "https://1-portalce.ai.studio/download-apk?download=true"
     }
 
-    // Configurable APK Download URL (dengan fallback ke GitHub Release resmi)
-    private val _customApkUrl = MutableStateFlow(APK_DIRECT_DOWNLOAD_URL)
+    // Configurable APK Download URL (default ke Portal Web Admin resmi)
+    private val _customApkUrl = MutableStateFlow(WEB_ADMIN_APK_DOWNLOAD_PAGE)
     val customApkUrl: StateFlow<String> = _customApkUrl.asStateFlow()
 
     fun updateCustomApkUrl(newUrl: String) {
@@ -187,6 +189,10 @@ class HeavyTrackViewModel(
 
     private val _isSyncingPending = MutableStateFlow(false)
     val isSyncingPending: StateFlow<Boolean> = _isSyncingPending.asStateFlow()
+
+    val isSyncing: StateFlow<Boolean> = combine(_isSyncingMaster, _isSyncingPending) { master, pending ->
+        master || pending
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _isBootstrapping = MutableStateFlow(false)
     val isBootstrapping: StateFlow<Boolean> = _isBootstrapping.asStateFlow()
@@ -975,6 +981,11 @@ class HeavyTrackViewModel(
                 return result
             }
             is com.example.data.remote.LoginResult.Error -> {
+                if (result.message.contains("tidak terdaftar", ignoreCase = true) ||
+                    result.message.contains("dinonaktifkan", ignoreCase = true)
+                ) {
+                    repository.clearUserSession()
+                }
                 return result
             }
         }
@@ -2546,6 +2557,7 @@ Halo Rekan Pengawas, berkas installer APK pembaruan aplikasi resmi terlampir ($f
    Jika sebelumnya sudah ada versi RKCE yang terpasang di HP dan muncul pesan 'Aplikasi tidak terpasang' (App not installed / bentrok versi lama), silakan copot (uninstall) dulu versi lama tersebut, lalu pasang berkas pembaruan ini.
 
 *Tautan Unduh Resmi Pembaruan:*
+- Portal Unduh Web Admin: $WEB_ADMIN_APK_DOWNLOAD_PAGE
 - Unduh Langsung APK: $downloadUrl
 - Halaman Rilis GitHub: $GITHUB_RELEASES_PAGE_URL
                 """.trimIndent()

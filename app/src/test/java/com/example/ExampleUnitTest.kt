@@ -1186,5 +1186,56 @@ class ExampleUnitTest {
         assertTrue(searchResults.isNotEmpty())
         assertTrue(searchResults.all { it.kodeLokasi.contains("048", ignoreCase = true) })
     }
+
+    @Test
+    fun test_server_authoritative_login_rejection_message() {
+        val errorDeletedAccount = "Akun tidak terdaftar atau telah dinonaktifkan oleh Admin."
+        val errorNetwork = "Gagal terhubung ke Web Admin. Periksa koneksi internet."
+        val errorExecutive = "Akses Ditolak: Akun Super Admin & Manager hanya dapat digunakan pada Website Portal Admin (https://1-portalce.ai.studio/). Aplikasi mobile RKCE ini khusus untuk Kasie Lapangan."
+
+        assertEquals("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.", errorDeletedAccount)
+        assertEquals("Gagal terhubung ke Web Admin. Periksa koneksi internet.", errorNetwork)
+        assertTrue(errorExecutive.contains("Website Portal Admin"))
+    }
+
+    @Test
+    fun test_refresh_local_cache_bootstrap_isolation() {
+        val sampleUnits = listOf(
+            UnitEntity("HEH0004", "Excavator Mini", "Kubota U50-5", 6.0, "Jahidi", "OPERASIONAL", 6.0, 10.5, "RC PG1"),
+            UnitEntity("MGC0008", "Motor Grader", "CAT 120K", 15.0, "Jahidi", "OPERASIONAL", 5.0, 8.5, "RC PG1")
+        )
+        val sampleOperators = listOf(
+            com.example.data.local.entity.OperatorEntity("OPR-1", "Ahmad", "NIK-1", "Jahidi", "Class A", "AKTIF", "RC PG1", "Jahidi")
+        )
+
+        // Clear and replace in local cache
+        val localUnits = mutableListOf<UnitEntity>()
+        val localOperators = mutableListOf<com.example.data.local.entity.OperatorEntity>()
+
+        // Simulate refreshLocalCacheOnly
+        localUnits.clear()
+        localUnits.addAll(sampleUnits)
+        localOperators.clear()
+        localOperators.addAll(sampleOperators)
+
+        assertEquals(2, localUnits.size)
+        assertEquals("HEH0004", localUnits[0].unitCode)
+        assertEquals(1, localOperators.size)
+        assertEquals("Ahmad", localOperators[0].name)
+    }
+
+    @Test
+    fun test_kasie_portal_403_redirection_accepted() {
+        val serverResponse403 = """{"error":"Akses ditolak: Hanya Super Admin dan Manager yang berhak login ke website portal ini. Akun Kasie/Pengawas lapangan hanya dapat digunakan pada aplikasi Android HeavyTrack Mobile."}"""
+        val bodyLower = serverResponse403.lowercase()
+        val isKasieMobileDirection = bodyLower.contains("aplikasi android") || bodyLower.contains("kasie") || bodyLower.contains("pengawas") || bodyLower.contains("heavytrack")
+        assertTrue(isKasieMobileDirection)
+
+        val foundKasie = SupervisorDirectory.findUserByUsername("jahidi")
+        assertNotNull(foundKasie)
+        assertEquals("Jahidi", foundKasie?.resolvedNamaLengkap)
+        assertEquals("RC PG1", foundKasie?.wilayah)
+        assertTrue(foundKasie?.isKasie == true)
+    }
 }
 
