@@ -1025,4 +1025,164 @@ class ExampleUnitTest {
         val dialogSubtitle = "${jahidiOperators.size} Operator Aktif"
         assertEquals("${jahidiOperators.size} Operator Aktif", dialogSubtitle)
     }
+
+    @Test
+    fun test_user_data_segregation_kasie_yono_vs_jahidi_and_agung() = kotlinx.coroutines.runBlocking {
+        // 1. Bootstrap data untuk Yono (@yono1)
+        val yonoBootstrap = com.example.data.remote.CompanyServerSimulator.fetchBootstrapData("Yono", "29/10/2026")
+        assertEquals("SUCCESS", yonoBootstrap.status?.uppercase())
+        val yonoData = yonoBootstrap.data!!
+
+        // Unit milik Yono harus tepat 4 unit (GRD-03, HEH0020, HEH0021, SCC0004)
+        val yonoUnits = yonoData.units.orEmpty().filter {
+            it.resolvedSupervisor.equals("Yono", ignoreCase = true)
+        }
+        assertEquals(4, yonoUnits.size)
+        val yonoUnitCodes = yonoUnits.map { it.resolvedUnitCode }.toSet()
+        assertTrue(yonoUnitCodes.contains("GRD-03"))
+        assertTrue(yonoUnitCodes.contains("HEH0020"))
+        assertTrue(yonoUnitCodes.contains("HEH0021"))
+        assertTrue(yonoUnitCodes.contains("SCC0004"))
+        // Unit milik Jahidi (MGC0008 / HEH0017) atau Agung (HEH0013) TIDAK BOLEH masuk ke daftar unit Yono
+        assertFalse(yonoUnitCodes.contains("MGC0008"))
+        assertFalse(yonoUnitCodes.contains("HEH0017"))
+        assertFalse(yonoUnitCodes.contains("HEH0013"))
+
+        // 2. Tambahkan rencana kerja milik Jahidi (HEH0017) ke server simulator
+        com.example.data.remote.CompanyServerSimulator.postRencanaKerja(
+            com.example.data.remote.PostRencanaKerjaRequest(
+                id = "REN-JAHIDI-HEH0017",
+                kode_unit = "HEH0017",
+                operator = "Surya Darma",
+                sap_code = "ACT-SAP-101",
+                nama_aktivitas = "Galian Tanah Lunak",
+                satuan_aktivitas = "m3",
+                kode_lokasi = "101C",
+                wilayah = "RC PG1",
+                shift_kerja = "SIANG",
+                nama_pengawas = "Jahidi",
+                pengawas = "Jahidi",
+                kasie = "Jahidi",
+                status_tahap = "RENCANA",
+                is_realized = false
+            )
+        )
+
+        // 3. Rencana kerja aktif untuk Yono tidak boleh berisi rencana milik Jahidi (HEH0017 / MGC0008) atau Agung (HEH0013)
+        val yonoRencanaResp = com.example.data.remote.CompanyServerSimulator.getActiveRencanaKerja("Yono")
+        assertEquals("SUCCESS", yonoRencanaResp.status)
+        val yonoPlans = yonoRencanaResp.data ?: emptyList()
+        assertFalse(yonoPlans.any { it.resolvedUnitKode.equals("MGC0008", ignoreCase = true) })
+        assertFalse(yonoPlans.any { it.resolvedUnitKode.equals("HEH0017", ignoreCase = true) })
+        assertFalse(yonoPlans.any { it.resolvedUnitKode.equals("HEH0013", ignoreCase = true) })
+        assertTrue(yonoPlans.all {
+            it.resolvedPengawas.equals("Yono", ignoreCase = true) ||
+                it.resolvedPengawas.equals("@yono1", ignoreCase = true)
+        })
+
+        // 4. Rencana kerja aktif untuk Jahidi hanya berisi unit milik Jahidi (HEH0017) dan bukan milik Agung (HEH0013)
+        val jahidiRencanaResp = com.example.data.remote.CompanyServerSimulator.getActiveRencanaKerja("Jahidi")
+        val jahidiPlans = jahidiRencanaResp.data ?: emptyList()
+        assertTrue(jahidiPlans.isNotEmpty())
+        assertTrue(jahidiPlans.all { it.resolvedPengawas.equals("Jahidi", ignoreCase = true) })
+        assertTrue(jahidiPlans.any { it.resolvedUnitKode.equals("HEH0017", ignoreCase = true) })
+        assertFalse(jahidiPlans.any { it.resolvedUnitKode.equals("HEH0013", ignoreCase = true) })
+    }
+
+    @Test
+    fun test_flexible_kasie_login_inputs_and_rejection_of_web_admins() {
+        // Variasi input untuk Yono (@yono1 / Yono / yono / yono1)
+        val yonoInputs = listOf("yono1", "@yono1", "yono", "Yono", "  @YONO  ", "YONO1")
+        for (input in yonoInputs) {
+            val (spv, err) = SupervisorDirectory.authenticateKasie(input, "123")
+            assertNotNull("Failed for input: $input (err=$err)", spv)
+            assertNull(err)
+            assertEquals("Yono", spv?.namaLengkap)
+            assertEquals("yono1", spv?.username)
+            assertEquals("RC PG2", spv?.wilayah)
+        }
+
+        // Variasi input untuk Jahidi (@jahidi / Jahidi / jahidi1) dan password kustom
+        val (jahidiSpv, jahidiErr) = SupervisorDirectory.authenticateKasie("  @Jahidi  ", "jahidi2026")
+        assertNotNull(jahidiSpv)
+        assertNull(jahidiErr)
+        assertEquals("Jahidi", jahidiSpv?.namaLengkap)
+        assertEquals("RC PG1", jahidiSpv?.wilayah)
+
+        // Penolakan akun Super Admin (Farid) & Manager (Lutfi) di aplikasi mobile
+        val (faridSpv, faridErr) = SupervisorDirectory.authenticateKasie("@farid", "123")
+        assertNull(faridSpv)
+        assertNotNull(faridErr)
+        assertTrue(faridErr!!.contains("Akses Ditolak", ignoreCase = true))
+
+        val (lutfiSpv, lutfiErr) = SupervisorDirectory.authenticateKasie("Lutfi", "123")
+        assertNull(lutfiSpv)
+        assertNotNull(lutfiErr)
+        assertTrue(lutfiErr!!.contains("Akses Ditolak", ignoreCase = true))
+    }
+
+    @Test
+    fun test_fast_lokasi_search_3614_rows_with_limit_40_and_wilayah_filter() {
+        val totalRows = 3614
+        val wilayahPool = listOf("PG1", "PG2", "PG3", "RC PG1", "Geodesi PG1")
+        val masterLokasi3614 = (1..totalRows).map { idx ->
+            val prefix = String.format("%03d", (idx % 900) + 1)
+            val suffix = ('A' + (idx % 6))
+            val kode = "${prefix}${suffix}-${idx}"
+            val wil = wilayahPool[idx % wilayahPool.size]
+            com.example.data.local.entity.MasterLokasiEntity(
+                kodeLokasi = kode,
+                wilayah = wil,
+                luasBruto = 12.5,
+                luasNetto = 10.0,
+                keterangan = "Blok $kode",
+                status = if (idx == 3614) "Nonaktif" else "Aktif"
+            )
+        }
+
+        assertEquals(3614, masterLokasi3614.size)
+
+        fun simulateSearchLokasiFast(
+            all: List<com.example.data.local.entity.LokasiEntity>,
+            wilayahFilter: String?,
+            query: String?
+        ): List<com.example.data.local.entity.LokasiEntity> {
+            val wf = wilayahFilter?.trim().orEmpty()
+            val q = query?.trim()?.lowercase().orEmpty()
+            return all.asSequence()
+                .filter { it.status.trim().equals("Aktif", ignoreCase = true) }
+                .filter { lok ->
+                    if (wf.isEmpty() || wf.equals("Semua Wilayah", ignoreCase = true)) {
+                        true
+                    } else {
+                        val w = lok.wilayah.trim().uppercase()
+                        val wfUp = wf.uppercase()
+                        val wfStripped = wfUp
+                            .replace("GEODESI ", "")
+                            .replace("RC ", "")
+                            .replace("LEBUNG ", "")
+                            .trim()
+                        w == wfUp || w == wfStripped || wfUp.contains(w) || w.contains(wfUp)
+                    }
+                }
+                .filter { lok ->
+                    q.isEmpty() || lok.kodeLokasi.lowercase().contains(q)
+                }
+                .sortedBy { it.kodeLokasi }
+                .take(40)
+                .toList()
+        }
+
+        // Saat Kasie dengan wilayah "RC PG1" membuka dialog (query kosong), maksimal 40 item dikembalikan secara instan
+        val initialOpenResults = simulateSearchLokasiFast(masterLokasi3614, "RC PG1", "")
+        assertEquals(40, initialOpenResults.size)
+        assertTrue(initialOpenResults.all { it.wilayah.contains("PG1") && it.status == "Aktif" })
+
+        // Saat Kasie mengetik "048", hasil terfilter sesuai kode lokasi dan tetap dibatasi <= 40 baris
+        val searchResults = simulateSearchLokasiFast(masterLokasi3614, "RC PG1", "048")
+        assertTrue(searchResults.isNotEmpty())
+        assertTrue(searchResults.size <= 40)
+        assertTrue(searchResults.all { it.kodeLokasi.contains("048", ignoreCase = true) })
+    }
 }
+

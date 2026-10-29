@@ -181,11 +181,20 @@ class HeavyTrackRepository(
     fun getAllLokasi(): Flow<List<LokasiEntity>> =
         lokasiDao.getAllLokasi()
 
+    fun searchLokasiFast(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>> =
+        lokasiDao.searchLokasiFast(wilayahFilter, query)
+
     fun searchLokasi(query: String): Flow<List<LokasiEntity>> =
         lokasiDao.searchLokasi(query)
 
     fun getRencanaForSupervisor(supervisor: String): Flow<List<RencanaKerjaEntity>> =
         rencanaDao.getRencanaForSupervisor(supervisor)
+
+    fun getRencanaKerjaForKasie(namaKasie: String, username: String): Flow<List<RencanaKerjaEntity>> =
+        rencanaDao.getRencanaKerjaForKasie(namaKasie, username)
+
+    fun getAllRencanaKerjaForKasie(namaKasie: String, username: String): Flow<List<RencanaKerjaEntity>> =
+        rencanaDao.getAllRencanaKerjaForKasie(namaKasie, username)
 
     fun getAllRencana(): Flow<List<RencanaKerjaEntity>> =
         rencanaDao.getAllRencana()
@@ -195,6 +204,9 @@ class HeavyTrackRepository(
 
     fun getHasilForSupervisor(supervisor: String): Flow<List<HasilInputAktivitasEntity>> =
         hasilDao.getHasilForSupervisor(supervisor)
+
+    fun getHasilForKasie(namaKasie: String, username: String): Flow<List<HasilInputAktivitasEntity>> =
+        hasilDao.getHasilForKasie(namaKasie, username)
 
     fun getAllHasil(): Flow<List<HasilInputAktivitasEntity>> =
         hasilDao.getAllHasil()
@@ -207,6 +219,9 @@ class HeavyTrackRepository(
 
     fun getReportsForSupervisor(supervisor: String): Flow<List<ActivityReportEntity>> =
         reportDao.getReportsForSupervisor(supervisor)
+
+    fun getRealisasiForKasie(namaKasie: String, username: String): Flow<List<ActivityReportEntity>> =
+        reportDao.getRealisasiForKasie(namaKasie, username)
 
     fun getUnsyncedReports(): Flow<List<ActivityReportEntity>> =
         reportDao.getUnsyncedReports()
@@ -518,6 +533,7 @@ class HeavyTrackRepository(
                     luasBruto = it.resolvedLuasBruto,
                     luasNetto = it.resolvedLuasNetto,
                     keterangan = it.keterangan ?: "",
+                    status = it.resolvedStatus,
                     updatedAt = System.currentTimeMillis()
                 )
             }
@@ -678,10 +694,29 @@ class HeavyTrackRepository(
             val (incomingRequests, msg) = apiClientManager.fetchActiveRencanaKerja(supervisorName)
             val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
 
-            // 2. Petakan data rencana kerja terbaru dari server
+            // 2. Petakan data rencana kerja terbaru dari server dengan verifikasi kepemilikan Kasie & Unit
+            val cleanRequestedKasie = supervisorName.trim().removePrefix("@")
+            val isRequestingAll = cleanRequestedKasie.isBlank() || cleanRequestedKasie.equals("Semua", ignoreCase = true)
             val serverEntities = mutableListOf<RencanaKerjaEntity>()
             for ((index, renReq) in incomingRequests.withIndex()) {
                 val kodeUnitVal = renReq.resolvedUnitKode.ifBlank { "UNIT-${index + 1}" }
+                val unitEntity = unitDao.getUnitByCode(kodeUnitVal)
+                val unitOwner = unitEntity?.supervisorAssigned?.trim()?.removePrefix("@").orEmpty()
+                val reqKasie = renReq.resolvedPengawas.trim().removePrefix("@")
+                val trueOwner = when {
+                    unitOwner.isNotBlank() -> unitOwner
+                    reqKasie.isNotBlank() && !reqKasie.equals("Semua", ignoreCase = true) -> reqKasie
+                    else -> cleanRequestedKasie
+                }
+
+                // Isolasi Data Penuh: Jika request berasal dari Kasie tertentu, tolak rencana kerja milik Kasie lain
+                if (!isRequestingAll) {
+                    val isOwnedByKasie = trueOwner.equals(cleanRequestedKasie, ignoreCase = true) ||
+                        trueOwner.lowercase().contains(cleanRequestedKasie.lowercase()) ||
+                        cleanRequestedKasie.lowercase().contains(trueOwner.lowercase().takeIf { it.isNotBlank() } ?: "___")
+                    if (!isOwnedByKasie) continue
+                }
+
                 val spkNum = renReq.nomor_spk?.trim() ?: ""
                 val spkStatus = when {
                     !renReq.status_spk.isNullOrBlank() -> renReq.status_spk
@@ -691,11 +726,16 @@ class HeavyTrackRepository(
 
                 val serverId = renReq.numericId
                 val targetId = if (serverId > 0) serverId else (index + 1).toLong()
+                val resolvedCreatedBy = renReq.created_by?.takeIf { it.isNotBlank() }
+                    ?: renReq.createdBy?.takeIf { it.isNotBlank() }
+                    ?: trueOwner
 
                 val entity = RencanaKerjaEntity(
                     id = targetId,
-                    supervisorName = supervisorName,
-                    pengawas = supervisorName,
+                    supervisorName = trueOwner,
+                    pengawas = trueOwner,
+                    kasie = trueOwner,
+                    createdBy = resolvedCreatedBy,
                     statusUnit = renReq.status_unit ?: "OPERASI",
                     kodeUnit = kodeUnitVal,
                     operator = renReq.resolvedOperator,
@@ -703,7 +743,7 @@ class HeavyTrackRepository(
                     namaAktivitas = renReq.resolvedAktivitas,
                     satuanAktivitas = renReq.resolvedSatuan,
                     kodeLokasi = renReq.resolvedLokasi,
-                    wilayah = renReq.wilayah?.takeIf { it.isNotBlank() } ?: "Geodesi PG1",
+                    wilayah = renReq.wilayah?.takeIf { it.isNotBlank() } ?: unitEntity?.wilayah ?: "Geodesi PG1",
                     shiftKerja = renReq.resolvedShift,
                     keterangan = renReq.keterangan ?: renReq.keterangan_rencana ?: "",
                     nomorSpk = spkNum,
@@ -719,8 +759,11 @@ class HeavyTrackRepository(
             }
 
             // 3. ATOMIC CLEAR AND REPLACE via Room DAO:
-            // JANGAN gunakan upsert biasa. Panggil replaceAll agar data lama yang sudah tidak ada di website otomatis musnah dari Room SQLite lokal.
-            rencanaDao.replaceAll(serverEntities)
+            if (isRequestingAll) {
+                rencanaDao.replaceAll(serverEntities)
+            } else {
+                rencanaDao.replaceForSupervisor(cleanRequestedKasie, serverEntities)
+            }
 
             _lastSyncTimeMillis.value = System.currentTimeMillis()
             addLog("GET /api/rencana-kerja", "GET", "200 OK", "${serverEntities.size} Rencana Kerja Aktif (Clear & Replace)", true)
@@ -760,6 +803,8 @@ class HeavyTrackRepository(
             val reportMirror = ActivityReportEntity(
                 reportDate = savedHasil.tanggalFormat.ifBlank { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()) },
                 supervisorName = savedHasil.supervisorName,
+                namaKasie = savedHasil.namaKasie.ifBlank { savedHasil.supervisorName },
+                createdBy = savedHasil.createdBy.ifBlank { savedHasil.supervisorName },
                 unitCode = savedHasil.kodeUnit,
                 unitType = "",
                 activityName = savedHasil.activityName,

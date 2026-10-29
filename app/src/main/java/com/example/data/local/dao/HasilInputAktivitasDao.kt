@@ -13,8 +13,35 @@ interface HasilInputAktivitasDao {
     @Query("SELECT * FROM hasil_input_aktivitas ORDER BY created_at DESC")
     fun getAllHasil(): Flow<List<HasilInputAktivitasEntity>>
 
-    @Query("SELECT * FROM hasil_input_aktivitas WHERE supervisor_name = :supervisor ORDER BY created_at DESC")
+    @Query("""
+        SELECT * FROM hasil_input_aktivitas 
+        WHERE LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:supervisor))
+           OR LOWER(TRIM(nama_kasie)) = LOWER(TRIM(:supervisor))
+           OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:supervisor, '@', '')))
+        ORDER BY created_at DESC, id DESC
+    """)
     fun getHasilForSupervisor(supervisor: String): Flow<List<HasilInputAktivitasEntity>>
+
+    @Query("""
+        SELECT * FROM hasil_input_aktivitas 
+        WHERE (
+            LOWER(TRIM(nama_kasie)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(nama_kasie)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+        )
+        AND (
+            NOT EXISTS (SELECT 1 FROM units)
+            OR kode_unit IN (
+                SELECT unitCode FROM units 
+                WHERE LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:namaKasie))
+                   OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            )
+        )
+        ORDER BY created_at DESC, id DESC
+    """)
+    fun getHasilForKasie(namaKasie: String, username: String): Flow<List<HasilInputAktivitasEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHasil(hasil: HasilInputAktivitasEntity): Long

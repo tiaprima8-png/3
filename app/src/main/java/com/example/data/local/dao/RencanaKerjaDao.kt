@@ -14,8 +14,63 @@ interface RencanaKerjaDao {
     @Query("SELECT * FROM rencana_kerja ORDER BY created_at DESC")
     fun getAllRencana(): Flow<List<RencanaKerjaEntity>>
 
-    @Query("SELECT * FROM rencana_kerja WHERE supervisor_name = :supervisor OR pengawas = :supervisor ORDER BY created_at DESC")
+    @Query("""
+        SELECT * FROM rencana_kerja 
+        WHERE LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:supervisor)) 
+           OR LOWER(TRIM(pengawas)) = LOWER(TRIM(:supervisor))
+           OR LOWER(TRIM(kasie)) = LOWER(TRIM(:supervisor))
+           OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:supervisor, '@', '')))
+        ORDER BY created_at DESC, id DESC
+    """)
     fun getRencanaForSupervisor(supervisor: String): Flow<List<RencanaKerjaEntity>>
+
+    @Query("""
+        SELECT * FROM rencana_kerja 
+        WHERE (
+            LOWER(TRIM(kasie)) = LOWER(TRIM(:namaKasie)) 
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(pengawas)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(kasie)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+        )
+        AND (
+            NOT EXISTS (SELECT 1 FROM units)
+            OR kode_unit IN (
+                SELECT unitCode FROM units 
+                WHERE LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:namaKasie))
+                   OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            )
+        )
+        AND is_realized = 0 
+        AND (status_realisasi = 'BELUM' OR status_realisasi = '' OR status_realisasi IS NULL)
+        AND status_tahap != 'REALISASI_SELESAI' 
+        AND status_spk != 'SELESAI'
+        ORDER BY created_at DESC, id DESC
+    """)
+    fun getRencanaKerjaForKasie(namaKasie: String, username: String): Flow<List<RencanaKerjaEntity>>
+
+    @Query("""
+        SELECT * FROM rencana_kerja 
+        WHERE (
+            LOWER(TRIM(kasie)) = LOWER(TRIM(:namaKasie)) 
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(pengawas)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(kasie)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+        )
+        AND (
+            NOT EXISTS (SELECT 1 FROM units)
+            OR kode_unit IN (
+                SELECT unitCode FROM units 
+                WHERE LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:namaKasie))
+                   OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            )
+        )
+        ORDER BY created_at DESC, id DESC
+    """)
+    fun getAllRencanaKerjaForKasie(namaKasie: String, username: String): Flow<List<RencanaKerjaEntity>>
 
     @Query("""
         SELECT * FROM rencana_kerja 
@@ -35,23 +90,53 @@ interface RencanaKerjaDao {
 
     @Query("""
         SELECT * FROM rencana_kerja 
-        WHERE (:supervisor = 'Semua' OR :supervisor = '' OR supervisor_name = :supervisor OR pengawas = :supervisor) 
+        WHERE (
+            :supervisor = 'Semua' 
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:supervisor)) 
+            OR LOWER(TRIM(pengawas)) = LOWER(TRIM(:supervisor))
+            OR LOWER(TRIM(kasie)) = LOWER(TRIM(:supervisor))
+            OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:supervisor, '@', '')))
+        )
+          AND (
+            :supervisor = 'Semua'
+            OR NOT EXISTS (SELECT 1 FROM units)
+            OR kode_unit IN (
+                SELECT unitCode FROM units 
+                WHERE LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:supervisor))
+                   OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:supervisor, '@', '')))
+            )
+          )
           AND is_realized = 0 
           AND (status_realisasi = 'BELUM' OR status_realisasi = '' OR status_realisasi IS NULL)
           AND status_tahap != 'REALISASI_SELESAI' 
           AND status_spk != 'SELESAI'
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
     """)
     fun getActiveRencanaForSupervisor(supervisor: String): Flow<List<RencanaKerjaEntity>>
 
     @Query("""
         SELECT * FROM rencana_kerja 
-        WHERE (:pengawas = 'Semua' OR :pengawas = '' OR supervisor_name = :pengawas OR pengawas = :pengawas) 
+        WHERE (
+            :pengawas = 'Semua' 
+            OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:pengawas)) 
+            OR LOWER(TRIM(pengawas)) = LOWER(TRIM(:pengawas))
+            OR LOWER(TRIM(kasie)) = LOWER(TRIM(:pengawas))
+            OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:pengawas, '@', '')))
+        )
+          AND (
+            :pengawas = 'Semua'
+            OR NOT EXISTS (SELECT 1 FROM units)
+            OR kode_unit IN (
+                SELECT unitCode FROM units 
+                WHERE LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:pengawas))
+                   OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:pengawas, '@', '')))
+            )
+          )
           AND is_realized = 0 
           AND (status_realisasi = 'BELUM' OR status_realisasi = '' OR status_realisasi IS NULL)
           AND status_tahap != 'REALISASI_SELESAI' 
           AND status_spk != 'SELESAI'
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
     """)
     fun getRencanaKerjaBelumRealisasi(pengawas: String): Flow<List<RencanaKerjaEntity>>
 

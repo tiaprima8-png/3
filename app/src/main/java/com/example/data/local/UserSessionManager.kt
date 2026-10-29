@@ -101,6 +101,10 @@ class UserSessionManager(private val context: Context) {
         return sessionFlow.firstOrNull()
     }
 
+    suspend fun getCurrentUserWilayah(): String? {
+        return getSession()?.wilayah
+    }
+
     suspend fun clearSession() {
         context.userSessionDataStore.edit { prefs ->
             prefs.clear()

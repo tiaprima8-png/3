@@ -27,6 +27,12 @@ data class HasilInputAktivitasEntity(
     @ColumnInfo(name = "supervisor_name")
     val supervisorName: String = "",
 
+    @ColumnInfo(name = "nama_kasie", defaultValue = "")
+    val namaKasie: String = supervisorName,
+
+    @ColumnInfo(name = "created_by", defaultValue = "")
+    val createdBy: String = supervisorName,
+
     @ColumnInfo(name = "kode_unit")
     val kodeUnit: String = "",
 

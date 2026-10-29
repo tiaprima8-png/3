@@ -180,19 +180,25 @@ object CompanyServerSimulator {
         )
 
         // 2. Active plans for supervisor (Synchronized with live Web Admin database)
+        val cleanPengawas = pengawas.trim().removePrefix("@")
+        val ownedUnitCodes = filteredUnits.map { it.resolvedUnitCode.uppercase() }.toSet()
         val activePlans = serverRencanaKerja.filter {
-            it.nama_pengawas.equals(pengawas, ignoreCase = true) &&
+            (it.resolvedPengawas.equals(cleanPengawas, ignoreCase = true) ||
+             it.nama_pengawas.equals(cleanPengawas, ignoreCase = true)) &&
+            (ownedUnitCodes.isEmpty() || it.resolvedUnitKode.uppercase() in ownedUnitCodes) &&
             it.is_realized != true &&
             it.status_tahap == "RENCANA"
         }
 
-        // 3. Ensure initial historical activity reports on server for this supervisor if none yet
-        if (receivedReportsOnServer.none { it.nama_pengawas.equals(pengawas, ignoreCase = true) || it.supervisor_name.equals(pengawas, ignoreCase = true) }) {
+        // 3. Initial historical activity reports on server ONLY for Agung (owner of HEH0013, CMP-01, GRD-01)
+        if (cleanPengawas.equals("Agung", ignoreCase = true) &&
+            receivedReportsOnServer.none { it.nama_pengawas.equals("Agung", ignoreCase = true) || it.supervisor_name.equals("Agung", ignoreCase = true) }
+        ) {
             receivedReportsOnServer.addAll(
                 listOf(
                     PostActivityReportRequest(
                         tanggal = tanggal,
-                        nama_pengawas = pengawas,
+                        nama_pengawas = "Agung",
                         kode_unit = "HEH0013",
                         jenis_unit = "Excavator Standar",
                         nama_aktivitas = "Galian Tanah Lunak",
@@ -213,12 +219,12 @@ object CompanyServerSimulator {
                         stik_solar_awal = 80.0,
                         stik_solar_akhir = 48.0,
                         pemakaian_solar = 152.0,
-                        client_uuid = "SRV-REP-$pengawas-HEH0013-12.0",
+                        client_uuid = "SRV-REP-Agung-HEH0013-12.0",
                         client_transaction_id = "TX-SRV-001"
                     ),
                     PostActivityReportRequest(
                         tanggal = tanggal,
-                        nama_pengawas = pengawas,
+                        nama_pengawas = "Agung",
                         kode_unit = "CMP-01",
                         jenis_unit = "Compactor",
                         nama_aktivitas = "Pemadatan Subgrade",
@@ -239,12 +245,12 @@ object CompanyServerSimulator {
                         stik_solar_awal = 60.0,
                         stik_solar_akhir = 35.0,
                         pemakaian_solar = 100.0,
-                        client_uuid = "SRV-REP-$pengawas-CMP01-2100.0",
+                        client_uuid = "SRV-REP-Agung-CMP01-2100.0",
                         client_transaction_id = "TX-SRV-002"
                     ),
                     PostActivityReportRequest(
                         tanggal = tanggal,
-                        nama_pengawas = pengawas,
+                        nama_pengawas = "Agung",
                         kode_unit = "GRD-01",
                         jenis_unit = "Motor Grader",
                         nama_aktivitas = "Grading Mainroad Tambang",
@@ -262,7 +268,7 @@ object CompanyServerSimulator {
                         status_unit = "OPERASI",
                         is_isi_solar = false,
                         jumlah_liter_solar = 0.0,
-                        client_uuid = "SRV-REP-$pengawas-GRD01-1870.0",
+                        client_uuid = "SRV-REP-Agung-GRD01-1870.0",
                         client_transaction_id = "TX-SRV-003"
                     )
                 )
@@ -270,14 +276,18 @@ object CompanyServerSimulator {
         }
 
         val supervisorReports = receivedReportsOnServer.filter {
-            it.nama_pengawas.equals(pengawas, ignoreCase = true) ||
-            it.supervisor_name.equals(pengawas, ignoreCase = true)
+            (it.nama_pengawas.equals(cleanPengawas, ignoreCase = true) ||
+             it.supervisor_name.equals(cleanPengawas, ignoreCase = true)) &&
+            (ownedUnitCodes.isEmpty() || (it.kode_unit ?: it.unit_code ?: "").uppercase() in ownedUnitCodes)
         }
 
         return ApiResponse(
             status = "SUCCESS",
             message = "Data bootstrap operasional pengawas $pengawas berhasil diambil (${activePlans.size} rencana, ${supervisorReports.size} riwayat)",
             data = BootstrapDataPayload(
+                units = masterData.units,
+                operators = masterData.operators,
+                activities = masterData.activities,
                 master_data = masterData,
                 masterData = masterData,
                 rencana_aktif = activePlans,
@@ -290,12 +300,23 @@ object CompanyServerSimulator {
 
     suspend fun getActiveRencanaKerja(pengawas: String): ApiResponse<List<PostRencanaKerjaRequest>> {
         delay(200)
-        if (serverRencanaKerja.none { it.nama_pengawas.equals(pengawas, ignoreCase = true) }) {
-            fetchBootstrapData(pengawas, SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()))
-        }
-        val activePlans = serverRencanaKerja.filter {
-            (it.nama_pengawas.isNullOrBlank() || it.nama_pengawas.equals(pengawas, ignoreCase = true)) &&
-            it.is_realized != true
+        val cleanPengawas = pengawas.trim().removePrefix("@")
+        val isAll = cleanPengawas.equals("Semua", ignoreCase = true) || cleanPengawas.isBlank()
+        val ownedUnitCodes = if (isAll) emptySet() else serverUnits
+            .filter { it.resolvedSupervisor.equals(cleanPengawas, ignoreCase = true) }
+            .map { it.resolvedUnitCode.uppercase() }
+            .toSet()
+
+        val activePlans = serverRencanaKerja.filter { plan ->
+            plan.is_realized != true &&
+            if (isAll) {
+                true
+            } else {
+                val matchesKasie = plan.resolvedPengawas.equals(cleanPengawas, ignoreCase = true) ||
+                        plan.nama_pengawas.equals(cleanPengawas, ignoreCase = true)
+                val matchesUnit = ownedUnitCodes.isEmpty() || plan.resolvedUnitKode.uppercase() in ownedUnitCodes
+                matchesKasie && matchesUnit
+            }
         }
         return ApiResponse(
             status = "SUCCESS",
@@ -511,6 +532,18 @@ object CompanyServerSimulator {
         )
     }
 
+    fun getMasterOperator(supervisor: String? = null): ApiResponse<List<OperatorPayload>> {
+        val list = serverOperators.filter {
+            it.resolvedStatus.equals("AKTIF", ignoreCase = true) &&
+            (supervisor.isNullOrBlank() || it.resolvedSupervisor.equals(supervisor, ignoreCase = true) || supervisor.equals("Semua", ignoreCase = true))
+        }
+        return ApiResponse(
+            status = "SUCCESS",
+            message = "Master Operator berhasil diambil (${list.size} operator)",
+            data = list
+        )
+    }
+
     fun addOrUpdateActivity(activity: ActivityPayload) {
         val idx = serverActivities.indexOfFirst { it.resolvedSapCode.equals(activity.resolvedSapCode, ignoreCase = true) }
         if (idx >= 0) {
@@ -571,16 +604,32 @@ object CompanyServerSimulator {
 
     fun getMobileBootstrapResponse(supervisorName: String = "", tanggal: String = ""): CentralizedBootstrapResponse {
         cleanDumpTruckAndBulldozer()
+        val cleanPengawas = supervisorName.trim().removePrefix("@")
+        val isAll = cleanPengawas.isBlank() || cleanPengawas.equals("Semua", ignoreCase = true)
         val users = serverUsers.filter { it.isAktif }
         val units = serverUnits.filter { 
             com.example.data.model.UnitConstants.isJenisUnitValid(it.resolvedUnitType) &&
             (it.resolvedStatus.equals("OPERASIONAL", ignoreCase = true) || it.resolvedStatus.equals("Aktif", ignoreCase = true))
         }
+        val ownedUnitCodes = if (isAll) emptySet() else units
+            .filter { it.resolvedSupervisor.equals(cleanPengawas, ignoreCase = true) }
+            .map { it.resolvedUnitCode.uppercase() }
+            .toSet()
         val operators = serverOperators.filter { it.resolvedStatus.equals("AKTIF", ignoreCase = true) }
         val aktivitas = serverActivities.filter { !it.resolvedKategoriStatus.equals("Nonaktif", ignoreCase = true) }
         val kendala = serverKendala.toList()
         val lokasi = serverLokasi.toList()
-        val rencana = serverRencanaKerja.filter { it.is_realized != true }
+        val rencana = serverRencanaKerja.filter { plan ->
+            plan.is_realized != true &&
+            if (isAll) {
+                true
+            } else {
+                val matchesKasie = plan.resolvedPengawas.equals(cleanPengawas, ignoreCase = true) ||
+                    plan.nama_pengawas.equals(cleanPengawas, ignoreCase = true)
+                val matchesUnit = ownedUnitCodes.isEmpty() || plan.resolvedUnitKode.uppercase() in ownedUnitCodes
+                matchesKasie && matchesUnit
+            }
+        }
 
         val isoTime = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
             timeZone = java.util.TimeZone.getTimeZone("UTC")

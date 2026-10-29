@@ -41,7 +41,7 @@ import com.example.data.local.entity.UserEntity
         AktivitasUnitEntity::class,
         UserEntity::class
     ],
-    version = 23,
+    version = 25,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,6 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun operatorDao(): OperatorDao
     fun masterOperatorDao(): OperatorDao = operatorDao()
     abstract fun activityReportDao(): ActivityReportDao
+    fun realisasiDao(): ActivityReportDao = activityReportDao()
     abstract fun lokasiDao(): LokasiDao
     abstract fun rencanaKerjaDao(): RencanaKerjaDao
     abstract fun hasilInputAktivitasDao(): HasilInputAktivitasDao
@@ -88,13 +89,29 @@ abstract class AppDatabase : RoomDatabase() {
             bootstrap.users
         }
 
+        val unitOwnerMap = bootstrap.units.associate { it.unitCode.uppercase() to it.supervisorAssigned }
+        val sanitizedRencana = bootstrap.rencanaKerja.map { ren ->
+            val unitOwner = unitOwnerMap[ren.kodeUnit.uppercase()]
+            val trueOwner = if (!unitOwner.isNullOrBlank()) {
+                unitOwner
+            } else {
+                ren.kasie.ifBlank { ren.supervisorName }
+            }
+            ren.copy(
+                supervisorName = trueOwner,
+                pengawas = trueOwner,
+                kasie = trueOwner,
+                createdBy = ren.createdBy.ifBlank { trueOwner }
+            )
+        }
+
         userDao().insertAll(mappedUsers)
         unitDao().insertAll(bootstrap.units)
         operatorDao().insertAll(bootstrap.operators)
         aktivitasDao().insertAll(bootstrap.aktivitas)
         kendalaDao().insertAll(bootstrap.kendala)
         lokasiDao().insertAll(bootstrap.lokasi)
-        rencanaKerjaDao().insertAll(bootstrap.rencanaKerja)
+        rencanaKerjaDao().insertAll(sanitizedRencana)
     }
 
     fun cleanDumpTruckAndBulldozerDirect() {

@@ -717,27 +717,31 @@ data class LokasiPayload(
     @Json(name = "wilayah") val wilayah: String? = null,
     @Json(name = "luas_bruto") val luas_bruto: Double? = null,
     @Json(name = "luas_netto") val luas_netto: Double? = null,
-    @Json(name = "keterangan") val keterangan: String? = null
+    @Json(name = "keterangan") val keterangan: String? = null,
+    @Json(name = "status") val status: String? = "Aktif"
 ) {
     constructor(
         kodeLokasi: String,
         wilayah: String,
         luasBruto: Double,
         luasNetto: Double,
-        keterangan: String = ""
+        keterangan: String = "",
+        status: String = "Aktif"
     ) : this(
         kode_lokasi = kodeLokasi,
         kodeLokasi = kodeLokasi,
         wilayah = wilayah,
         luas_bruto = luasBruto,
         luas_netto = luasNetto,
-        keterangan = keterangan
+        keterangan = keterangan,
+        status = status
     )
 
     val resolvedKode: String get() = kode_lokasi ?: kodeLokasi ?: "LOK-001"
     val resolvedWilayah: String get() = wilayah ?: "Geodesi PG1"
     val resolvedLuasBruto: Double get() = luas_bruto ?: 0.0
     val resolvedLuasNetto: Double get() = luas_netto ?: 0.0
+    val resolvedStatus: String get() = status?.takeIf { it.isNotBlank() } ?: "Aktif"
 }
 
 @JsonClass(generateAdapter = true)
@@ -771,6 +775,10 @@ data class PostRencanaKerjaRequest(
     @Json(name = "is_realized") val is_realized: Boolean? = false,
     @Json(name = "nama_pengawas") val nama_pengawas: String? = null,
     @Json(name = "pengawas") val pengawas: String? = null,
+    @Json(name = "kasie") val kasie: String? = null,
+    @Json(name = "kasie_penanggung_jawab") val kasie_penanggung_jawab: String? = null,
+    @Json(name = "created_by") val created_by: String? = null,
+    @Json(name = "createdBy") val createdBy: String? = null,
     @Json(name = "tanggal") val tanggal: String? = null,
     @Json(name = "tanggal_kerja") val tanggal_kerja: String? = null
 ) {
@@ -802,7 +810,7 @@ data class PostRencanaKerjaRequest(
         get() = shift_kerja ?: shift ?: "SIANG"
 
     val resolvedPengawas: String
-        get() = (nama_pengawas ?: pengawas ?: "").trim()
+        get() = (kasie ?: kasie_penanggung_jawab ?: nama_pengawas ?: pengawas ?: created_by ?: createdBy ?: "").trim()
 
     val resolvedSupervisor: String
         get() = resolvedPengawas
@@ -858,6 +866,10 @@ data class UserApiPayload(
     @Json(name = "id") val id: Any? = null,
     @Json(name = "nama_lengkap") val nama_lengkap: String? = null,
     @Json(name = "username") val username: String? = null,
+    @Json(name = "password") val password: String? = null,
+    @Json(name = "pin") val pin: String? = null,
+    @Json(name = "password_pin") val password_pin: String? = null,
+    @Json(name = "kata_sandi") val kata_sandi: String? = null,
     @Json(name = "hak_akses") val hak_akses: String? = null,
     @Json(name = "role") val role: String? = null,
     @Json(name = "wilayah") val wilayah: String? = null,
@@ -869,10 +881,13 @@ data class UserApiPayload(
         get() = id?.toString() ?: "1"
 
     val resolvedNamaLengkap: String
-        get() = nama_lengkap?.ifBlank { null } ?: username ?: "Pengguna"
+        get() = nama_lengkap?.trim()?.ifBlank { null } ?: username?.trim()?.removePrefix("@") ?: "Pengguna"
 
     val resolvedUsername: String
-        get() = (username ?: "").trim().removePrefix("@")
+        get() = (username ?: "").trim().removePrefix("@").trim()
+
+    val resolvedPassword: String
+        get() = (password ?: password_pin ?: pin ?: kata_sandi ?: "").trim().ifBlank { "123" }
 
     val isAktif: Boolean
         get() {
@@ -950,7 +965,7 @@ data class UserApiPayload(
             namaLengkap = cleanName,
             username = cleanUser,
             nik = cleanUser,
-            passwordPin = "123",
+            passwordPin = resolvedPassword,
             defaultShift = if (isExec) "ALL" else "SIANG",
             assignedSector = if (isExec) "Seluruh Proyek Lapangan (Akses Web)" else "Sektor Operasional Lapangan (${wilayah ?: "Geodesi PG1"})",
             phone = "+62 812-0000-0000",

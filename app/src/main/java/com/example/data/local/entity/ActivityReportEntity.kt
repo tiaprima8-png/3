@@ -19,7 +19,9 @@ data class ActivityReportEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val clientUuid: String = UUID.randomUUID().toString(),
     val reportDate: String,              // Format: "DD/MM/YYYY"
-    val supervisorName: String,          // Active supervisor
+    val supervisorName: String,          // Active supervisor / Kasie
+    val namaKasie: String = supervisorName,
+    val createdBy: String = supervisorName,
     val unitCode: String,                // Selected Unit Code e.g. "HEH0004"
     val unitType: String,                // e.g. "EXCAVATOR"
     val activityName: String,            // e.g. "Galian Tanah Lunak"
@@ -55,3 +57,6 @@ data class ActivityReportEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val syncedAt: Long? = null
 )
+
+typealias RealisasiEntity = ActivityReportEntity
+

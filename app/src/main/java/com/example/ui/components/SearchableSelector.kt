@@ -759,26 +759,41 @@ fun LokasiSearchableSelectorSheet(
     onDismissRequest: () -> Unit,
     lokasiList: List<LokasiEntity>,
     selectedLokasi: LokasiEntity?,
-    onLokasiSelected: (LokasiEntity) -> Unit
+    onLokasiSelected: (LokasiEntity) -> Unit,
+    searchQuery: String? = null,
+    onSearchQueryChange: ((String) -> Unit)? = null,
+    wilayahLabel: String? = null
 ) {
     if (!isOpen) return
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var searchQuery by remember { mutableStateOf("") }
+    var localSearchQuery by remember { mutableStateOf("") }
+    val activeQuery = searchQuery ?: localSearchQuery
 
-    val filteredList = remember(searchQuery, lokasiList) {
-        if (searchQuery.isBlank()) {
+    val filteredList = remember(activeQuery, lokasiList, onSearchQueryChange != null) {
+        if (onSearchQueryChange != null) {
+            // Query & LIMIT 40 sudah diproses super cepat (< 5ms) di SQLite via ViewModel Debounce
             lokasiList
+        } else if (activeQuery.isBlank()) {
+            lokasiList.take(40)
         } else {
-            val q = searchQuery.trim()
-            lokasiList.filter {
-                it.kodeLokasi.contains(q, ignoreCase = true)
-            }
+            val q = activeQuery.trim()
+            lokasiList.asSequence()
+                .filter { it.kodeLokasi.contains(q, ignoreCase = true) }
+                .take(40)
+                .toList()
         }
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
+        onDismissRequest = {
+            if (onSearchQueryChange != null) {
+                onSearchQueryChange("")
+            } else {
+                localSearchQuery = ""
+            }
+            onDismissRequest()
+        },
         sheetState = sheetState,
         containerColor = Color.White,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -816,13 +831,24 @@ fun LokasiSearchableSelectorSheet(
                             )
                         )
                         Text(
-                            text = "Pilih kode lokasi kerja",
+                            text = if (!wilayahLabel.isNullOrBlank()) {
+                                "Menampilkan maks. 40 lokasi (${wilayahLabel})"
+                            } else {
+                                "Pilih kode lokasi kerja (maks. 40 hasil teratas)"
+                            },
                             style = MaterialTheme.typography.bodySmall.copy(color = Slate500)
                         )
                     }
 
                     IconButton(
-                        onClick = onDismissRequest,
+                        onClick = {
+                            if (onSearchQueryChange != null) {
+                                onSearchQueryChange("")
+                            } else {
+                                localSearchQuery = ""
+                            }
+                            onDismissRequest()
+                        },
                         modifier = Modifier
                             .size(36.dp)
                             .background(Color(0xFFF1F5F9), CircleShape)
@@ -840,9 +866,15 @@ fun LokasiSearchableSelectorSheet(
 
                 // Search Bar
                 OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Cari kode lokasi (misal: 001A)...", color = Slate400, fontSize = 14.sp) },
+                    value = activeQuery,
+                    onValueChange = { newVal ->
+                        if (onSearchQueryChange != null) {
+                            onSearchQueryChange(newVal)
+                        } else {
+                            localSearchQuery = newVal
+                        }
+                    },
+                    placeholder = { Text("Ketik kode lokasi (misal: 001A, 048C)...", color = Slate400, fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -852,8 +884,16 @@ fun LokasiSearchableSelectorSheet(
                         )
                     },
                     trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
+                        if (activeQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    if (onSearchQueryChange != null) {
+                                        onSearchQueryChange("")
+                                    } else {
+                                        localSearchQuery = ""
+                                    }
+                                }
+                            ) {
                                 Icon(Icons.Default.Clear, contentDescription = "Hapus", tint = Slate400)
                             }
                         }
@@ -861,6 +901,9 @@ fun LokasiSearchableSelectorSheet(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Slate900,
+                        unfocusedTextColor = Slate900,
+                        cursorColor = Emerald600,
                         focusedBorderColor = Emerald600,
                         unfocusedBorderColor = Slate200,
                         focusedContainerColor = Color(0xFFF8FAFC),
@@ -874,7 +917,7 @@ fun LokasiSearchableSelectorSheet(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Ditemukan ${filteredList.size} Lokasi Kerja",
+                    text = "Menampilkan ${filteredList.size} Lokasi Kerja",
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = Slate400,
                         fontWeight = FontWeight.SemiBold
@@ -892,7 +935,7 @@ fun LokasiSearchableSelectorSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Tidak ada lokasi yang cocok dengan '$searchQuery'",
+                        text = "Tidak ada lokasi yang cocok dengan '$activeQuery'",
                         color = Slate400,
                         fontSize = 13.sp
                     )
@@ -901,21 +944,27 @@ fun LokasiSearchableSelectorSheet(
                 LazyColumn(
                     modifier = Modifier.weight(1f)
                 ) {
-                    itemsIndexed(filteredList, key = { _, lokasi -> lokasi.kodeLokasi }) { index, lokasi ->
+                    items(
+                        items = filteredList,
+                        key = { it.kodeLokasi }
+                    ) { lokasi ->
                         LokasiSelectorItemCard(
                             lokasi = lokasi,
                             isSelected = selectedLokasi?.kodeLokasi == lokasi.kodeLokasi,
                             onClick = {
                                 onLokasiSelected(lokasi)
+                                if (onSearchQueryChange != null) {
+                                    onSearchQueryChange("")
+                                } else {
+                                    localSearchQuery = ""
+                                }
                                 onDismissRequest()
                             }
                         )
-                        if (index < filteredList.lastIndex) {
-                            HorizontalDivider(
-                                color = Color.LightGray.copy(alpha = 0.3f),
-                                thickness = 1.dp
-                            )
-                        }
+                        HorizontalDivider(
+                            color = Color.LightGray.copy(alpha = 0.3f),
+                            thickness = 1.dp
+                        )
                     }
                 }
             }

@@ -140,7 +140,9 @@ fun HistoryScreen(
     val isManagerSession by viewModel.isManagerSession.collectAsState()
     val myReports by viewModel.reports.collectAsState()
     val allReports by viewModel.allReports.collectAsState()
+    val myRencanaList by viewModel.allRencanaList.collectAsState()
     val allRencanaGlobal by viewModel.allRencanaGlobal.collectAsState()
+    val myUnits by viewModel.units.collectAsState()
     val allUnitsGlobal by viewModel.allUnitsGlobal.collectAsState()
     val selectedWilayah by viewModel.filterWilayah.collectAsState()
     val selectedJenisUnit by viewModel.filterJenisUnit.collectAsState()
@@ -150,11 +152,11 @@ fun HistoryScreen(
     val isSyncingPending by viewModel.isSyncingPending.collectAsState()
     val activeSupervisor by viewModel.activeSupervisor.collectAsState()
 
-    // Sub-tab: "HASIL" vs "RENCANA" untuk monitoring menyeluruh oleh Manager
+    // Sub-tab: "HASIL" vs "RENCANA"
     var historySubTab by remember { mutableStateOf("HASIL") }
 
-    // Cakupan data: true = Semua Data Terinput Lapangan, false = Hanya Kasie Aktif
-    var showAllDataScope by remember(isManagerSession) { mutableStateOf(isManagerSession || true) }
+    // Cakupan data: hanya Manager/Super Admin yang boleh melihat seluruh input lintas Kasie
+    var showAllDataScope by remember(isManagerSession) { mutableStateOf(isManagerSession) }
 
     // Filter status sinkron: ALL, PENDING, SYNCED
     var selectedFilter by remember { mutableStateOf("ALL") }
@@ -165,17 +167,19 @@ fun HistoryScreen(
     var selectedRecordForDetail by remember { mutableStateOf<CompletedOperationalRecord?>(null) }
     var photoPreviewReport by remember { mutableStateOf<ActivityReportEntity?>(null) }
 
-    val baseReports = if (showAllDataScope || isManagerSession) allReports else myReports
+    val baseReports = if (isManagerSession && showAllDataScope) allReports else myReports
+    val baseRencana = if (isManagerSession && showAllDataScope) allRencanaGlobal else myRencanaList
+    val baseUnits = if (isManagerSession && showAllDataScope) allUnitsGlobal else myUnits
 
-    // Filter Rencana Kerja Lapangan berdasarkan filter eksekutif dan pencarian cepat
-    val filteredRencana = remember(allRencanaGlobal, searchQuery, selectedWilayah, selectedJenisUnit, selectedKodeUnit, allUnitsGlobal) {
-        allRencanaGlobal.filter { ren ->
-            val matchWilayah = selectedWilayah == "Semua Wilayah" || selectedWilayah.isBlank() || ren.wilayah.equals(selectedWilayah, ignoreCase = true)
-            val matchKode = selectedKodeUnit == "Semua Unit" || selectedKodeUnit.isBlank() || ren.kodeUnit.equals(selectedKodeUnit, ignoreCase = true)
-            val matchJenis = if (selectedJenisUnit == "Semua Jenis" || selectedJenisUnit.isBlank()) {
+    // Filter Rencana Kerja Lapangan berdasarkan filter dan pencarian cepat
+    val filteredRencana = remember(baseRencana, searchQuery, selectedWilayah, selectedJenisUnit, selectedKodeUnit, baseUnits, isManagerSession) {
+        baseRencana.filter { ren ->
+            val matchWilayah = !isManagerSession || selectedWilayah == "Semua Wilayah" || selectedWilayah.isBlank() || ren.wilayah.equals(selectedWilayah, ignoreCase = true)
+            val matchKode = !isManagerSession || selectedKodeUnit == "Semua Unit" || selectedKodeUnit.isBlank() || ren.kodeUnit.equals(selectedKodeUnit, ignoreCase = true)
+            val matchJenis = if (!isManagerSession || selectedJenisUnit == "Semua Jenis" || selectedJenisUnit.isBlank()) {
                 true
             } else {
-                val matchedUnit = allUnitsGlobal.find { it.unitCode.equals(ren.kodeUnit, ignoreCase = true) }
+                val matchedUnit = baseUnits.find { it.unitCode.equals(ren.kodeUnit, ignoreCase = true) }
                 matchedUnit != null && viewModel.matchesJenisUnit(matchedUnit.unitType, selectedJenisUnit)
             }
             val matchQuery = if (searchQuery.isBlank()) {
@@ -195,15 +199,15 @@ fun HistoryScreen(
     }
 
     // Rekapitulasi & pemaduan data komprehensif Rencana Awal + Realisasi Aktual
-    val completedRecords = remember(baseReports, allRencanaGlobal, hasilAktivitasList) {
+    val completedRecords = remember(baseReports, baseRencana, hasilAktivitasList) {
         baseReports.map { rep ->
             // Temukan rencana kerja terkait di SQLite
-            val matchedRencana = allRencanaGlobal.find { ren ->
+            val matchedRencana = baseRencana.find { ren ->
                 ren.isRealized && ren.kodeUnit.equals(rep.unitCode, ignoreCase = true) &&
                         (ren.tanggalFormat.isBlank() || ren.tanggalFormat == rep.reportDate)
-            } ?: allRencanaGlobal.find { ren ->
+            } ?: baseRencana.find { ren ->
                 ren.kodeUnit.equals(rep.unitCode, ignoreCase = true) && ren.isRealized
-            } ?: allRencanaGlobal.find { ren ->
+            } ?: baseRencana.find { ren ->
                 ren.kodeUnit.equals(rep.unitCode, ignoreCase = true)
             }
 
@@ -450,7 +454,7 @@ fun HistoryScreen(
                         ) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
                                 Text(
-                                    text = "Rencana Kerja (${allRencanaGlobal.size})",
+                                    text = "Rencana Kerja (${baseRencana.size})",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
                                     color = if (historySubTab == "RENCANA") Color.White else Slate700
@@ -546,32 +550,59 @@ fun HistoryScreen(
                             }
                         }
 
-                        // Toggle Cakupan Data
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (showAllDataScope) Emerald50 else Color(0xFFF1F5F9),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, if (showAllDataScope) Emerald200 else Slate200),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable { showAllDataScope = !showAllDataScope }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        // Toggle Cakupan Data (Khusus Manager, untuk Kasie selalu terkunci pada data miliknya sendiri)
+                        if (isManagerSession) {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (showAllDataScope) Emerald50 else Color(0xFFF1F5F9),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (showAllDataScope) Emerald200 else Slate200),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { showAllDataScope = !showAllDataScope }
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.FilterList,
-                                    contentDescription = null,
-                                    tint = if (showAllDataScope) Emerald700 else Slate500,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (showAllDataScope) "Semua Input" else "Hanya Saya",
-                                    color = if (showAllDataScope) Emerald900 else Slate700,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FilterList,
+                                        contentDescription = null,
+                                        tint = if (showAllDataScope) Emerald700 else Slate500,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (showAllDataScope) "Semua Input" else "Hanya Saya",
+                                        color = if (showAllDataScope) Emerald900 else Slate700,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = Emerald50,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Emerald200)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FilterList,
+                                        contentDescription = null,
+                                        tint = Emerald700,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Kasie: ${activeSupervisor.ifBlank { "Saya" }}",
+                                        color = Emerald900,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
                             }
                         }
                     }

@@ -46,8 +46,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -233,18 +236,56 @@ class HeavyTrackViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Master Lokasi Kerja
-    val lokasiList: StateFlow<List<LokasiEntity>> = repository.getAllLokasi()
+    // Master Lokasi Kerja (Debounced 250ms, Wilayah-filtered, LIMIT 40 di SQLite untuk 3.614+ baris)
+    private val _lokasiSearchQuery = MutableStateFlow("")
+    val lokasiSearchQuery: StateFlow<String> = _lokasiSearchQuery.asStateFlow()
+
+    @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val lokasiPilihan: StateFlow<List<LokasiEntity>> = combine(
+        _lokasiSearchQuery.debounce(250).distinctUntilChanged(),
+        _currentSupervisorSession
+    ) { query, session ->
+        query to session
+    }.flatMapLatest { (query, session) ->
+        val userWilayah = if (session?.isManager == true || session?.isSuperAdmin == true) {
+            null
+        } else {
+            session?.wilayah ?: repository.userSessionManager.getCurrentUserWilayah()
+        }
+        repository.searchLokasiFast(userWilayah, query)
+    }.flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val lokasiList: StateFlow<List<LokasiEntity>> = lokasiPilihan
+
+    fun onLokasiSearchQueryChanged(newQuery: String) {
+        _lokasiSearchQuery.value = newQuery
+    }
 
     // Master Kendala Lapangan
     val kendalaList: StateFlow<List<KendalaEntity>> = repository.getAllKendala()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Reports list (historical)
-    val reports: StateFlow<List<ActivityReportEntity>> = _activeSupervisor
-        .flatMapLatest { supervisor -> repository.getReportsForSupervisor(supervisor) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Reports list (historical) - strictly isolated per Kasie
+    val reports: StateFlow<List<ActivityReportEntity>> = combine(
+        _currentSupervisorSession,
+        _activeSupervisor,
+        units
+    ) { session, supervisor, kasieUnits ->
+        Triple(session, supervisor, kasieUnits)
+    }.flatMapLatest { (session, supervisor, kasieUnits) ->
+        if (session?.isManager == true || session?.isSuperAdmin == true) {
+            repository.getAllReports()
+        } else {
+            val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
+            val username = session?.username?.ifBlank { kasieName } ?: kasieName
+            val ownedUnitCodes = kasieUnits.map { it.unitCode.uppercase() }.toSet()
+            repository.getRealisasiForKasie(kasieName, username).map { list ->
+                if (ownedUnitCodes.isEmpty()) list
+                else list.filter { ownedUnitCodes.contains(it.unitCode.uppercase()) }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // All reports across all inputs / supervisors
     val allReports: StateFlow<List<ActivityReportEntity>> = repository.getAllReports()
@@ -253,19 +294,67 @@ class HeavyTrackViewModel(
     val allRencanaGlobal: StateFlow<List<RencanaKerjaEntity>> = repository.getAllRencana()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Hasil Realisasi list
-    val hasilAktivitasList: StateFlow<List<HasilInputAktivitasEntity>> = _activeSupervisor
-        .flatMapLatest { supervisor -> repository.getHasilForSupervisor(supervisor) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Hasil Realisasi list - strictly isolated per Kasie
+    val hasilAktivitasList: StateFlow<List<HasilInputAktivitasEntity>> = combine(
+        _currentSupervisorSession,
+        _activeSupervisor,
+        units
+    ) { session, supervisor, kasieUnits ->
+        Triple(session, supervisor, kasieUnits)
+    }.flatMapLatest { (session, supervisor, kasieUnits) ->
+        if (session?.isManager == true || session?.isSuperAdmin == true) {
+            repository.getAllHasil()
+        } else {
+            val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
+            val username = session?.username?.ifBlank { kasieName } ?: kasieName
+            val ownedUnitCodes = kasieUnits.map { it.unitCode.uppercase() }.toSet()
+            repository.getHasilForKasie(kasieName, username).map { list ->
+                if (ownedUnitCodes.isEmpty()) list
+                else list.filter { ownedUnitCodes.contains(it.kodeUnit.uppercase()) }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Active Rencana Kerja (shift today / active and NOT yet realized)
-    val activeRencanaList: StateFlow<List<RencanaKerjaEntity>> = _activeSupervisor
-        .flatMapLatest { supervisor -> repository.getActiveRencanaForSupervisor(supervisor) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Active Rencana Kerja (shift today / active and NOT yet realized) - strictly isolated per Kasie & owned units
+    val activeRencanaList: StateFlow<List<RencanaKerjaEntity>> = combine(
+        _currentSupervisorSession,
+        _activeSupervisor,
+        units
+    ) { session, supervisor, kasieUnits ->
+        Triple(session, supervisor, kasieUnits)
+    }.flatMapLatest { (session, supervisor, kasieUnits) ->
+        if (session?.isManager == true || session?.isSuperAdmin == true) {
+            repository.getActiveRencanaForSupervisor("Semua")
+        } else {
+            val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
+            val username = session?.username?.ifBlank { kasieName } ?: kasieName
+            val ownedUnitCodes = kasieUnits.map { it.unitCode.uppercase() }.toSet()
+            repository.getRencanaKerjaForKasie(kasieName, username).map { list ->
+                if (ownedUnitCodes.isEmpty()) list
+                else list.filter { ownedUnitCodes.contains(it.kodeUnit.uppercase()) }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allRencanaList: StateFlow<List<RencanaKerjaEntity>> = _activeSupervisor
-        .flatMapLatest { supervisor -> repository.getRencanaForSupervisor(supervisor) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allRencanaList: StateFlow<List<RencanaKerjaEntity>> = combine(
+        _currentSupervisorSession,
+        _activeSupervisor,
+        units
+    ) { session, supervisor, kasieUnits ->
+        Triple(session, supervisor, kasieUnits)
+    }.flatMapLatest { (session, supervisor, kasieUnits) ->
+        if (session?.isManager == true || session?.isSuperAdmin == true) {
+            repository.getAllRencana()
+        } else {
+            val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
+            val username = session?.username?.ifBlank { kasieName } ?: kasieName
+            val ownedUnitCodes = kasieUnits.map { it.unitCode.uppercase() }.toSet()
+            repository.getAllRencanaKerjaForKasie(kasieName, username).map { list ->
+                if (ownedUnitCodes.isEmpty()) list
+                else list.filter { ownedUnitCodes.contains(it.kodeUnit.uppercase()) }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allDrafts: StateFlow<List<com.example.data.local.entity.DraftRealisasiEntity>> = repository.getAllDrafts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -355,10 +444,8 @@ class HeavyTrackViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Hasil Input Realisasi
-    val hasilList: StateFlow<List<HasilInputAktivitasEntity>> = _activeSupervisor
-        .flatMapLatest { supervisor -> repository.getHasilForSupervisor(supervisor) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Hasil Input Realisasi - strictly isolated per Kasie
+    val hasilList: StateFlow<List<HasilInputAktivitasEntity>> = hasilAktivitasList
 
     // Unsynced count
     val unsyncedCount: StateFlow<Int> = repository.getUnsyncedCount()
@@ -373,13 +460,16 @@ class HeavyTrackViewModel(
         hasilList
     ) { unitList, rencanaList, realisasiList ->
         val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-        val plansToday = rencanaList.filter { it.tanggalFormat == todayStr }
-        val resultsToday = realisasiList.filter { it.tanggalFormat == todayStr }
+        val ownedCodes = unitList.map { it.unitCode.uppercase() }.toSet()
+        val plansToday = rencanaList.filter {
+            it.tanggalFormat == todayStr && (ownedCodes.isEmpty() || ownedCodes.contains(it.kodeUnit.uppercase()))
+        }
+        val resultsToday = realisasiList.filter {
+            it.tanggalFormat == todayStr && (ownedCodes.isEmpty() || ownedCodes.contains(it.kodeUnit.uppercase()))
+        }
 
-        // Unit yang masuk dalam perhitungan: semua unit yang beroperasi / memiliki rencana hari ini, atau seluruh unit terdaftar
-        val baseUnits = if (unitList.isNotEmpty()) unitList else plansToday.map {
-            UnitEntity(unitCode = it.kodeUnit, unitType = "HEAVY", brandModel = "Standard", lastHm = 0.0, supervisorAssigned = "", status = it.statusUnit)
-        }.distinctBy { it.unitCode }
+        // Hanya hitung unit yang menjadi tanggung jawab Kasie yang sedang login
+        val baseUnits = unitList
 
         val items = baseUnits.map { u ->
             val uPlans = plansToday.filter { it.kodeUnit.equals(u.unitCode, ignoreCase = true) }
@@ -506,7 +596,7 @@ class HeavyTrackViewModel(
         filteredReports,
         executiveFilterState
     ) { session, supervisorReports, filteredRepList, filters ->
-        val targetReports = if (session?.isManager == true) filteredRepList else supervisorReports
+        val targetReports = if (session?.isManager == true || session?.isSuperAdmin == true) filteredRepList else supervisorReports
         calculateAnalytics(targetReports, filters.period, filters.kodeUnit, filters.wilayah, filters.jenisUnit)
     }.stateIn(
         viewModelScope,

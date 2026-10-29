@@ -24,6 +24,12 @@ data class RencanaKerjaEntity(
     @ColumnInfo(name = "pengawas", defaultValue = "")
     val pengawas: String = supervisorName,
 
+    @ColumnInfo(name = "kasie", defaultValue = "")
+    val kasie: String = supervisorName,
+
+    @ColumnInfo(name = "created_by", defaultValue = "")
+    val createdBy: String = supervisorName,
+
     @ColumnInfo(name = "status_unit")
     val statusUnit: String = "OPERASI", // "OPERASI", "STANDBY", "BREAKDOWN"
 

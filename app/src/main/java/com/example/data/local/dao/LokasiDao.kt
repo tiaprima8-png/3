@@ -18,9 +18,34 @@ interface LokasiDao {
 
     @Query("""
         SELECT * FROM lokasi 
+        WHERE LOWER(TRIM(status)) = 'aktif'
+          AND (
+              :wilayahFilter IS NULL 
+              OR TRIM(:wilayahFilter) = '' 
+              OR LOWER(TRIM(:wilayahFilter)) = 'semua wilayah'
+              OR UPPER(TRIM(wilayah)) = UPPER(TRIM(:wilayahFilter))
+              OR UPPER(TRIM(wilayah)) = UPPER(TRIM(REPLACE(REPLACE(REPLACE(:wilayahFilter, 'Geodesi ', ''), 'GEODESI ', ''), 'RC ', '')))
+              OR UPPER(TRIM(wilayah)) = UPPER(TRIM(REPLACE(REPLACE(:wilayahFilter, 'Lebung ', ''), 'LEBUNG ', '')))
+              OR UPPER(TRIM(:wilayahFilter)) LIKE '%' || UPPER(TRIM(wilayah)) || '%'
+              OR UPPER(TRIM(wilayah)) LIKE '%' || UPPER(TRIM(:wilayahFilter)) || '%'
+              OR (UPPER(:wilayahFilter) LIKE '%PG12%' AND UPPER(TRIM(wilayah)) IN ('PG1', 'PG2', 'PG12', 'LEBUNG PG12', 'RC PG1', 'RC PG2', 'GEODESI PG1', 'GEODESI PG2'))
+          )
+          AND (
+              :query IS NULL 
+              OR TRIM(:query) = '' 
+              OR LOWER(kode_lokasi) LIKE '%' || LOWER(TRIM(:query)) || '%'
+          )
+        ORDER BY kode_lokasi ASC 
+        LIMIT 40
+    """)
+    fun searchLokasiFast(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>>
+
+    @Query("""
+        SELECT * FROM lokasi 
         WHERE kode_lokasi LIKE '%' || :query || '%' 
            OR wilayah LIKE '%' || :query || '%'
         ORDER BY kode_lokasi ASC
+        LIMIT 40
     """)
     fun searchLokasi(query: String): Flow<List<LokasiEntity>>
 

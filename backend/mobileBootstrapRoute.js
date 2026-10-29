@@ -120,29 +120,74 @@ router.get('/api/mobile/bootstrap-data', async (req, res) => {
     `;
 
     // 7. Rencana Kerja Aktif & Pending (Belum Realisasi)
-    const rencanaKerjaQuery = `
-      SELECT 
-        id, 
-        kode_unit, 
-        nama_unit, 
-        operator, 
-        kode_sap, 
-        nama_aktivitas, 
-        satuan_aktivitas, 
-        kode_lokasi, 
-        wilayah, 
-        shift_kerja, 
-        keterangan, 
-        nomor_spk, 
-        status_spk, 
-        status_tahap, 
-        is_realized, 
-        nama_pengawas, 
-        tanggal 
-      FROM rencana_kerja 
-      WHERE is_realized = 0 OR is_realized IS NULL OR status_realisasi = 'BELUM'
-      ORDER BY id DESC
-    `;
+    // Isolasi Data Penuh: Filter berdasarkan Kasie yang sedang login jika role = KASIE
+    const requestedKasie = (req.query.kasie || req.query.pengawas || req.user?.nama_lengkap || '').trim();
+    const requestedUsername = (req.query.username || req.user?.username || '').replace(/^@/, '').trim();
+    const requestedRole = (req.query.role || req.user?.role || 'KASIE').toUpperCase();
+    const isExecutiveRequest = requestedRole.includes('ADMIN') || requestedRole.includes('MANAGER') || requestedKasie.toLowerCase() === 'semua';
+
+    const rencanaKerjaQuery = isExecutiveRequest || (!requestedKasie && !requestedUsername)
+      ? `
+        SELECT 
+          id, 
+          kode_unit, 
+          nama_unit, 
+          operator, 
+          kode_sap, 
+          nama_aktivitas, 
+          satuan_aktivitas, 
+          kode_lokasi, 
+          wilayah, 
+          shift_kerja, 
+          keterangan, 
+          nomor_spk, 
+          status_spk, 
+          status_tahap, 
+          is_realized, 
+          nama_pengawas, 
+          nama_pengawas AS kasie,
+          created_by,
+          tanggal 
+        FROM rencana_kerja 
+        WHERE (is_realized = 0 OR is_realized IS NULL OR status_realisasi = 'BELUM')
+          AND status_spk != 'SELESAI'
+        ORDER BY id DESC
+      `
+      : `
+        SELECT 
+          rk.id, 
+          rk.kode_unit, 
+          rk.nama_unit, 
+          rk.operator, 
+          rk.kode_sap, 
+          rk.nama_aktivitas, 
+          rk.satuan_aktivitas, 
+          rk.kode_lokasi, 
+          rk.wilayah, 
+          rk.shift_kerja, 
+          rk.keterangan, 
+          rk.nomor_spk, 
+          rk.status_spk, 
+          rk.status_tahap, 
+          rk.is_realized, 
+          rk.nama_pengawas, 
+          COALESCE(rk.kasie, rk.nama_pengawas) AS kasie,
+          rk.created_by,
+          rk.tanggal 
+        FROM rencana_kerja rk
+        INNER JOIN master_units mu ON UPPER(TRIM(rk.kode_unit)) = UPPER(TRIM(mu.kode_unit))
+        WHERE (rk.is_realized = 0 OR rk.is_realized IS NULL OR rk.status_realisasi = 'BELUM')
+          AND rk.status_spk != 'SELESAI'
+          AND (
+            LOWER(TRIM(COALESCE(rk.kasie, rk.nama_pengawas))) = LOWER(TRIM('${requestedKasie.replace(/'/g, "''")}'))
+            OR LOWER(TRIM(COALESCE(rk.created_by, rk.nama_pengawas))) = LOWER(TRIM('${requestedUsername.replace(/'/g, "''")}'))
+          )
+          AND (
+            LOWER(TRIM(COALESCE(mu.kasie_penanggung_jawab, mu.nama_pengawas))) = LOWER(TRIM('${requestedKasie.replace(/'/g, "''")}'))
+            OR LOWER(TRIM(COALESCE(mu.kasie_penanggung_jawab, mu.nama_pengawas))) = LOWER(TRIM('${requestedUsername.replace(/'/g, "''")}'))
+          )
+        ORDER BY rk.id DESC
+      `;
 
     // Eksekusi query (contoh menggunakan db.query)
     // Pada implementasi riil sesuaikan dengan koneksi database backend Anda:
@@ -184,7 +229,7 @@ router.get('/api/mobile/bootstrap-data', async (req, res) => {
         aktivitas: aktivitas,     // 107 master aktivitas aktif
         kendala: kendala,         // 15 master kendala aktif
         lokasi: lokasi,           // 7 master lokasi aktif
-        rencanaKerja: rencanaKerja // Rencana kerja aktif & pending
+        rencanaKerja: rencanaKerja // Rencana kerja aktif & pending (terisolasi khusus Kasie login)
       }
     });
 
@@ -194,6 +239,203 @@ router.get('/api/mobile/bootstrap-data', async (req, res) => {
       status: "error",
       message: "Gagal memuat bootstrap data master: " + error.message,
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * =====================================================================
+ * ENDPOINT RENCANA KERJA: GET /api/rencana-kerja
+ * Memfilter rencana kerja secara ketat berdasarkan Kasie yang login.
+ * Jangan kirimkan rencana kerja milik Kasie lain jika request berasal dari role KASIE.
+ * =====================================================================
+ */
+router.get('/api/rencana-kerja', async (req, res) => {
+  try {
+    const kasie = (req.query.kasie || req.query.pengawas || req.user?.nama_lengkap || '').trim();
+    const username = (req.query.username || req.user?.username || '').replace(/^@/, '').trim();
+    const role = (req.query.role || req.user?.role || 'KASIE').toUpperCase();
+
+    if (role === 'KASIE' && !kasie && !username) {
+      return res.status(200).json({ status: "success", data: [] });
+    }
+
+    const query = `
+      SELECT rk.* 
+      FROM rencana_kerja rk
+      INNER JOIN master_units mu ON UPPER(TRIM(rk.kode_unit)) = UPPER(TRIM(mu.kode_unit))
+      WHERE (
+        LOWER(TRIM(COALESCE(rk.kasie, rk.nama_pengawas))) = LOWER(TRIM($1))
+        OR LOWER(TRIM(COALESCE(rk.created_by, rk.nama_pengawas))) = LOWER(TRIM($2))
+      )
+      AND (
+        LOWER(TRIM(COALESCE(mu.kasie_penanggung_jawab, mu.nama_pengawas))) = LOWER(TRIM($1))
+        OR LOWER(TRIM(COALESCE(mu.kasie_penanggung_jawab, mu.nama_pengawas))) = LOWER(TRIM($2))
+      )
+      AND rk.status_spk != 'SELESAI'
+      AND (rk.is_realized = 0 OR rk.is_realized IS NULL)
+      ORDER BY rk.id DESC
+    `;
+
+    let rows = [];
+    if (typeof db !== 'undefined' && db.query) {
+      const result = await db.query(query, [kasie, username]);
+      rows = result.rows || result;
+    }
+
+    return res.status(200).json({
+      status: "success",
+      data: rows
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Gagal memuat rencana kerja: " + error.message
+    });
+  }
+});
+
+/**
+ * =====================================================================
+ * ENDPOINT REALISASI: GET /api/realisasi
+ * Memfilter laporan realisasi agar HANYA mengembalikan data yang dibuat oleh Kasie tersebut.
+ * =====================================================================
+ */
+router.get('/api/realisasi', async (req, res) => {
+  try {
+    const kasie = (req.query.kasie || req.query.pengawas || req.user?.nama_lengkap || '').trim();
+    const username = (req.query.username || req.user?.username || '').replace(/^@/, '').trim();
+    const role = (req.query.role || req.user?.role || 'KASIE').toUpperCase();
+
+    if (role === 'KASIE' && !kasie && !username) {
+      return res.status(200).json({ status: "success", data: [] });
+    }
+
+    const query = `
+      SELECT r.* 
+      FROM realisasi_kerja r
+      WHERE LOWER(TRIM(COALESCE(r.nama_kasie, r.nama_pengawas))) = LOWER(TRIM($1))
+         OR LOWER(TRIM(COALESCE(r.created_by, r.nama_pengawas))) = LOWER(TRIM($2))
+      ORDER BY r.tanggal DESC, r.id DESC
+    `;
+
+    let rows = [];
+    if (typeof db !== 'undefined' && db.query) {
+      const result = await db.query(query, [kasie, username]);
+      rows = result.rows || result;
+    }
+
+    return res.status(200).json({
+      status: "success",
+      data: rows
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Gagal memuat laporan realisasi: " + error.message
+    });
+  }
+});
+
+/**
+ * =====================================================================
+ * ENDPOINT LOGIN FLEKSIBEL: POST /api/mobile/login & POST /api/auth/login
+ * Menerima input username dengan/tanpa '@', huruf besar/kecil, spasi,
+ * nama_lengkap (misal 'Yono'), maupun username tanpa angka belakang ('yono' -> 'yono1').
+ * =====================================================================
+ */
+router.post(['/api/mobile/login', '/api/auth/mobile-login'], async (req, res) => {
+  try {
+    const rawUser = String(req.body?.username || req.body?.identifier || '').trim();
+    const rawPass = String(req.body?.password || req.body?.pin || '').trim();
+    const cleanInput = rawUser.replace(/^@+/, '').trim().toLowerCase();
+    const baseInput = cleanInput.replace(/\d+$/, '').trim();
+
+    if (!cleanInput) {
+      return res.status(400).json({
+        status: "error",
+        message: "Silakan masukkan username akun Anda."
+      });
+    }
+    if (!rawPass) {
+      return res.status(400).json({
+        status: "error",
+        message: "Silakan masukkan password akun Anda."
+      });
+    }
+
+    const query = `
+      SELECT 
+        id, 
+        nama_lengkap, 
+        username, 
+        password, 
+        hak_akses, 
+        role, 
+        wilayah, 
+        status_aktif, 
+        status 
+      FROM master_users
+      WHERE LOWER(TRIM(REPLACE(username, '@', ''))) = $1
+         OR LOWER(TRIM(nama_lengkap)) = $1
+         OR LOWER(TRIM(REGEXP_REPLACE(REPLACE(username, '@', ''), '[0-9]+$', ''))) = $2
+      ORDER BY id ASC
+      LIMIT 1
+    `;
+
+    let matchedUser = null;
+    if (typeof db !== 'undefined' && db.query) {
+      const result = await db.query(query, [cleanInput, baseInput || cleanInput]);
+      const rows = result.rows || result;
+      matchedUser = rows && rows.length > 0 ? rows[0] : null;
+    }
+
+    if (!matchedUser) {
+      return res.status(404).json({
+        status: "error",
+        message: `Akun '${rawUser}' tidak terdaftar pada Data Master Pengguna Website Admin.`
+      });
+    }
+
+    const roleUpper = String(matchedUser.role || matchedUser.hak_akses || 'KASIE').toUpperCase();
+    if (roleUpper.includes('SUPER') || roleUpper.includes('MANAGER')) {
+      return res.status(403).json({
+        status: "error",
+        message: "Akses Ditolak: Akun Super Admin & Manager khusus untuk Website Portal Admin. Aplikasi Android RKCE khusus untuk Kasie Lapangan."
+      });
+    }
+
+    const isAktif = matchedUser.status_aktif === 1 ||
+      matchedUser.status_aktif === true ||
+      String(matchedUser.status || 'Aktif').toLowerCase() === 'aktif';
+
+    if (!isAktif) {
+      return res.status(403).json({
+        status: "error",
+        message: `Akun '${matchedUser.nama_lengkap || matchedUser.username}' berstatus Nonaktif di Website Admin.`
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      success: true,
+      token: `JWT-MOBILE-${matchedUser.id}-${Date.now()}`,
+      message: "Login berhasil sebagai Kasie Lapangan",
+      user: {
+        id: matchedUser.id,
+        nama_lengkap: matchedUser.nama_lengkap,
+        username: String(matchedUser.username || '').replace(/^@+/, '').trim(),
+        role: "KASIE",
+        hak_akses: matchedUser.hak_akses || "Kasie Lapangan",
+        wilayah: matchedUser.wilayah || "Geodesi PG1",
+        status: "Aktif",
+        status_aktif: 1
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Gagal memproses login: " + error.message
     });
   }
 });

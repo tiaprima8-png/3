@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PrecisionManufacturing
 import androidx.compose.material.icons.filled.Visibility
@@ -47,12 +48,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -90,11 +95,13 @@ fun LoginScreen(
 
     val coroutineScope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
 
     fun attemptLogin() {
         errorMessage = null
         val userTrimmed = usernameInput.trim().removePrefix("@").trim()
+        val userBase = userTrimmed.replace(Regex("\\d+$"), "").trim()
         val passTrimmed = passwordInput.trim()
 
         if (userTrimmed.isBlank()) {
@@ -106,12 +113,15 @@ fun LoginScreen(
             return
         }
 
-        // Cek jika akun yang dimasukkan adalah Super Admin atau Manager (Khusus Web Admin)
+        // Cek secara fleksibel apakah akun adalah Super Admin atau Manager (Khusus Web Admin)
         val candidate = SupervisorDirectory.findUserByUsername(userTrimmed)
             ?: masterUsers.find {
-                it.username.equals(userTrimmed, ignoreCase = true) ||
-                it.name.equals(userTrimmed, ignoreCase = true) ||
-                it.namaLengkap.equals(userTrimmed, ignoreCase = true)
+                val uClean = it.username.trim().removePrefix("@")
+                val nClean = it.namaLengkap.trim()
+                uClean.equals(userTrimmed, ignoreCase = true) ||
+                it.name.trim().equals(userTrimmed, ignoreCase = true) ||
+                nClean.equals(userTrimmed, ignoreCase = true) ||
+                (userBase.isNotBlank() && uClean.replace(Regex("\\d+$"), "").equals(userBase, ignoreCase = true))
             }
 
         if (candidate != null && candidate.isExecutive) {
@@ -123,11 +133,12 @@ fun LoginScreen(
             return
         }
 
+        val resolvedLoginIdentifier = candidate?.username?.trim()?.removePrefix("@")?.ifBlank { userTrimmed } ?: userTrimmed
         isLoading = true
 
         if (onLoginWithApi != null) {
             coroutineScope.launch {
-                val result = onLoginWithApi(userTrimmed, passTrimmed)
+                val result = onLoginWithApi(resolvedLoginIdentifier, passTrimmed)
                 isLoading = false
                 when (result) {
                     is LoginResult.Success -> {
@@ -141,8 +152,8 @@ fun LoginScreen(
             return
         }
 
-        // Fallback autentikasi lokal
-        val (supervisor, errorMsg) = SupervisorDirectory.authenticateKasie(userTrimmed, passTrimmed)
+        // Fallback autentikasi lokal yang fleksibel
+        val (supervisor, errorMsg) = SupervisorDirectory.authenticateKasie(resolvedLoginIdentifier, passTrimmed)
         isLoading = false
         if (supervisor != null) {
             onLoginSuccess(supervisor)
@@ -150,6 +161,24 @@ fun LoginScreen(
             errorMessage = errorMsg ?: "Username atau password tidak sesuai dengan data master."
         }
     }
+
+    val textFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color(0xFF0F172A),
+        unfocusedTextColor = Color(0xFF0F172A),
+        disabledTextColor = Color(0xFF475569),
+        errorTextColor = Color(0xFF0F172A),
+        cursorColor = Color(0xFF059669),
+        focusedBorderColor = Color(0xFF059669),
+        unfocusedBorderColor = Slate200,
+        focusedContainerColor = Color(0xFFF8FAFC),
+        unfocusedContainerColor = Color(0xFFF8FAFC),
+        focusedLeadingIconColor = Color(0xFF059669),
+        unfocusedLeadingIconColor = Slate400,
+        focusedTrailingIconColor = Slate700,
+        unfocusedTrailingIconColor = Slate400,
+        focusedPlaceholderColor = Slate400,
+        unfocusedPlaceholderColor = Slate400
+    )
 
     Box(
         modifier = Modifier
@@ -294,28 +323,59 @@ fun LoginScreen(
                     )
                     OutlinedTextField(
                         value = usernameInput,
-                        onValueChange = {
-                            usernameInput = it
+                        onValueChange = { newValue ->
+                            usernameInput = newValue.replace("\n", "")
                             errorMessage = null
                         },
+                        textStyle = TextStyle(
+                            color = Color(0xFF0F172A),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
                         placeholder = {
-                            Text("Masukkan username", color = Slate400, fontSize = 14.sp)
+                            Text(
+                                text = "Masukkan username (contoh: yono1 / @jahidi)",
+                                color = Slate400,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
                         },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.Person,
-                                contentDescription = "Username Icon",
-                                tint = Slate400
+                                contentDescription = "Username Icon"
                             )
                         },
+                        trailingIcon = {
+                            if (usernameInput.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        usernameInput = ""
+                                        errorMessage = null
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Hapus username",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF059669),
-                            unfocusedBorderColor = Slate200,
-                            focusedContainerColor = Color(0xFFF8FAFC),
-                            unfocusedContainerColor = Color(0xFFF8FAFC)
+                        maxLines = 1,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrectEnabled = false,
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Next
                         ),
+                        keyboardActions = KeyboardActions(
+                            onNext = {
+                                focusManager.moveFocus(FocusDirection.Down)
+                            }
+                        ),
+                        colors = textFieldColors,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -335,42 +395,51 @@ fun LoginScreen(
                     )
                     OutlinedTextField(
                         value = passwordInput,
-                        onValueChange = {
-                            passwordInput = it
+                        onValueChange = { newValue ->
+                            passwordInput = newValue.replace("\n", "")
                             errorMessage = null
                         },
+                        textStyle = TextStyle(
+                            color = Color(0xFF0F172A),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
                         placeholder = {
-                            Text("Masukkan password", color = Slate400, fontSize = 14.sp)
+                            Text(
+                                text = "Masukkan password",
+                                color = Slate400,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
                         },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.Lock,
-                                contentDescription = "Password Icon",
-                                tint = Slate400
+                                contentDescription = "Password Icon"
                             )
                         },
                         trailingIcon = {
                             IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
                                 Icon(
                                     imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (isPasswordVisible) "Sembunyikan password" else "Tampilkan password",
-                                    tint = Slate400
+                                    contentDescription = if (isPasswordVisible) "Sembunyikan password" else "Tampilkan password"
                                 )
                             }
                         },
                         visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrectEnabled = false,
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
                         keyboardActions = KeyboardActions(onDone = {
                             keyboardController?.hide()
                             attemptLogin()
                         }),
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF059669),
-                            unfocusedBorderColor = Slate200,
-                            focusedContainerColor = Color(0xFFF8FAFC),
-                            unfocusedContainerColor = Color(0xFFF8FAFC)
-                        ),
+                        maxLines = 1,
+                        colors = textFieldColors,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()

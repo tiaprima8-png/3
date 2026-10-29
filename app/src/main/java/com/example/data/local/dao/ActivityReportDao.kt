@@ -14,8 +14,37 @@ interface ActivityReportDao {
     @Query("SELECT * FROM activity_reports ORDER BY createdAt DESC")
     fun getAllReports(): Flow<List<ActivityReportEntity>>
 
-    @Query("SELECT * FROM activity_reports WHERE LOWER(TRIM(supervisorName)) = LOWER(TRIM(:supervisor)) OR :supervisor = '' OR :supervisor = 'ALL' ORDER BY createdAt DESC")
+    @Query("""
+        SELECT * FROM activity_reports 
+        WHERE LOWER(TRIM(supervisorName)) = LOWER(TRIM(:supervisor)) 
+           OR LOWER(TRIM(namaKasie)) = LOWER(TRIM(:supervisor))
+           OR LOWER(TRIM(createdBy)) = LOWER(TRIM(REPLACE(:supervisor, '@', '')))
+           OR :supervisor = 'ALL' 
+           OR :supervisor = 'Semua'
+        ORDER BY createdAt DESC, id DESC
+    """)
     fun getReportsForSupervisor(supervisor: String): Flow<List<ActivityReportEntity>>
+
+    @Query("""
+        SELECT * FROM activity_reports 
+        WHERE (
+            LOWER(TRIM(namaKasie)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(supervisorName)) = LOWER(TRIM(:namaKasie))
+            OR LOWER(TRIM(createdBy)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(supervisorName)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(namaKasie)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+        )
+        AND (
+            NOT EXISTS (SELECT 1 FROM units)
+            OR unitCode IN (
+                SELECT unitCode FROM units 
+                WHERE LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:namaKasie))
+                   OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            )
+        )
+        ORDER BY createdAt DESC, id DESC
+    """)
+    fun getRealisasiForKasie(namaKasie: String, username: String): Flow<List<ActivityReportEntity>>
 
     @Query("""
         SELECT * FROM activity_reports 
@@ -101,3 +130,6 @@ interface ActivityReportDao {
     @Query("DELETE FROM activity_reports WHERE unitCode NOT IN (SELECT unitCode FROM units) OR LOWER(unitType) IN ('dump truck', 'bulldozer')")
     suspend fun deleteOrphanedReports(): Int
 }
+
+typealias RealisasiDao = ActivityReportDao
+

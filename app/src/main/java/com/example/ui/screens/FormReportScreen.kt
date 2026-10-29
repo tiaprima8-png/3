@@ -161,7 +161,9 @@ fun FormReportScreen(
     val availableUnitsForRencana by viewModel.availableUnitsForRencana.collectAsState()
     val activities by viewModel.activities.collectAsState()
     val operators by viewModel.operators.collectAsState()
-    val lokasiList by viewModel.lokasiList.collectAsState()
+    val lokasiList by viewModel.lokasiPilihan.collectAsState()
+    val lokasiSearchQuery by viewModel.lokasiSearchQuery.collectAsState()
+    val currentSupervisor by viewModel.currentSupervisorSession.collectAsState()
     val kendalaList by viewModel.kendalaList.collectAsState()
     val activeRencanaList by viewModel.activeRencanaList.collectAsState()
     val allRencanaList by viewModel.allRencanaList.collectAsState()
@@ -3408,6 +3410,7 @@ fun FormReportScreen(
     LokasiSearchableSelectorSheet(
         isOpen = isLokasiSheetOpen,
         onDismissRequest = {
+            viewModel.onLokasiSearchQueryChanged("")
             isLokasiSheetOpen = false
             activeSubPlanLokasiTarget = null
         },
@@ -3424,9 +3427,13 @@ fun FormReportScreen(
             } else {
                 viewModel.selectRencanaLokasi(lok)
             }
+            viewModel.onLokasiSearchQueryChanged("")
             activeSubPlanLokasiTarget = null
             isLokasiSheetOpen = false
-        }
+        },
+        searchQuery = lokasiSearchQuery,
+        onSearchQueryChange = { viewModel.onLokasiSearchQueryChanged(it) },
+        wilayahLabel = currentSupervisor?.wilayah
     )
 
     // Sheet 5: Realisasi Editable Activity Sheet
@@ -3445,13 +3452,20 @@ fun FormReportScreen(
     // Sheet 6: Realisasi Editable Lokasi Sheet
     LokasiSearchableSelectorSheet(
         isOpen = isRealisasiLokasiSheetOpen,
-        onDismissRequest = { isRealisasiLokasiSheetOpen = false },
+        onDismissRequest = {
+            viewModel.onLokasiSearchQueryChanged("")
+            isRealisasiLokasiSheetOpen = false
+        },
         lokasiList = lokasiList,
         selectedLokasi = realisasiState.selectedLokasi,
         onLokasiSelected = {
             viewModel.setRealisasiLokasi(it)
+            viewModel.onLokasiSearchQueryChanged("")
             isRealisasiLokasiSheetOpen = false
-        }
+        },
+        searchQuery = lokasiSearchQuery,
+        onSearchQueryChange = { viewModel.onLokasiSearchQueryChanged(it) },
+        wilayahLabel = currentSupervisor?.wilayah
     )
 
     // Sheet 7: Master Kendala Searchable Selector Sheet
