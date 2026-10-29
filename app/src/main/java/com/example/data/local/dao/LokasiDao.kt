@@ -30,6 +30,9 @@ interface LokasiDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLokasiList(lokasiList: List<LokasiEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(lokasiList: List<LokasiEntity>)
+
     @Query("DELETE FROM lokasi")
     suspend fun clearAll()
 

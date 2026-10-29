@@ -9,8 +9,24 @@ import androidx.room.Update
 import com.example.data.local.entity.UnitEntity
 import kotlinx.coroutines.flow.Flow
 
+typealias UnitAlatBeratDao = UnitDao
+
 @Dao
 interface UnitDao {
+    @Query("""
+        SELECT * FROM units 
+        WHERE (
+            LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:kasieName)) 
+            OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:username))
+            OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:username, '@', '')))
+            OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:kasieName, '@', '')))
+        )
+        AND (status = 'Aktif' OR status = 'OPERASIONAL' OR status = 'aktif' OR status = 'operasional' OR status != 'Nonaktif')
+        ORDER BY unitCode ASC
+    """)
+    fun getUnitsForCurrentKasie(kasieName: String, username: String): Flow<List<UnitEntity>>
+
     @Query("SELECT * FROM units ORDER BY unitCode ASC")
     fun getAllUnits(): Flow<List<UnitEntity>>
 
@@ -71,6 +87,9 @@ interface UnitDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUnits(units: List<UnitEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(units: List<UnitEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUnit(unit: UnitEntity)

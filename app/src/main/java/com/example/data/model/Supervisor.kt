@@ -18,24 +18,34 @@ data class Supervisor(
     val status: String = "Aktif"
 ) {
     val isManager: Boolean get() = role.equals("MANAGER", ignoreCase = true)
-    val isSuperAdmin: Boolean get() = role.equals("SUPER ADMIN", ignoreCase = true) || role.equals("SUPERADMIN", ignoreCase = true)
+    val isSuperAdmin: Boolean get() = role.equals("SUPER ADMIN", ignoreCase = true) || role.equals("SUPERADMIN", ignoreCase = true) || role.equals("SUPER_ADMIN", ignoreCase = true)
     val isExecutive: Boolean get() = isManager || isSuperAdmin
     val isSupervisor: Boolean get() = !isExecutive
     val isKasie: Boolean get() = !isExecutive
-    val isAktif: Boolean get() = status.equals("Aktif", ignoreCase = true) || status.equals("Active", ignoreCase = true)
+    val isAktif: Boolean get() = !status.equals("Nonaktif", ignoreCase = true) && !status.equals("Inactive", ignoreCase = true) && !status.equals("Tidak Aktif", ignoreCase = true) && !status.equals("0")
 
     val resolvedNamaLengkap: String
         get() = namaLengkap.ifBlank { name.ifBlank { username } }
 }
 
 object SupervisorDirectory {
-    // 8 Akun Kasie Lapangan Resmi (Sinkron Database Website Admin Portal CE)
+    val dynamicUsers = java.util.concurrent.CopyOnWriteArrayList<Supervisor>()
+
+    fun updateFromApiUsers(apiUsers: List<com.example.data.remote.UserApiPayload>) {
+        if (apiUsers.isEmpty()) return
+        dynamicUsers.clear()
+        for (u in apiUsers) {
+            dynamicUsers.add(u.toSupervisor())
+        }
+    }
+
+    // 8 Akun Kasie Lapangan Resmi (Sinkron Database Website Admin Portal CE https://1-portalce.ai.studio/)
     val officialKasieList = listOf(
         Supervisor(
-            id = "1",
+            id = "35",
             name = "Agung",
             namaLengkap = "Agung",
-            username = "Agung",
+            username = "agung",
             nik = "KASIE-AGUNG",
             passwordPin = "123",
             defaultShift = "SIANG",
@@ -47,10 +57,10 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "2",
+            id = "36",
             name = "Zainudin",
             namaLengkap = "Zainudin",
-            username = "Zainudin",
+            username = "zainudin",
             nik = "KASIE-ZAINUDIN",
             passwordPin = "123",
             defaultShift = "SIANG",
@@ -62,25 +72,25 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "3",
-            name = "Jaidi",
-            namaLengkap = "Jaidi",
-            username = "Jaidi",
-            nik = "KASIE-JAIDI",
+            id = "37",
+            name = "Jahidi",
+            namaLengkap = "Jahidi",
+            username = "jahidi",
+            nik = "KASIE-JAHIDI",
             passwordPin = "123",
             defaultShift = "SIANG",
-            assignedSector = "Sektor Operasional Lapangan (Geodesi PG3)",
+            assignedSector = "Sektor Operasional Lapangan (RC PG1)",
             phone = "+62 812-1001-0003",
             roleTitle = "Kasie Lapangan",
             role = "KASIE",
-            wilayah = "Geodesi PG3",
+            wilayah = "RC PG1",
             status = "Aktif"
         ),
         Supervisor(
-            id = "4",
+            id = "38",
             name = "Hisar",
             namaLengkap = "Hisar",
-            username = "Hisar",
+            username = "hisar",
             nik = "KASIE-HISAR",
             passwordPin = "123",
             defaultShift = "SIANG",
@@ -92,11 +102,11 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "5",
+            id = "39",
             name = "Yono",
             namaLengkap = "Yono",
-            username = "Yono",
-            nik = "KASIE-YONO",
+            username = "yono1",
+            nik = "KASIE-YONO1",
             passwordPin = "123",
             defaultShift = "SIANG",
             assignedSector = "Sektor Operasional Lapangan (RC PG2)",
@@ -107,10 +117,10 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "6",
+            id = "40",
             name = "Nyoman",
             namaLengkap = "Nyoman",
-            username = "Nyoman",
+            username = "nyoman",
             nik = "KASIE-NYOMAN",
             passwordPin = "123",
             defaultShift = "SIANG",
@@ -122,10 +132,10 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "7",
+            id = "41",
             name = "Saipul",
             namaLengkap = "Saipul",
-            username = "Saipul",
+            username = "saipul",
             nik = "KASIE-SAIPUL",
             passwordPin = "123",
             defaultShift = "SIANG",
@@ -137,10 +147,10 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "8",
+            id = "42",
             name = "Galung",
             namaLengkap = "Galung",
-            username = "Galung",
+            username = "galung",
             nik = "KASIE-GALUNG",
             passwordPin = "123",
             defaultShift = "SIANG",
@@ -157,10 +167,10 @@ object SupervisorDirectory {
     val officialExecutiveList = listOf(
         // SUPER ADMIN (Farid & Deni)
         Supervisor(
-            id = "SA-01",
+            id = "33",
             name = "Farid",
-            namaLengkap = "Farid Hadi Sofian",
-            username = "Farid",
+            namaLengkap = "Farid",
+            username = "farid",
             nik = "SA-FARID",
             passwordPin = "123",
             defaultShift = "ALL",
@@ -172,10 +182,10 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "SA-02",
+            id = "34",
             name = "Deni",
             namaLengkap = "Deni",
-            username = "Deni",
+            username = "deni",
             nik = "SA-DENI",
             passwordPin = "123",
             defaultShift = "ALL",
@@ -189,10 +199,10 @@ object SupervisorDirectory {
 
         // MANAGER (Lutfi & Putut)
         Supervisor(
-            id = "MGR-01",
+            id = "43",
             name = "Lutfi",
             namaLengkap = "Lutfi",
-            username = "Lutfi",
+            username = "lutfi",
             nik = "MGR-LUTFI",
             passwordPin = "123",
             defaultShift = "ALL",
@@ -204,10 +214,10 @@ object SupervisorDirectory {
             status = "Aktif"
         ),
         Supervisor(
-            id = "MGR-02",
+            id = "44",
             name = "Putut",
             namaLengkap = "Putut",
-            username = "Putut",
+            username = "putut",
             nik = "MGR-PUTUT",
             passwordPin = "123",
             defaultShift = "ALL",
@@ -237,17 +247,69 @@ object SupervisorDirectory {
         status = "Nonaktif"
     )
 
-    val predefinedSupervisors: List<Supervisor> = officialKasieList + officialExecutiveList + listOf(testNonaktifUser)
+    val predefinedSupervisors: List<Supervisor>
+        get() = if (dynamicUsers.isNotEmpty()) dynamicUsers.toList() else (officialKasieList + officialExecutiveList + listOf(testNonaktifUser))
+
+    val allSupervisors: List<Supervisor>
+        get() = predefinedSupervisors
+
+    fun findUserByUsername(username: String): Supervisor? {
+        val clean = username.trim().removePrefix("@").trim()
+        val list = if (dynamicUsers.isNotEmpty()) dynamicUsers.toList() else predefinedSupervisors
+        return list.find {
+            it.username.equals(clean, ignoreCase = true) ||
+            it.name.equals(clean, ignoreCase = true) ||
+            it.namaLengkap.equals(clean, ignoreCase = true) ||
+            it.nik.equals(clean, ignoreCase = true)
+        }
+    }
 
     fun authenticate(nikOrName: String, pin: String): Supervisor? {
-        val trimmedIdentifier = nikOrName.trim()
+        val trimmedIdentifier = nikOrName.trim().removePrefix("@").trim()
         val trimmedPin = pin.trim()
-        return predefinedSupervisors.find { spv ->
-            (spv.nik.equals(trimmedIdentifier, ignoreCase = true) ||
+        val userList = if (dynamicUsers.isNotEmpty()) dynamicUsers.toList() else predefinedSupervisors
+        return userList.find { spv ->
+            (spv.username.equals(trimmedIdentifier, ignoreCase = true) ||
                     spv.name.equals(trimmedIdentifier, ignoreCase = true) ||
-                    spv.username.equals(trimmedIdentifier, ignoreCase = true) ||
-                    spv.namaLengkap.equals(trimmedIdentifier, ignoreCase = true)) &&
+                    spv.namaLengkap.equals(trimmedIdentifier, ignoreCase = true) ||
+                    spv.nik.equals(trimmedIdentifier, ignoreCase = true)) &&
                     (spv.passwordPin == trimmedPin || trimmedPin == "123" || trimmedPin == "1234" || trimmedPin.isEmpty())
         }
+    }
+
+    /**
+     * Validasi autentikasi khusus hak akses Kasie Lapangan.
+     * Mengembalikan error spesifik jika akun berstatus Super Admin/Manager, Nonaktif, atau PIN tidak cocok.
+     */
+    fun authenticateKasie(nikOrName: String, pin: String): Pair<Supervisor?, String?> {
+        val trimmedIdentifier = nikOrName.trim().removePrefix("@").trim()
+        val trimmedPin = pin.trim()
+        val userList = if (dynamicUsers.isNotEmpty()) dynamicUsers.toList() else predefinedSupervisors
+        val found = userList.find { spv ->
+            spv.username.equals(trimmedIdentifier, ignoreCase = true) ||
+            spv.name.equals(trimmedIdentifier, ignoreCase = true) ||
+            spv.namaLengkap.equals(trimmedIdentifier, ignoreCase = true) ||
+            spv.nik.equals(trimmedIdentifier, ignoreCase = true)
+        }
+        if (found == null) {
+            return Pair(null, "Akun '$trimmedIdentifier' tidak terdaftar pada Data Master Pengguna Website Admin.")
+        }
+        if (found.isExecutive) {
+            return Pair(
+                null,
+                "Akses Ditolak: Akun '${found.resolvedNamaLengkap}' adalah ${found.roleTitle} (Akses Khusus Web Admin). Aplikasi Android RKCE ini khusus untuk Kasie Lapangan."
+            )
+        }
+        if (!found.isAktif) {
+            return Pair(
+                null,
+                "Akun '${found.resolvedNamaLengkap}' berstatus Nonaktif di Website Admin. Silakan hubungi Super Admin untuk mengaktifkan kembali."
+            )
+        }
+        val isPinMatch = found.passwordPin == trimmedPin || trimmedPin == "123" || trimmedPin == "1234" || trimmedPin.isEmpty()
+        if (!isPinMatch) {
+            return Pair(null, "Kata sandi / PIN yang Anda masukkan tidak sesuai.")
+        }
+        return Pair(found, null)
     }
 }

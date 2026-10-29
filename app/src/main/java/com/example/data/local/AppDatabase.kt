@@ -41,14 +41,16 @@ import com.example.data.local.entity.UserEntity
         AktivitasUnitEntity::class,
         UserEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun unitDao(): UnitDao
     fun masterUnitDao(): UnitDao = unitDao()
+    fun unitAlatBeratDao(): UnitDao = unitDao()
     abstract fun activityMasterDao(): ActivityMasterDao
     abstract fun operatorDao(): OperatorDao
+    fun masterOperatorDao(): OperatorDao = operatorDao()
     abstract fun activityReportDao(): ActivityReportDao
     abstract fun lokasiDao(): LokasiDao
     abstract fun rencanaKerjaDao(): RencanaKerjaDao
@@ -57,6 +59,43 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun draftRealisasiDao(): DraftRealisasiDao
     abstract fun aktivitasUnitDao(): AktivitasUnitDao
     abstract fun userDao(): UserDao
+    fun aktivitasDao(): ActivityMasterDao = activityMasterDao()
+
+    @androidx.room.Transaction
+    open suspend fun syncAllMasterData(bootstrap: com.example.data.remote.BootstrapResponseData) {
+        val currentUser = userDao().getActiveUser()
+        val activeUsername = currentUser?.username
+
+        // 1. Kosongkan seluruh tabel master lokal
+        userDao().deleteAll()
+        unitDao().deleteAll()
+        operatorDao().deleteAll()
+        aktivitasDao().deleteAll()
+        kendalaDao().deleteAll()
+        lokasiDao().deleteAll()
+        rencanaKerjaDao().deleteAll()
+
+        // 2. Isi ulang dengan data segar dari server
+        val mappedUsers = if (activeUsername != null) {
+            bootstrap.users.map { u ->
+                if (u.username.equals(activeUsername, ignoreCase = true)) {
+                    u.copy(isActiveSession = true, lastLoginAt = System.currentTimeMillis())
+                } else {
+                    u.copy(isActiveSession = false)
+                }
+            }
+        } else {
+            bootstrap.users
+        }
+
+        userDao().insertAll(mappedUsers)
+        unitDao().insertAll(bootstrap.units)
+        operatorDao().insertAll(bootstrap.operators)
+        aktivitasDao().insertAll(bootstrap.aktivitas)
+        kendalaDao().insertAll(bootstrap.kendala)
+        lokasiDao().insertAll(bootstrap.lokasi)
+        rencanaKerjaDao().insertAll(bootstrap.rencanaKerja)
+    }
 
     fun cleanDumpTruckAndBulldozerDirect() {
         try {
@@ -88,6 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
                             try {
                                 db.execSQL("CREATE VIEW IF NOT EXISTS master_unit AS SELECT unitCode AS kode_unit, unitType AS jenis_unit, brandModel AS merk_model, lastHm AS last_hm, supervisorAssigned AS supervisor, status, hmMinStandar, hmMaxStandar, wilayah, updatedAt FROM units")
                                 db.execSQL("CREATE TRIGGER IF NOT EXISTS trigger_delete_master_unit INSTEAD OF DELETE ON master_unit BEGIN DELETE FROM units WHERE unitCode = OLD.kode_unit; END")
+                                db.execSQL("CREATE VIEW IF NOT EXISTS master_operator AS SELECT operatorId, name AS namaOperator, badgeNumber, supervisorAssigned AS kasiePenanggungJawab, skillLevel, status, wilayah, updatedAt FROM operators")
                                 db.execSQL("DELETE FROM master_unit WHERE LOWER(jenis_unit) IN ('dump truck', 'bulldozer')")
                                 db.execSQL("DELETE FROM units WHERE LOWER(unitType) IN ('dump truck', 'bulldozer') OR LOWER(unitType) LIKE '%dump%' OR LOWER(unitType) LIKE '%bulldozer%'")
                                 db.execSQL("DELETE FROM rencana_kerja WHERE kode_unit NOT IN (SELECT kode_unit FROM master_unit)")

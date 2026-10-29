@@ -30,6 +30,9 @@ interface ActivityMasterDao {
     suspend fun insertActivities(activities: List<ActivityMasterEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(activities: List<ActivityMasterEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertActivity(activity: ActivityMasterEntity)
 
     @Update
@@ -50,3 +53,5 @@ interface ActivityMasterDao {
         insertActivities(listBaru)
     }
 }
+
+typealias AktivitasDao = ActivityMasterDao

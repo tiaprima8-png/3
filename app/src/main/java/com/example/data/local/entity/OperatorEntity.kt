@@ -12,7 +12,11 @@ data class OperatorEntity(
     val skillLevel: String = "Class A - Excavator & Dozer",
     val status: String = "AKTIF",
     val wilayah: String? = "Geodesi PG1",
+    val kasiePenanggungJawab: String? = supervisorAssigned,
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val namaOperator: String get() = name
+    val kasie: String? get() = kasiePenanggungJawab ?: supervisorAssigned
+}
 
 typealias MasterOperatorEntity = OperatorEntity

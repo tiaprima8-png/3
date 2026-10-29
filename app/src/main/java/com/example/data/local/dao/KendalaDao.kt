@@ -16,6 +16,9 @@ interface KendalaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertKendalaList(list: List<KendalaEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(kendalaList: List<KendalaEntity>)
+
     @Query("DELETE FROM master_kendala")
     suspend fun clearAll()
 

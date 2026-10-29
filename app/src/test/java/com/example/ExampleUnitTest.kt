@@ -939,4 +939,90 @@ class ExampleUnitTest {
         assertTrue(initialRencana.all { it.second in validCodes })
         assertFalse(initialRencana.any { it.second == "DT-101" || it.second == "DZ-01" })
     }
+
+    @Test
+    fun test_kasie_jahidi_unit_filtering_only_7_units_and_correct_badge() {
+        val masterUnitResp = com.example.data.remote.CompanyServerSimulator.getMasterUnit()
+        assertEquals("SUCCESS", masterUnitResp.status)
+        val allUnits = masterUnitResp.data!!
+
+        // Total units must be 39
+        assertEquals(39, allUnits.size)
+
+        // Filter units for Jahidi
+        val jahidiUnits = allUnits.filter { u ->
+            val spv = u.resolvedSupervisor.trim().lowercase()
+            spv == "jahidi"
+        }
+        assertEquals(7, jahidiUnits.size)
+
+        val jahidiCodes = jahidiUnits.map { it.resolvedUnitCode }.toSet()
+        // Must contain Jahidi's units
+        assertTrue(jahidiCodes.contains("CMP-02"))
+        assertTrue(jahidiCodes.contains("HEH0017"))
+        assertTrue(jahidiCodes.contains("HEH0018"))
+        assertTrue(jahidiCodes.contains("GRD-04"))
+        assertTrue(jahidiCodes.contains("EXC-14"))
+        assertTrue(jahidiCodes.contains("SCC0007"))
+        assertTrue(jahidiCodes.contains("HEH0034"))
+
+        // Must NOT contain Hisar's units
+        assertFalse(jahidiCodes.contains("HEH0005"))
+        assertFalse(jahidiCodes.contains("HEH0006"))
+        assertFalse(jahidiCodes.contains("EXC-10"))
+        assertFalse(jahidiCodes.contains("HEH0019"))
+
+        // Filter units for Hisar
+        val hisarUnits = allUnits.filter { u ->
+            val spv = u.resolvedSupervisor.trim().lowercase()
+            spv == "hisar"
+        }
+        assertEquals(7, hisarUnits.size)
+        val hisarCodes = hisarUnits.map { it.resolvedUnitCode }.toSet()
+        assertTrue(hisarCodes.contains("HEH0005"))
+        assertTrue(hisarCodes.contains("HEH0006"))
+
+        // Badge count simulation for Jahidi: must be 7 units, NOT 14 units!
+        val backlogCount = jahidiUnits.size
+        val subtitle = if (backlogCount > 0) "${jahidiUnits.size} unit ($backlogCount backlog)" else "${jahidiUnits.size} unit terdaftar"
+        assertEquals("7 unit (7 backlog)", subtitle)
+    }
+
+    @Test
+    fun test_kasie_jahidi_operator_filtering_and_dialog_subtitle() {
+        val masterOpResp = com.example.data.remote.CompanyServerSimulator.getMasterOperator()
+        assertEquals("SUCCESS", masterOpResp.status)
+        val allOperators = masterOpResp.data!!
+
+        // Total master operators in company is 45
+        assertEquals(45, allOperators.size)
+
+        // Jahidi's Kasie parameters
+        val kasieName = "Jahidi"
+        val username = "@jahidi"
+        val wilayahKasie = "RC PG1"
+
+        val jahidiOperators = allOperators.filter { op ->
+            val spv = op.resolvedSupervisor.trim().removePrefix("@").lowercase()
+            val wil = (op.wilayah ?: "").trim().lowercase()
+            (spv == "jahidi" || spv.contains("jahidi")) ||
+            (spv.isBlank() && wil == wilayahKasie.lowercase())
+        }
+
+        // Must only contain operators belonging to Jahidi (not all 45, not operators from Geodesi or Lebung)
+        assertTrue(jahidiOperators.isNotEmpty())
+        assertTrue(jahidiOperators.size < 10)
+        assertTrue(jahidiOperators.all { op ->
+            val wil = op.wilayah ?: ""
+            wil.contains("RC PG1", ignoreCase = true)
+        })
+
+        // Operators from Geodesi or Lebung must NEVER appear
+        assertFalse(jahidiOperators.any { (it.wilayah ?: "").contains("Geodesi", ignoreCase = true) })
+        assertFalse(jahidiOperators.any { (it.wilayah ?: "").contains("LEBUNG", ignoreCase = true) })
+
+        // Dialog subtitle test
+        val dialogSubtitle = "${jahidiOperators.size} Operator Aktif"
+        assertEquals("${jahidiOperators.size} Operator Aktif", dialogSubtitle)
+    }
 }

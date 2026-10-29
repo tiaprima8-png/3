@@ -12,6 +12,7 @@ import com.example.data.local.entity.RencanaKerjaEntity
 import com.example.data.local.entity.UnitEntity
 import com.example.data.local.entity.UserEntity
 import com.example.data.remote.ApiClientManager
+import com.example.data.remote.BootstrapResponseData
 import com.example.data.remote.CompanyServerSimulator
 import com.example.data.remote.KendalaJsonConverter
 import com.example.data.remote.PostActivityReportRequest
@@ -129,6 +130,9 @@ class HeavyTrackRepository(
         _syncLogs.value = listOf(item) + _syncLogs.value.take(20)
     }
 
+    fun getUnitsForCurrentKasie(kasieName: String, username: String): Flow<List<UnitEntity>> =
+        unitDao.getUnitsForCurrentKasie(kasieName, username)
+
     fun getUnitsForSupervisor(supervisor: String): Flow<List<UnitEntity>> =
         unitDao.getUnitsForSupervisor(supervisor)
 
@@ -137,6 +141,12 @@ class HeavyTrackRepository(
 
     fun getUnitsByWilayah(wilayah: String?): Flow<List<UnitEntity>> =
         unitDao.getUnitsByWilayah(wilayah)
+
+    fun getOperatorsForKasie(kasieName: String, username: String, wilayahKasie: String): Flow<List<OperatorEntity>> =
+        operatorDao.getOperatorsForKasie(kasieName, username, wilayahKasie)
+
+    fun getAllOperators(): Flow<List<OperatorEntity>> =
+        operatorDao.getAllOperators()
 
     fun getOperatorsByWilayah(wilayah: String?): Flow<List<OperatorEntity>> =
         operatorDao.getOperatorsFiltered(wilayah)
@@ -539,197 +549,27 @@ class HeavyTrackRepository(
         }
     }
 
+    @androidx.room.Transaction
+    suspend fun syncAllMasterData(bootstrap: BootstrapResponseData) = withContext(Dispatchers.IO) {
+        // 1. Eksekusi transaksi Clear and Replace Room di SQLite
+        database.syncAllMasterData(bootstrap)
+        database.cleanDumpTruckAndBulldozerDirect()
+        reportDao.deleteOrphanedReports()
+
+        _lastSyncTimeMillis.value = System.currentTimeMillis()
+        val summary = "${bootstrap.users.size} Pengguna, ${bootstrap.units.size} Unit, ${bootstrap.operators.size} Operator, ${bootstrap.aktivitas.size} Aktivitas, ${bootstrap.kendala.size} Kendala, ${bootstrap.lokasi.size} Lokasi, ${bootstrap.rencanaKerja.size} Rencana"
+        addLog("GET /api/mobile/bootstrap-data", "GET", "200 OK", "Clear & Replace: $summary", true)
+    }
+
     suspend fun syncBootstrapData(supervisorName: String, tanggal: String): Result<String> = withContext(Dispatchers.IO) {
         fetchBootstrapData(supervisorName, tanggal)
     }
 
     suspend fun fetchBootstrapData(supervisorName: String, tanggal: String): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val (payload, message) = apiClientManager.fetchBootstrapData(supervisorName, tanggal)
-
-            // 1. Process Master Data
-            val master = payload.resolvedMasterData
-
-            // Units
-            val incomingUnits = (master.units ?: emptyList())
-                .filter { com.example.data.model.UnitConstants.isJenisUnitValid(it.resolvedUnitType) }
-                .filter { !it.resolvedStatus.equals("Nonaktif", ignoreCase = true) && !it.resolvedStatus.equals("Inactive", ignoreCase = true) }
-            val unitEntities = incomingUnits.map {
-                UnitEntity(
-                    unitCode = it.resolvedUnitCode,
-                    unitType = it.resolvedUnitType,
-                    brandModel = it.resolvedBrandModel,
-                    lastHm = it.resolvedLastHm,
-                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
-                    status = it.resolvedStatus,
-                    hmMinStandar = it.resolvedHmMinStandar,
-                    hmMaxStandar = it.resolvedHmMaxStandar,
-                    wilayah = it.resolvedWilayah,
-                    updatedAt = System.currentTimeMillis()
-                )
-            }
-            unitDao.replaceAll(unitEntities)
-            database.cleanDumpTruckAndBulldozerDirect()
-            reportDao.deleteOrphanedReports()
-
-            // Activities
-            val incomingActivities = master.resolvedActivities
-                .filter { !it.resolvedKategoriStatus.equals("Nonaktif", ignoreCase = true) }
-            val actEntities = incomingActivities.map {
-                ActivityMasterEntity(
-                    sapCode = it.resolvedSapCode,
-                    activityName = it.resolvedActivityName,
-                    unitOfMeasure = it.resolvedUnitOfMeasure,
-                    description = it.resolvedDescription,
-                    category = it.resolvedCategory,
-                    kategoriStatus = it.resolvedKategoriStatus,
-                    jenisUnit = it.resolvedJenisUnit,
-                    updatedAt = System.currentTimeMillis()
-                )
-            }
-            activityDao.replaceAll(actEntities)
-
-            // Operators
-            val incomingOperators = (master.operators ?: emptyList())
-                .filter { it.resolvedStatus.equals("Aktif", ignoreCase = true) || it.resolvedStatus.equals("Active", ignoreCase = true) || it.resolvedStatus.isBlank() }
-            val opEntities = incomingOperators.map {
-                OperatorEntity(
-                    operatorId = it.resolvedOperatorId,
-                    name = it.resolvedName,
-                    badgeNumber = it.resolvedBadgeNumber,
-                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
-                    skillLevel = it.resolvedSkillLevel,
-                    status = it.resolvedStatus,
-                    wilayah = it.resolvedWilayah,
-                    updatedAt = System.currentTimeMillis()
-                )
-            }
-            operatorDao.replaceAll(opEntities)
-
-            // Lokasi
-            val incomingLokasi = master.resolvedLokasi
-            val lokasiEntities = incomingLokasi.map {
-                LokasiEntity(
-                    kodeLokasi = it.resolvedKode,
-                    wilayah = it.resolvedWilayah,
-                    luasBruto = it.resolvedLuasBruto,
-                    luasNetto = it.resolvedLuasNetto,
-                    keterangan = it.keterangan ?: "",
-                    updatedAt = System.currentTimeMillis()
-                )
-            }
-            lokasiDao.replaceAll(lokasiEntities)
-
-            // Kendala
-            val incomingKendala = master.kendala ?: emptyList()
-            if (incomingKendala.isNotEmpty()) {
-                val kendalaEntities = incomingKendala.mapIndexed { index, it ->
-                    KendalaEntity(
-                        kodeKendala = it.resolveKode(index),
-                        namaKendala = it.resolvedNama,
-                        kategori = it.resolvedKategori,
-                        deskripsi = it.resolvedDeskripsi,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
-                kendalaDao.replaceAll(kendalaEntities)
-            }
-
-            // 2. Process Rencana Aktif -> ATOMIC CLEAR AND REPLACE via Room DAO
-            val incomingRencana = payload.resolvedRencanaAktif
-            val rencanaEntities = incomingRencana.mapIndexed { index, renReq ->
-                val kodeUnitVal = renReq.resolvedUnitKode.takeIf { it.isNotBlank() && it != "UNIT" } ?: renReq.kode_unit ?: "UNIT-${index + 1}"
-                val spkNum = renReq.nomor_spk?.trim() ?: ""
-                val spkStatus = when {
-                    !renReq.status_spk.isNullOrBlank() -> renReq.status_spk
-                    spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-" -> "SPK_TERBIT"
-                    else -> "MENUNGGU_SPK"
-                }
-
-                val serverId = renReq.numericId
-                val targetId = if (serverId > 0) serverId else (index + 1).toLong()
-
-                RencanaKerjaEntity(
-                    id = targetId,
-                    supervisorName = supervisorName,
-                    pengawas = supervisorName,
-                    statusUnit = renReq.status_unit ?: "OPERASI",
-                    kodeUnit = kodeUnitVal,
-                    operator = renReq.resolvedOperator,
-                    sapCode = renReq.resolvedSapCode,
-                    namaAktivitas = renReq.resolvedAktivitas,
-                    satuanAktivitas = renReq.resolvedSatuan,
-                    kodeLokasi = renReq.resolvedLokasi,
-                    wilayah = renReq.wilayah?.takeIf { it.isNotBlank() } ?: "Geodesi PG1",
-                    shiftKerja = renReq.resolvedShift,
-                    keterangan = renReq.keterangan ?: renReq.keterangan_rencana ?: "",
-                    nomorSpk = spkNum,
-                    statusSpk = spkStatus,
-                    statusTahap = renReq.status_tahap ?: "RENCANA",
-                    statusRealisasi = if (renReq.is_realized == true) "SUDAH" else "BELUM",
-                    isRealized = renReq.is_realized ?: false,
-                    isSynced = true,
-                    createdAt = System.currentTimeMillis() - (index * 1000L),
-                    tanggalFormat = renReq.tanggal?.takeIf { it.isNotBlank() } ?: renReq.tanggal_kerja?.takeIf { it.isNotBlank() } ?: tanggal
-                )
-            }
-            rencanaDao.replaceAll(rencanaEntities)
-
-            // 3. Process Riwayat Aktivitas -> ATOMIC CLEAR AND REPLACE (Synced) via Room DAO
-            val incomingReports = payload.resolvedRiwayatAktivitas
-            val reportEntities = incomingReports.mapIndexed { index, repReq ->
-                val unitCodeVal = repReq.kode_unit ?: repReq.unit_code ?: "UNIT"
-                val hmAkhirVal = repReq.hm_akhir ?: 0.0
-                val reportDateVal = repReq.tanggal ?: repReq.report_date ?: tanggal
-                val clientUuidVal = repReq.client_uuid ?: repReq.client_transaction_id ?: "SRV-${supervisorName}-${unitCodeVal}-${hmAkhirVal}-${reportDateVal}-${index}"
-                val targetId = (index + 1).toLong()
-
-                ActivityReportEntity(
-                    id = targetId,
-                    clientUuid = clientUuidVal,
-                    reportDate = reportDateVal,
-                    supervisorName = repReq.nama_pengawas ?: repReq.supervisor_name ?: supervisorName,
-                    unitCode = unitCodeVal,
-                    unitType = repReq.jenis_unit ?: repReq.unit_type ?: "EXCAVATOR",
-                    activityName = repReq.nama_aktivitas ?: repReq.activity_name ?: "",
-                    sapCode = repReq.kode_sap ?: repReq.sap_code ?: "",
-                    unitOfMeasure = repReq.satuan ?: repReq.unit_of_measure ?: "m3",
-                    operatorName = repReq.nama_operator ?: repReq.operator_name ?: "",
-                    workLocation = repReq.lokasi_kerja ?: repReq.work_location ?: "",
-                    wilayah = repReq.wilayah?.takeIf { it.isNotBlank() } ?: "Geodesi PG1",
-                    shift = repReq.shift ?: "SIANG",
-                    workDurationHours = repReq.durasi_jam_kerja ?: repReq.work_duration_hours ?: 7.0,
-                    hmAwal = repReq.hm_awal ?: 0.0,
-                    hmAkhir = hmAkhirVal,
-                    hmDailyRunning = repReq.hm_harian_berjalan ?: (hmAkhirVal - (repReq.hm_awal ?: 0.0)),
-                    workOutput = repReq.hasil_kerja ?: repReq.work_output ?: 0.0,
-                    notes = repReq.keterangan ?: repReq.notes ?: "",
-                    unitStatus = repReq.status_unit ?: repReq.unit_status ?: "OPERASI",
-                    isRefueled = repReq.is_isi_solar ?: repReq.is_refueled ?: false,
-                    fuelLiters = repReq.jumlah_liter_solar ?: repReq.fuel_liters ?: 0.0,
-                    stikSolarAwal = repReq.stik_solar_awal ?: 0.0,
-                    stikSolarAkhir = repReq.stik_solar_akhir ?: 0.0,
-                    pemakaianSolar = repReq.pemakaian_solar ?: 0.0,
-                    kendalaId = repReq.kendala_id,
-                    kendalaNama = repReq.kendala_nama,
-                    catatanKendala = repReq.catatan_kendala,
-                    daftarKendalaJson = if (repReq.daftar_kendala != null) KendalaJsonConverter.toJson(repReq.daftar_kendala) else null,
-                    photoPath = repReq.photo_path,
-                    photoBase64 = repReq.foto_bukti ?: repReq.photo_base64,
-                    photoSizeKb = repReq.photo_size_kb,
-                    photoDimensions = repReq.photo_dimensions,
-                    isSynced = true,
-                    isHmAwalCorrected = repReq.is_hm_awal_corrected ?: false,
-                    alasanKoreksiHm = repReq.alasan_koreksi_hm,
-                    createdAt = System.currentTimeMillis() - (index * 1000L),
-                    syncedAt = System.currentTimeMillis()
-                )
-            }
-            reportDao.replaceAllSynced(reportEntities)
-
-            _lastSyncTimeMillis.value = System.currentTimeMillis()
-            val summary = "${rencanaEntities.size} Rencana Aktif, ${reportEntities.size} Riwayat disinkronkan (Clear & Replace)"
-            addLog("GET /api/mobile/bootstrap-data", "GET", "200 OK", summary, true)
+            val (bootstrapData, message) = apiClientManager.fetchCentralizedBootstrap(supervisorName, tanggal)
+            syncAllMasterData(bootstrapData)
+            val summary = "${bootstrapData.users.size} Pengguna, ${bootstrapData.units.size} Unit, ${bootstrapData.operators.size} Operator, ${bootstrapData.aktivitas.size} Aktivitas, ${bootstrapData.kendala.size} Kendala, ${bootstrapData.lokasi.size} Lokasi, ${bootstrapData.rencanaKerja.size} Rencana"
             Result.success("$message ($summary)")
         } catch (e: Exception) {
             addLog("GET /api/mobile/bootstrap-data", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)

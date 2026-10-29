@@ -960,16 +960,32 @@ fun OperatorSearchableSelectorSheet(
     onDismissRequest: () -> Unit,
     operators: List<OperatorEntity>,
     selectedOperator: OperatorEntity?,
+    kasieFilter: String? = null,
     onOperatorSelected: (OperatorEntity) -> Unit
 ) {
+    val displayedOperators = remember(operators, kasieFilter) {
+        val cleanFilter = kasieFilter?.trim()?.removePrefix("@")?.lowercase()
+        if (cleanFilter.isNullOrBlank()) {
+            operators
+        } else {
+            val matched = operators.filter { op ->
+                val spv = op.supervisorAssigned.trim().removePrefix("@").lowercase()
+                val spv2 = op.kasiePenanggungJawab?.trim()?.removePrefix("@")?.lowercase() ?: ""
+                spv == cleanFilter || spv.contains(cleanFilter) || cleanFilter.contains(spv) ||
+                spv2 == cleanFilter || spv2.contains(cleanFilter) || cleanFilter.contains(spv2)
+            }
+            if (matched.isNotEmpty()) matched else operators
+        }
+    }
+
     SearchableSelectorSheet(
         isOpen = isOpen,
         title = "Pilih Operator Pelaksana",
-        subtitle = "${operators.size} operator terdaftar",
+        subtitle = "${displayedOperators.size} Operator Aktif",
         searchPlaceholder = "Cari nama operator atau NIK...",
         emptyMessage = "Operator tidak ditemukan",
-        emptySubtitle = "Pastikan nama atau NIK operator terdaftar di sistem",
-        items = operators,
+        emptySubtitle = "Hanya operator binaan Kasie yang terdaftar di sistem",
+        items = displayedOperators,
         filterPredicate = { op, query ->
             op.name.contains(query, ignoreCase = true) ||
             op.badgeNumber.contains(query, ignoreCase = true)
@@ -1189,18 +1205,31 @@ fun UnitPlanSearchableSelectorSheet(
     onDismissRequest: () -> Unit,
     availableUnits: List<UnitPlanStatus>,
     selectedStatus: UnitPlanStatus?,
+    kasieFilter: String? = null,
     onStatusSelected: (UnitPlanStatus) -> Unit
 ) {
-    val backlogCount = availableUnits.count { it.isBacklog }
+    val displayedUnits = remember(availableUnits, kasieFilter) {
+        val cleanFilter = kasieFilter?.trim()?.removePrefix("@")?.lowercase()
+        if (cleanFilter.isNullOrBlank()) {
+            availableUnits
+        } else {
+            val matched = availableUnits.filter { item ->
+                val spv = item.unit.supervisorAssigned.trim().removePrefix("@").lowercase()
+                spv == cleanFilter || spv.contains(cleanFilter) || cleanFilter.contains(spv)
+            }
+            if (matched.isNotEmpty()) matched else availableUnits
+        }
+    }
+    val backlogCount = displayedUnits.count { it.isBacklog }
 
     SearchableSelectorSheet(
         isOpen = isOpen,
         title = "Pilih Unit Alat Berat",
-        subtitle = if (backlogCount > 0) "${availableUnits.size} unit ($backlogCount backlog)" else "${availableUnits.size} unit terdaftar",
+        subtitle = if (backlogCount > 0) "${displayedUnits.size} unit ($backlogCount backlog)" else "${displayedUnits.size} unit terdaftar",
         searchPlaceholder = "Cari kode unit atau jenis (mis. EX-201, Dozer)...",
         emptyMessage = "Unit alat berat tidak ditemukan",
         emptySubtitle = "Cek filter pengawas atau hubungi Admin Alat Berat",
-        items = availableUnits,
+        items = displayedUnits,
         filterPredicate = { item, query ->
             item.unit.unitCode.contains(query, ignoreCase = true) ||
             item.unit.unitType.contains(query, ignoreCase = true) ||

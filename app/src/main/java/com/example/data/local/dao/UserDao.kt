@@ -27,6 +27,15 @@ interface UserDao {
     @Query("UPDATE users_session SET wilayah = :wilayah WHERE username = :username")
     suspend fun updateWilayah(username: String, wilayah: String)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(users: List<UserEntity>)
+
+    @Query("SELECT * FROM users_session ORDER BY username ASC")
+    fun getAllUsers(): Flow<List<UserEntity>>
+
+    @Query("SELECT * FROM users_session ORDER BY username ASC")
+    suspend fun getAllUsersList(): List<UserEntity>
+
     @Query("DELETE FROM users_session")
     suspend fun deleteAll()
 }

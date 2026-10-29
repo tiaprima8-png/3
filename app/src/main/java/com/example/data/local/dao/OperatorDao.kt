@@ -9,8 +9,37 @@ import androidx.room.Update
 import com.example.data.local.entity.OperatorEntity
 import kotlinx.coroutines.flow.Flow
 
+typealias MasterOperatorDao = OperatorDao
+
 @Dao
 interface OperatorDao {
+    @Query("""
+        SELECT * FROM operators 
+        WHERE (status = 'Aktif' OR status = 'AKTIF' OR status = 'operasional' OR status != 'Nonaktif')
+          AND (
+              LOWER(TRIM(COALESCE(kasiePenanggungJawab, supervisorAssigned))) = LOWER(TRIM(:kasieName))
+              OR LOWER(TRIM(COALESCE(kasiePenanggungJawab, supervisorAssigned))) = LOWER(TRIM(:username))
+              OR LOWER(TRIM(COALESCE(kasiePenanggungJawab, supervisorAssigned))) = LOWER(TRIM(REPLACE(:username, '@', '')))
+              OR LOWER(TRIM(REPLACE(COALESCE(kasiePenanggungJawab, supervisorAssigned), '@', ''))) = LOWER(TRIM(REPLACE(:username, '@', '')))
+              OR LOWER(TRIM(REPLACE(COALESCE(kasiePenanggungJawab, supervisorAssigned), '@', ''))) = LOWER(TRIM(REPLACE(:kasieName, '@', '')))
+              OR (
+                  (kasiePenanggungJawab IS NULL OR kasiePenanggungJawab = '' OR supervisorAssigned = '' OR supervisorAssigned = 'ALL')
+                  AND :wilayahKasie != '' 
+                  AND (
+                      LOWER(TRIM(wilayah)) = LOWER(TRIM(:wilayahKasie))
+                      OR LOWER(TRIM(REPLACE(wilayah, ' PG', ' '))) = LOWER(TRIM(REPLACE(:wilayahKasie, ' PG', ' ')))
+                      OR LOWER(TRIM(REPLACE(wilayah, ' ', ' PG'))) = LOWER(TRIM(REPLACE(:wilayahKasie, ' ', ' PG')))
+                  )
+              )
+          )
+        ORDER BY name ASC
+    """)
+    fun getOperatorsForKasie(
+        kasieName: String, 
+        username: String, 
+        wilayahKasie: String
+    ): Flow<List<OperatorEntity>>
+
     @Query("SELECT * FROM operators ORDER BY name ASC")
     fun getAllOperators(): Flow<List<OperatorEntity>>
 
@@ -44,6 +73,9 @@ interface OperatorDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOperators(operators: List<OperatorEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(operators: List<OperatorEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOperator(operator: OperatorEntity)

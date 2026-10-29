@@ -130,7 +130,7 @@ class HeavyTrackViewModel(
     }
 
     // Active Supervisor
-    private val _activeSupervisor = MutableStateFlow("Agung")
+    private val _activeSupervisor = MutableStateFlow("")
     val activeSupervisor: StateFlow<String> = _activeSupervisor.asStateFlow()
 
     // Supervisor Login Session
@@ -139,6 +139,13 @@ class HeavyTrackViewModel(
 
     private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    // Master Users state (Disinkronkan secara langsung dari Web Admin)
+    private val _masterUsers = MutableStateFlow<List<Supervisor>>(SupervisorDirectory.allSupervisors)
+    val masterUsers: StateFlow<List<Supervisor>> = _masterUsers.asStateFlow()
+
+    private val _isSyncingUsers = MutableStateFlow(false)
+    val isSyncingUsers: StateFlow<Boolean> = _isSyncingUsers.asStateFlow()
 
     // Mode Monitoring Eksekutif vs Supervisor Lapangan (Manager & Super Admin)
     val isManagerSession: StateFlow<Boolean> = _currentSupervisorSession
@@ -183,17 +190,21 @@ class HeavyTrackViewModel(
 
     val lastSyncTimeMillis: StateFlow<Long> = repository.lastSyncTimeMillis
 
-    // Master Units (filtered by supervisor, or all units for Manager)
+    // Master Units (filtered strictly by current Kasie, or all units for Manager/Super Admin)
     val units: StateFlow<List<UnitEntity>> = combine(
         _currentSupervisorSession,
         _activeSupervisor
     ) { session, supervisor ->
         session to supervisor
     }.flatMapLatest { (session, supervisor) ->
-        if (session?.isManager == true) {
+        val kasieName = session?.namaLengkap?.ifBlank { session.name }?.ifBlank { supervisor } ?: supervisor
+        val username = session?.username ?: ""
+        if (session?.isManager == true || session?.isSuperAdmin == true) {
             repository.getAllUnits()
+        } else if (kasieName.isNotBlank() || username.isNotBlank()) {
+            repository.getUnitsForCurrentKasie(kasieName, username)
         } else {
-            repository.getUnitsForSupervisorOrWilayah(supervisor, session?.wilayah)
+            repository.getAllUnits()
         }
     }.map { list ->
         list.filter { com.example.data.model.UnitConstants.isJenisUnitValid(it.unitType) }
@@ -203,17 +214,22 @@ class HeavyTrackViewModel(
     val activities: StateFlow<List<ActivityMasterEntity>> = repository.getAllActivities()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Master Operators (filtered by supervisor & wilayah)
+    // Master Operators (filtered strictly by current Kasie & Wilayah)
     val operators: StateFlow<List<OperatorEntity>> = combine(
         _currentSupervisorSession,
         _activeSupervisor
     ) { session, supervisor ->
         session to supervisor
     }.flatMapLatest { (session, supervisor) ->
-        if (session?.isManager == true) {
+        val kasieName = session?.namaLengkap?.ifBlank { session.name }?.ifBlank { supervisor } ?: supervisor
+        val username = session?.username ?: ""
+        val wilayah = session?.wilayah ?: ""
+        if (session?.isManager == true || session?.isSuperAdmin == true) {
             repository.getOperatorsFiltered(null)
+        } else if (kasieName.isNotBlank() || username.isNotBlank() || wilayah.isNotBlank()) {
+            repository.getOperatorsForKasie(kasieName, username, wilayah)
         } else {
-            repository.getOperatorsForSupervisorOrWilayah(supervisor, session?.wilayah)
+            repository.getAllOperators()
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -544,27 +560,18 @@ class HeavyTrackViewModel(
                     _activeSupervisor.value = spv.name
                     _isLoggedIn.value = true
                 } else {
-                    val defaultSpv = Supervisor(
-                        id = "1",
-                        name = "Agung",
-                        namaLengkap = "Agung",
-                        username = "Agung",
-                        nik = "NIK-94821",
-                        passwordPin = "123",
-                        defaultShift = "SIANG",
-                        assignedSector = "Geodesi PG1",
-                        phone = "081234567890",
-                        roleTitle = "Kasie Lapangan",
-                        role = "KASIE",
-                        wilayah = "Geodesi PG1",
-                        token = "LOCAL-SESSION-AGUNG",
-                        status = "Aktif"
-                    )
-                    _currentSupervisorSession.value = defaultSpv
-                    _activeSupervisor.value = defaultSpv.name
-                    _isLoggedIn.value = true
+                    _currentSupervisorSession.value = null
+                    _activeSupervisor.value = ""
+                    _isLoggedIn.value = false
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                _currentSupervisorSession.value = null
+                _activeSupervisor.value = ""
+                _isLoggedIn.value = false
+            }
+
+            // Selalu sinkronkan data master user terbaru dari Web Admin saat inisialisasi
+            syncMasterUsers(silent = true)
 
             repository.cleanDumpTruckAndBulldozer()
             repository.seedInitialDataIfEmpty(_activeSupervisor.value)
@@ -846,18 +853,15 @@ class HeavyTrackViewModel(
         when (result) {
             is com.example.data.remote.LoginResult.Success -> {
                 val userDto = result.user
-                val isMgr = userDto.role?.equals("MANAGER", ignoreCase = true) == true
-                val isSuperAdmin = userDto.role?.equals("SUPER ADMIN", ignoreCase = true) == true ||
-                        userDto.role?.equals("SUPERADMIN", ignoreCase = true) == true
-                val assignedRole = when {
-                    isSuperAdmin -> "SUPER ADMIN"
-                    isMgr -> "MANAGER"
-                    else -> "KASIE"
+                if (!userDto.isKasie) {
+                    return com.example.data.remote.LoginResult.Error(
+                        "Akses Ditolak: Akun Super Admin & Manager hanya dapat digunakan pada Website Portal Admin (https://1-portalce.ai.studio/). Aplikasi mobile RKCE ini khusus untuk Kasie Lapangan."
+                    )
                 }
-                val roleTitle = when {
-                    isSuperAdmin -> "Super Admin"
-                    isMgr -> "Manager Operasional"
-                    else -> "Kasie Lapangan"
+                if (!userDto.isAktif) {
+                    return com.example.data.remote.LoginResult.Error(
+                        "Akun '${userDto.resolvedNamaLengkap}' berstatus Nonaktif di Website Admin. Silakan hubungi Super Admin untuk mengaktifkan kembali."
+                    )
                 }
 
                 val supervisor = Supervisor(
@@ -867,12 +871,12 @@ class HeavyTrackViewModel(
                     username = userDto.username ?: username,
                     nik = userDto.username ?: username,
                     passwordPin = pin,
-                    defaultShift = if (isMgr || isSuperAdmin) "ALL" else "SIANG",
-                    assignedSector = if (isMgr || isSuperAdmin) "Seluruh Proyek Lapangan" else "Sektor Operasional Lapangan (${userDto.wilayah ?: "Geodesi 1"})",
+                    defaultShift = "SIANG",
+                    assignedSector = "Sektor Operasional Lapangan (${userDto.wilayah ?: "Geodesi PG1"})",
                     phone = "+62 812-0000-0000",
-                    roleTitle = roleTitle,
-                    role = assignedRole,
-                    wilayah = userDto.wilayah ?: if (isMgr || isSuperAdmin) "Semua Wilayah" else "Geodesi 1",
+                    roleTitle = "Kasie Lapangan",
+                    role = "KASIE",
+                    wilayah = userDto.wilayah ?: "Geodesi PG1",
                     token = result.token,
                     status = userDto.status ?: "Aktif"
                 )
@@ -887,19 +891,55 @@ class HeavyTrackViewModel(
     }
 
     fun loginManual(username: String, pin: String): Boolean {
-        val trimmedUser = username.trim()
+        val trimmedUser = username.trim().removePrefix("@").trim()
         val trimmedPin = pin.trim()
-        val matched = SupervisorDirectory.authenticate(trimmedUser, trimmedPin)
-        if (matched != null && matched.isAktif) {
+        val (matched, _) = SupervisorDirectory.authenticateKasie(trimmedUser, trimmedPin)
+        if (matched != null && matched.isKasie && matched.isAktif) {
             login(matched)
             return true
         }
         return false
     }
 
+    fun syncMasterUsers(silent: Boolean = false) {
+        viewModelScope.launch {
+            _isSyncingUsers.value = true
+            try {
+                val (apiUsers, _) = repository.apiClientManager.fetchMasterUsers()
+                if (apiUsers.isNotEmpty()) {
+                    SupervisorDirectory.updateFromApiUsers(apiUsers)
+                    _masterUsers.value = SupervisorDirectory.allSupervisors
+                    if (!silent) {
+                        _uiEvents.emit(UiMessage.Success("Data master akun pengguna berhasil diperbarui (${apiUsers.size} akun)"))
+                    }
+                    // Jika user yang sedang login statusnya diubah atau dinonaktifkan di web admin
+                    val currentSession = _currentSupervisorSession.value
+                    if (currentSession != null) {
+                        val updatedUser = SupervisorDirectory.findUserByUsername(currentSession.username)
+                        if (updatedUser != null) {
+                            if (!updatedUser.isAktif) {
+                                logout()
+                                _uiEvents.emit(UiMessage.Error("Akun Anda telah dinonaktifkan oleh administrator website."))
+                            } else {
+                                _currentSupervisorSession.value = updatedUser
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (!silent) {
+                    _uiEvents.emit(UiMessage.Info("Gagal memperbarui data user: ${e.message}"))
+                }
+            } finally {
+                _isSyncingUsers.value = false
+            }
+        }
+    }
+
     fun logout() {
         _isLoggedIn.value = false
         _currentSupervisorSession.value = null
+        _activeSupervisor.value = ""
         _rencanaFormState.value = RencanaFormUiState()
         clearSelectedRencanaForRealisasi()
         resetExecutiveFilters()
@@ -908,6 +948,8 @@ class HeavyTrackViewModel(
                 repository.clearUserSession()
             } catch (_: Exception) {}
             _uiEvents.emit(UiMessage.Info("Anda telah keluar dari sesi aplikasi"))
+            // Tarik ulang user terbaru saat kembali ke halaman login
+            syncMasterUsers(silent = true)
         }
     }
 
@@ -2691,3 +2733,6 @@ class HeavyTrackViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+typealias RencanaKerjaViewModel = HeavyTrackViewModel
+typealias RealisasiViewModel = HeavyTrackViewModel

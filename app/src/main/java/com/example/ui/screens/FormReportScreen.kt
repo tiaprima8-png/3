@@ -3345,6 +3345,7 @@ fun FormReportScreen(
         onDismissRequest = { isUnitSheetOpen = false },
         availableUnits = availableUnitsForRencana,
         selectedStatus = rencanaState.selectedUnitStatus,
+        kasieFilter = activeSupervisor,
         onStatusSelected = {
             viewModel.selectRencanaUnitStatus(it)
             isUnitSheetOpen = false
@@ -3364,6 +3365,7 @@ fun FormReportScreen(
         } else {
             rencanaState.selectedOperator
         },
+        kasieFilter = activeSupervisor,
         onOperatorSelected = { op ->
             val subId = activeSubPlanOperatorTarget
             if (subId != null) {

@@ -161,6 +161,8 @@ fun HeavyTrackApp() {
     val isBootstrapping by viewModel.isBootstrapping.collectAsState()
     val isOfflineSimulated by viewModel.isOfflineSimulated.collectAsState()
     val isSocketConnected by viewModel.isSocketConnected.collectAsState()
+    val masterUsers by viewModel.masterUsers.collectAsState()
+    val isSyncingUsers by viewModel.isSyncingUsers.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -188,6 +190,9 @@ fun HeavyTrackApp() {
     if (!isLoggedIn) {
         Box(modifier = Modifier.fillMaxSize()) {
             LoginScreen(
+                masterUsers = masterUsers,
+                isSyncingUsers = isSyncingUsers,
+                onRefreshUsers = { viewModel.syncMasterUsers() },
                 onLoginSuccess = { supervisor ->
                     viewModel.login(supervisor)
                 },

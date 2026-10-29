@@ -48,102 +48,34 @@ object CompanyServerSimulator {
     // Map of planId -> published SPK
     val publishedSpkMap = ConcurrentHashMap<Long, String>()
 
-    // Central master units in company web admin (Hanya Unit Operasional Aktif: Excavator Long Arm, Excavator Mini, Excavator Standar, Motor Grader, Compactor)
+    // Central master users in company web admin (12 akun user aktif)
+    val serverUsers = CopyOnWriteArrayList<UserApiPayload>().apply {
+        addAll(createDefaultServerUsers())
+    }
+
+    // Central master units in company web admin (39 unit alat berat aktif)
     val serverUnits = CopyOnWriteArrayList<UnitPayload>().apply {
-        addAll(
-            listOf(
-                UnitPayload("HEH0004", "Excavator Mini", "Kubota U50-5", 6.0, "Agung", "OPERASIONAL", 6.0, 10.5, "Geodesi PG1"),
-                UnitPayload("HEH0013", "Excavator Standar", "Komatsu PC200-8", 12.0, "Agung", "OPERASIONAL", 6.0, 10.0, "Geodesi PG1"),
-                UnitPayload("HEH0015", "Excavator Standar", "Kobelco SK200", 25.0, "Agung", "OPERASIONAL", 6.0, 10.0, "Geodesi PG1"),
-                UnitPayload("HEH0029", "Excavator Long Arm", "Caterpillar 320D Long Arm", 18.0, "Agung", "OPERASIONAL", 6.0, 10.0, "Geodesi PG1"),
-                UnitPayload("SCC0001", "Compactor", "Bomag BW211 D-40", 15.0, "Agung", "OPERASIONAL", 5.0, 8.5, "Geodesi PG1"),
-                // Units assigned to other official supervisors
-                UnitPayload("EXC-09", "Excavator Standar", "Hitachi ZX210-5G", 3990.2, "Zainudin", "OPERASIONAL", 6.0, 10.0, "Geodesi PG2"),
-                UnitPayload("GRD-02", "Motor Grader", "CAT 140M", 2300.0, "Zainudin", "OPERASIONAL", 5.0, 9.0, "Geodesi PG2"),
-                UnitPayload("CMP-02", "Compactor", "Sakai SV520", 1750.0, "Jaidi", "OPERASIONAL", 5.0, 8.5, "Geodesi PG3"),
-                UnitPayload("EXC-10", "Excavator Standar", "Komatsu PC210-10", 3540.0, "Hisar", "OPERASIONAL", 6.0, 10.0, "RC PG1"),
-                UnitPayload("GRD-03", "Motor Grader", "Komatsu GD511A", 2150.0, "Yono", "OPERASIONAL", 5.0, 9.0, "RC PG2"),
-                UnitPayload("EXC-11", "Excavator Long Arm", "CAT 320D2", 5120.0, "Nyoman", "OPERASIONAL", 6.0, 10.0, "RC PG3"),
-                UnitPayload("CMP-03", "Compactor", "Bomag BW216", 1890.0, "Saipul", "OPERASIONAL", 5.0, 8.5, "LEBUNG PG12"),
-                UnitPayload("EXC-12", "Excavator Standar", "Hitachi ZX200-5A", 4200.0, "Galung", "OPERASIONAL", 6.0, 10.0, "LEBUNG PG3")
-            )
-        )
+        addAll(createDefaultServerUnits())
     }
 
-    // Central master kendala operasional in company web admin (15 Item Standar Lapangan)
+    // Central master kendala operasional in company web admin (15 master kendala aktif)
     val serverKendala = CopyOnWriteArrayList<KendalaPayload>().apply {
-        addAll(
-            listOf(
-                KendalaPayload(id = 1, kode_kendala = "KND-01", nama_kendala = "Antar - jemput", kategori = "OPERASIONAL", deskripsi = "Mobilisasi personel antar - jemput shift"),
-                KendalaPayload(id = 2, kode_kendala = "KND-02", nama_kendala = "Cek unit, Implement Pemanasan mesin", kategori = "OPERASIONAL", deskripsi = "Pemeriksaan P2H harian dan pemanasan unit"),
-                KendalaPayload(id = 3, kode_kendala = "KND-03", nama_kendala = "Transport", kategori = "OPERASIONAL", deskripsi = "Perjalanan/transportasi unit ke front kerja"),
-                KendalaPayload(id = 4, kode_kendala = "KND-04", nama_kendala = "Kerja", kategori = "OPERASIONAL", deskripsi = "Aktivitas kerja operasional"),
-                KendalaPayload(id = 5, kode_kendala = "KND-05", nama_kendala = "Istirahat", kategori = "OPERASIONAL", deskripsi = "Waktu istirahat resmi operator"),
-                KendalaPayload(id = 6, kode_kendala = "KND-06", nama_kendala = "Perbaikan Unit", kategori = "MEKANIKAL", deskripsi = "Perbaikan kerusakan pada unit alat berat"),
-                KendalaPayload(id = 7, kode_kendala = "KND-07", nama_kendala = "Perbaikan Implement", kategori = "MEKANIKAL", deskripsi = "Perbaikan attachment/implement unit"),
-                KendalaPayload(id = 8, kode_kendala = "KND-08", nama_kendala = "Perawatan Unit", kategori = "MEKANIKAL", deskripsi = "Servis rutin dan perawatan berkala unit"),
-                KendalaPayload(id = 9, kode_kendala = "KND-09", nama_kendala = "Perawatan Implement", kategori = "MEKANIKAL", deskripsi = "Servis dan greasing implement"),
-                KendalaPayload(id = 10, kode_kendala = "KND-10", nama_kendala = "Ganti Implement", kategori = "OPERASIONAL", deskripsi = "Penggantian bucket/blade/ripper attachment"),
-                KendalaPayload(id = 11, kode_kendala = "KND-11", nama_kendala = "Tunggu Solar", kategori = "LOGISTIK", deskripsi = "Menunggu pengisian bahan bakar solar / fuel truck"),
-                KendalaPayload(id = 12, kode_kendala = "KND-12", nama_kendala = "Tunggu Mekanik", kategori = "MEKANIKAL", deskripsi = "Menunggu kedatangan mekanik servis"),
-                KendalaPayload(id = 13, kode_kendala = "KND-13", nama_kendala = "Tunggu Trailler", kategori = "LOGISTIK", deskripsi = "Menunggu lowbed / trailler mobilisasi unit"),
-                KendalaPayload(id = 14, kode_kendala = "KND-14", nama_kendala = "Tunggu Lokasi", kategori = "OPERASIONAL", deskripsi = "Menunggu kesiapan front kerja / lokasi kerja"),
-                KendalaPayload(id = 15, kode_kendala = "KND-15", nama_kendala = "Tunggu Cuaca", kategori = "CUACA", deskripsi = "Hambatan cuaca buruk / hujan lebat / slippery")
-            )
-        )
+        addAll(createDefaultServerKendala())
     }
 
-    // Central master activities in company web admin
+    // Central master activities in company web admin (107 master aktivitas aktif)
     val serverActivities = CopyOnWriteArrayList<ActivityPayload>().apply {
-        addAll(
-            listOf(
-                ActivityPayload("ACT-SAP-101", "Galian Tanah Lunak", "m3", "Penggalian area cut site A", "PRODUKSI", "OPERASI", "Excavator Standar"),
-                ActivityPayload("ACT-SAP-102", "Pekerjaan Parit & Saluran", "m3", "Penggalian saluran drainase tambang", "PRODUKSI", "OPERASI", "Excavator Mini"),
-                ActivityPayload("ACT-SAP-103", "Pekerjaan Slope & Cut Long Arm", "m3", "Pekerjaan lereng cuting jarak jauh", "PRODUKSI", "OPERASI", "Excavator Long Arm"),
-                ActivityPayload("ACT-SAP-201", "Pemadatan Subgrade", "m2", "Pemadatan lapisan tanah dasar disposal & jalan", "SUPPORT", "OPERASI", "Compactor"),
-                ActivityPayload("ACT-SAP-202", "Grading Mainroad Tambang", "m", "Perawatan kerataan dan grading jalan hauling", "INFRASTRUKTUR", "OPERASI", "Motor Grader"),
-                ActivityPayload("ACT-SAP-STB-01", "Standby Hujan / Cuaca Buruk", "jam", "Kondisi hujan lebat atau jalur licin", "STANDBY", "STANDBY", "ALL"),
-                ActivityPayload("ACT-SAP-STB-02", "Standby Tunggu Trailler / Front", "jam", "Menunggu lowbed mobilisasi atau kesiapan front", "STANDBY", "STANDBY", "ALL"),
-                ActivityPayload("ACT-SAP-BDN-01", "Breakdown Kerusakan Mesin / Engine", "jam", "Trouble mesin / transmisi unit", "BREAKDOWN", "BREAKDOWN", "ALL"),
-                ActivityPayload("ACT-SAP-BDN-02", "Breakdown Perbaikan Undercarriage", "jam", "Perbaikan track / undercarriage unit", "BREAKDOWN", "BREAKDOWN", "ALL")
-            )
-        )
+        addAll(createDefaultServerActivities())
     }
 
-    // Central master operators in company web admin
+    // Central master operators in company web admin (45 master operator aktif)
     val serverOperators = CopyOnWriteArrayList<OperatorPayload>().apply {
-        addAll(
-            listOf(
-                OperatorPayload("OPR-001", "Ahmad Fauzi", "NIK-94821", "Agung", "Senior Operator - Class A", "AKTIF", "Geodesi PG1"),
-                OperatorPayload("OPR-002", "Bambang Sudrajat", "NIK-88234", "Agung", "Senior Operator - Class A", "AKTIF", "Geodesi PG1"),
-                OperatorPayload("OPR-003", "Dedi Supriyadi", "NIK-77412", "Agung", "Operator Alat Berat - Class B", "AKTIF", "Geodesi PG1"),
-                OperatorPayload("OPR-004", "Eko Prasetyo", "NIK-65129", "Agung", "Operator Compactor - Class B", "AKTIF", "Geodesi PG1"),
-                OperatorPayload("OPR-005", "Hendra Gunawan", "NIK-91203", "Agung", "Master Grader Operator", "AKTIF", "Geodesi PG1"),
-                OperatorPayload("OPR-006", "Indra Kusuma", "NIK-83190", "Zainudin", "Senior Excavator Operator", "AKTIF", "Geodesi PG2"),
-                OperatorPayload("OPR-007", "Joko Susilo", "NIK-74102", "Jaidi", "Grader Operator", "AKTIF", "Geodesi PG3"),
-                OperatorPayload("OPR-008", "Kurniawan Putra", "NIK-69214", "Hisar", "Compactor Operator", "AKTIF", "RC PG1"),
-                OperatorPayload("OPR-009", "Asep Hidayat", "NIK-61234", "Yono", "Excavator Operator", "AKTIF", "RC PG2"),
-                OperatorPayload("OPR-010", "Wayan Sukarta", "NIK-54321", "Nyoman", "Long Arm Operator", "AKTIF", "RC PG3"),
-                OperatorPayload("OPR-011", "Rian Pratama", "NIK-43210", "Saipul", "Grader Operator", "AKTIF", "LEBUNG PG12"),
-                OperatorPayload("OPR-012", "Doni Saputra", "NIK-32109", "Galung", "Excavator Operator", "AKTIF", "LEBUNG PG3")
-            )
-        )
+        addAll(createDefaultServerOperators())
     }
 
-    // Central master lokasi in company web admin
+    // Central master lokasi in company web admin (7 master lokasi aktif)
     val serverLokasi = CopyOnWriteArrayList<LokasiPayload>().apply {
-        addAll(
-            listOf(
-                LokasiPayload("001A", "Geodesi PG1", 10.5, 8.2, "Area Front Utama"),
-                LokasiPayload("002B", "Geodesi PG1", 14.0, 11.5, "Disposal North"),
-                LokasiPayload("100A", "Geodesi PG2", 20.0, 16.8, "Pit Cut Site B"),
-                LokasiPayload("101B", "Geodesi PG2", 18.5, 15.0, "Loading Area 2"),
-                LokasiPayload("201C", "RC PG1", 25.0, 21.4, "Hauling Route South"),
-                LokasiPayload("MAINROAD-01", "INFRA", 30.0, 28.0, "Jalan Tambang Utama"),
-                LokasiPayload("DISPOSAL-W", "DISP", 15.0, 12.0, "Penimbunan Barat"),
-                LokasiPayload("PIT-NORTH", "PIT", 35.0, 30.5, "Pit Penambangan Utara")
-            )
-        )
+        addAll(createDefaultServerLokasi())
     }
 
     // Central received reports in Web Admin
@@ -618,18 +550,9 @@ object CompanyServerSimulator {
             return LoginResult.Error("Gagal Masuk: Akun tidak terdaftar atau telah dinonaktifkan di Website Admin.")
         }
 
-        val matched = com.example.data.model.SupervisorDirectory.authenticate(trimmedUser, trimmedPin)
+        val (matched, errorMsg) = com.example.data.model.SupervisorDirectory.authenticateKasie(trimmedUser, trimmedPin)
         if (matched == null) {
-            return LoginResult.Error("Gagal Masuk: Akun tidak terdaftar atau telah dinonaktifkan di Website Admin.")
-        }
-
-        if (!matched.isAktif) {
-            return LoginResult.Error("Gagal Masuk: Akun tidak terdaftar atau telah dinonaktifkan di Website Admin.")
-        }
-
-        // Validasi PIN/Password (wajib default '123', '1234', atau matched.passwordPin)
-        if (trimmedPin.isNotEmpty() && trimmedPin != matched.passwordPin && trimmedPin != "123" && trimmedPin != "1234") {
-            return LoginResult.Error("Gagal Masuk: Akun tidak terdaftar atau telah dinonaktifkan di Website Admin.")
+            return LoginResult.Error(errorMsg ?: "Gagal Masuk: Akun tidak terdaftar atau kata sandi salah di Website Admin.")
         }
 
         return LoginResult.Success(
@@ -642,7 +565,291 @@ object CompanyServerSimulator {
                 wilayah = matched.wilayah,
                 status = matched.status
             ),
-            message = "Login berhasil sebagai ${matched.role}"
+            message = "Login berhasil sebagai Kasie Lapangan"
         )
+    }
+
+    fun getMobileBootstrapResponse(supervisorName: String = "", tanggal: String = ""): CentralizedBootstrapResponse {
+        cleanDumpTruckAndBulldozer()
+        val users = serverUsers.filter { it.isAktif }
+        val units = serverUnits.filter { 
+            com.example.data.model.UnitConstants.isJenisUnitValid(it.resolvedUnitType) &&
+            (it.resolvedStatus.equals("OPERASIONAL", ignoreCase = true) || it.resolvedStatus.equals("Aktif", ignoreCase = true))
+        }
+        val operators = serverOperators.filter { it.resolvedStatus.equals("AKTIF", ignoreCase = true) }
+        val aktivitas = serverActivities.filter { !it.resolvedKategoriStatus.equals("Nonaktif", ignoreCase = true) }
+        val kendala = serverKendala.toList()
+        val lokasi = serverLokasi.toList()
+        val rencana = serverRencanaKerja.filter { it.is_realized != true }
+
+        val isoTime = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }.format(Date())
+
+        return CentralizedBootstrapResponse(
+            status = "success",
+            timestamp = isoTime,
+            data = CentralizedBootstrapDataPayload(
+                users = users,
+                units = units,
+                operators = operators,
+                aktivitas = aktivitas,
+                kendala = kendala,
+                lokasi = lokasi,
+                rencanaKerja = rencana
+            )
+        )
+    }
+
+    private fun createDefaultServerUsers(): List<UserApiPayload> {
+        return listOf(
+            UserApiPayload(id = "33", nama_lengkap = "Farid", username = "farid", hak_akses = "Super Admin", role = "SUPER ADMIN", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "34", nama_lengkap = "Deni", username = "deni", hak_akses = "Super Admin", role = "SUPER ADMIN", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "35", nama_lengkap = "Agung", username = "agung", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "Geodesi PG1", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "36", nama_lengkap = "Zainudin", username = "zainudin", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "Geodesi PG2", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "37", nama_lengkap = "Jahidi", username = "jahidi", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG1", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "38", nama_lengkap = "Hisar", username = "hisar", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG1", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "39", nama_lengkap = "Yono", username = "yono1", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG2", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "40", nama_lengkap = "Nyoman", username = "nyoman", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG3", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "41", nama_lengkap = "Saipul", username = "saipul", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "LEBUNG PG12", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "42", nama_lengkap = "Galung", username = "galung", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "LEBUNG PG3", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "43", nama_lengkap = "Lutfi", username = "lutfi", hak_akses = "Manager Operasional", role = "MANAGER", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "44", nama_lengkap = "Putut", username = "putut", hak_akses = "Manager Operasional", role = "MANAGER", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif")
+        )
+    }
+
+    private fun createDefaultServerLokasi(): List<LokasiPayload> {
+        return listOf(
+            LokasiPayload("001A", "Geodesi PG1", 10.5, 8.2, "Area Front Utama"),
+            LokasiPayload("002B", "Geodesi PG2", 14.0, 11.5, "Pit Cut Site B"),
+            LokasiPayload("101C", "RC PG1", 25.0, 21.4, "Hauling Route South"),
+            LokasiPayload("102D", "RC PG2", 18.5, 15.0, "Pit West Front"),
+            LokasiPayload("103E", "RC PG3", 20.0, 16.8, "Loading Pit C"),
+            LokasiPayload("201F", "LEBUNG PG12", 30.0, 26.0, "Lebung Wetland Area"),
+            LokasiPayload("202G", "LEBUNG PG3", 28.0, 24.0, "Lebung South Area")
+        )
+    }
+
+    private fun createDefaultServerKendala(): List<KendalaPayload> {
+        return listOf(
+            KendalaPayload(id = 1, kode_kendala = "KND-01", nama_kendala = "Antar - jemput", kategori = "OPERASIONAL", deskripsi = "Mobilisasi personel antar - jemput shift"),
+            KendalaPayload(id = 2, kode_kendala = "KND-02", nama_kendala = "Cek unit, Implement Pemanasan mesin", kategori = "OPERASIONAL", deskripsi = "Pemeriksaan P2H harian dan pemanasan unit"),
+            KendalaPayload(id = 3, kode_kendala = "KND-03", nama_kendala = "Transport", kategori = "OPERASIONAL", deskripsi = "Perjalanan/transportasi unit ke front kerja"),
+            KendalaPayload(id = 4, kode_kendala = "KND-04", nama_kendala = "Kerja", kategori = "OPERASIONAL", deskripsi = "Aktivitas kerja operasional"),
+            KendalaPayload(id = 5, kode_kendala = "KND-05", nama_kendala = "Istirahat", kategori = "OPERASIONAL", deskripsi = "Waktu istirahat resmi operator"),
+            KendalaPayload(id = 6, kode_kendala = "KND-06", nama_kendala = "Perbaikan Unit", kategori = "MEKANIKAL", deskripsi = "Perbaikan kerusakan pada unit alat berat"),
+            KendalaPayload(id = 7, kode_kendala = "KND-07", nama_kendala = "Perbaikan Implement", kategori = "MEKANIKAL", deskripsi = "Perbaikan attachment/implement unit"),
+            KendalaPayload(id = 8, kode_kendala = "KND-08", nama_kendala = "Perawatan Unit", kategori = "MEKANIKAL", deskripsi = "Servis rutin dan perawatan berkala unit"),
+            KendalaPayload(id = 9, kode_kendala = "KND-09", nama_kendala = "Perawatan Implement", kategori = "MEKANIKAL", deskripsi = "Servis dan greasing implement"),
+            KendalaPayload(id = 10, kode_kendala = "KND-10", nama_kendala = "Ganti Implement", kategori = "OPERASIONAL", deskripsi = "Penggantian bucket/blade/ripper attachment"),
+            KendalaPayload(id = 11, kode_kendala = "KND-11", nama_kendala = "Tunggu Solar", kategori = "LOGISTIK", deskripsi = "Menunggu pengisian bahan bakar solar / fuel truck"),
+            KendalaPayload(id = 12, kode_kendala = "KND-12", nama_kendala = "Tunggu Mekanik", kategori = "MEKANIKAL", deskripsi = "Menunggu kedatangan mekanik servis"),
+            KendalaPayload(id = 13, kode_kendala = "KND-13", nama_kendala = "Tunggu Trailler", kategori = "LOGISTIK", deskripsi = "Menunggu lowbed / trailler mobilisasi unit"),
+            KendalaPayload(id = 14, kode_kendala = "KND-14", nama_kendala = "Tunggu Lokasi", kategori = "OPERASIONAL", deskripsi = "Menunggu kesiapan front kerja / lokasi kerja"),
+            KendalaPayload(id = 15, kode_kendala = "KND-15", nama_kendala = "Tunggu Cuaca", kategori = "CUACA", deskripsi = "Hambatan cuaca buruk / hujan lebat / slippery")
+        )
+    }
+
+    private fun createDefaultServerUnits(): List<UnitPayload> {
+        val list = mutableListOf<UnitPayload>()
+        // 39 unit operasional aktif dialokasikan per Kasie penanggung jawab
+        val kasieDistribution = listOf(
+            Triple("Agung", "Geodesi PG1", listOf(
+                Pair("HEH0004", Triple("Excavator Mini", "Kubota U50-5", 6.0)),
+                Pair("HEH0013", Triple("Excavator Standar", "Komatsu PC200-8", 12.0)),
+                Pair("HEH0015", Triple("Excavator Standar", "Kobelco SK200", 25.0)),
+                Pair("HEH0029", Triple("Excavator Long Arm", "CAT 320D Long Arm", 18.0)),
+                Pair("SCC0001", Triple("Compactor", "Bomag BW211 D-40", 15.0))
+            )),
+            Triple("Zainudin", "Geodesi PG2", listOf(
+                Pair("EXC-09", Triple("Excavator Standar", "Hitachi ZX210-5G", 3990.2)),
+                Pair("GRD-02", Triple("Motor Grader", "CAT 140M", 2300.0)),
+                Pair("HEH0016", Triple("Excavator Standar", "Komatsu PC210", 3120.0)),
+                Pair("SCC0002", Triple("Compactor", "Sakai SV520", 1820.0)),
+                Pair("HEH0030", Triple("Excavator Long Arm", "Komatsu PC210LC-10", 4100.0))
+            )),
+            Triple("Jahidi", "RC PG1", listOf(
+                Pair("CMP-02", Triple("Compactor", "Sakai SV520", 1750.0)),
+                Pair("HEH0017", Triple("Excavator Standar", "Hitachi ZX200-5G", 3210.0)),
+                Pair("HEH0018", Triple("Excavator Standar", "Kobelco SK210", 2890.0)),
+                Pair("GRD-04", Triple("Motor Grader", "Komatsu GD511A", 1950.0)),
+                Pair("EXC-14", Triple("Excavator Standar", "CAT 320D", 2450.0)),
+                Pair("SCC0007", Triple("Compactor", "Bomag BW211", 1600.0)),
+                Pair("HEH0034", Triple("Excavator Long Arm", "Komatsu PC210LC", 3800.0))
+            )),
+            Triple("Hisar", "RC PG1", listOf(
+                Pair("HEH0005", Triple("Excavator Mini", "Yanmar VIO50", 1120.0)),
+                Pair("HEH0006", Triple("Excavator Mini", "Kubota U50", 940.0)),
+                Pair("EXC-10", Triple("Excavator Standar", "Komatsu PC210-10", 3540.0)),
+                Pair("HEH0019", Triple("Excavator Standar", "CAT 320 GC", 2650.0)),
+                Pair("SCC0003", Triple("Compactor", "Bomag BW211", 1640.0)),
+                Pair("GRD-05", Triple("Motor Grader", "CAT 120K", 2410.0)),
+                Pair("HEH0031", Triple("Excavator Long Arm", "Kobelco SK210LC", 3980.0))
+            )),
+            Triple("Yono", "RC PG2", listOf(
+                Pair("GRD-03", Triple("Motor Grader", "Komatsu GD511A", 2150.0)),
+                Pair("HEH0020", Triple("Excavator Standar", "Hitachi ZX210", 3780.0)),
+                Pair("HEH0021", Triple("Excavator Standar", "Komatsu PC200", 3410.0)),
+                Pair("SCC0004", Triple("Compactor", "Dynapac CA250", 1530.0))
+            )),
+            Triple("Nyoman", "RC PG3", listOf(
+                Pair("EXC-11", Triple("Excavator Long Arm", "CAT 320D2", 5120.0)),
+                Pair("HEH0022", Triple("Excavator Standar", "Komatsu PC200-8", 2980.0)),
+                Pair("GRD-06", Triple("Motor Grader", "CAT 140K", 2870.0)),
+                Pair("SCC0005", Triple("Compactor", "Bomag BW216", 1920.0))
+            )),
+            Triple("Saipul", "LEBUNG PG12", listOf(
+                Pair("CMP-03", Triple("Compactor", "Bomag BW216", 1890.0)),
+                Pair("HEH0024", Triple("Excavator Standar", "Komatsu PC210-10", 3100.0)),
+                Pair("HEH0025", Triple("Excavator Standar", "Hitachi ZX200", 4200.0)),
+                Pair("GRD-07", Triple("Motor Grader", "Komatsu GD535", 2290.0))
+            )),
+            Triple("Galung", "LEBUNG PG3", listOf(
+                Pair("EXC-12", Triple("Excavator Standar", "Hitachi ZX200-5A", 4200.0)),
+                Pair("HEH0026", Triple("Excavator Standar", "Kobelco SK200", 3350.0)),
+                Pair("GRD-08", Triple("Motor Grader", "CAT 140M", 2540.0))
+            ))
+        )
+
+        for ((kasie, wil, units) in kasieDistribution) {
+            for ((code, specs) in units) {
+                val (uType, brand, lastHm) = specs
+                val isCompactor = uType.contains("Compactor", ignoreCase = true)
+                val isGrader = uType.contains("Grader", ignoreCase = true)
+                list.add(
+                    UnitPayload(
+                        kode_unit = code,
+                        unit_code = code,
+                        unitCode = code,
+                        jenis_unit = uType,
+                        unit_type = uType,
+                        unitType = uType,
+                        model_unit = brand,
+                        brand_model = brand,
+                        brandModel = brand,
+                        hm_unit_terakhir_diinputkan = lastHm,
+                        last_hm = lastHm,
+                        lastHm = lastHm,
+                        kasie_penanggung_jawab = kasie,
+                        nama_pengawas = kasie,
+                        supervisor_assigned = kasie,
+                        supervisorAssigned = kasie,
+                        status = "OPERASIONAL",
+                        hm_min_standar = if (isCompactor || isGrader) 5.0 else 6.0,
+                        hm_max_standar = if (isCompactor || isGrader) 8.5 else 10.0,
+                        wilayah = wil
+                    )
+                )
+            }
+        }
+        return list // Total 39 units
+    }
+
+    private fun createDefaultServerOperators(): List<OperatorPayload> {
+        val list = mutableListOf<OperatorPayload>()
+        val kasieList = listOf(
+            Pair("Agung", "Geodesi PG1"),
+            Pair("Zainudin", "Geodesi PG2"),
+            Pair("Jahidi", "RC PG1"),
+            Pair("Hisar", "RC PG1"),
+            Pair("Yono", "RC PG2"),
+            Pair("Nyoman", "RC PG3"),
+            Pair("Saipul", "LEBUNG PG12"),
+            Pair("Galung", "LEBUNG PG3")
+        )
+        val names = listOf(
+            "Ahmad Fauzi", "Bambang Sudrajat", "Dedi Supriyadi", "Eko Prasetyo", "Hendra Gunawan",
+            "Indra Kusuma", "Joko Susilo", "Kurniawan Putra", "Asep Hidayat", "Wayan Sukarta",
+            "Rian Pratama", "Doni Saputra", "Teguh Santoso", "Budi Utomo", "Sigit Purnomo",
+            "Faisal Akbar", "Rahmat Hidayat", "Agus Setiawan", "Ilham Maulana", "Rizki Ramadhan",
+            "Wahyu Hidayat", "Bayu Saputra", "Guruh Prasetyo", "Hari Wibowo", "Irfan Hakim",
+            "Julianto", "Kusnadi", "Lukman Hakim", "Mansur", "Nanang Kosim",
+            "Oki Setiawan", "Panji Tri", "Rudi Hartono", "Slamet Riyadi", "Tri Wahyudi",
+            "Untung Slamet", "Viko Pratama", "Wawan Kurnia", "Yadi Mulyadi", "Zaenal Abidin",
+            "Ari Wibowo", "Candra Wijaya", "Dani Saputra", "Endang Sutrisno", "Fajar Sidiq"
+        )
+
+        for (i in 0 until 45) {
+            val (kasie, wil) = kasieList[i % kasieList.size]
+            val opName = names.getOrElse(i) { "Operator ${i + 1}" }
+            val opId = String.format(Locale.US, "OPR-%03d", i + 1)
+            val badge = String.format(Locale.US, "NIK-%05d", 80000 + i + 1)
+            val level = when (i % 3) {
+                0 -> "Class A - Excavator"
+                1 -> "Class A - Grader"
+                else -> "Class B - Compactor"
+            }
+            list.add(
+                OperatorPayload(
+                    operatorId = opId,
+                    name = opName,
+                    badgeNumber = badge,
+                    supervisorAssigned = kasie,
+                    kasie_penanggung_jawab = kasie,
+                    kasiePenanggungJawab = kasie,
+                    kasie = kasie,
+                    skillLevel = level,
+                    status = "AKTIF",
+                    wilayah = wil
+                )
+            )
+        }
+        return list // Total 45 operators
+    }
+
+    private fun createDefaultServerActivities(): List<ActivityPayload> {
+        val list = mutableListOf<ActivityPayload>()
+        val categories = listOf("PRODUKSI", "SUPPORT", "INFRASTRUKTUR", "STANDBY", "BREAKDOWN")
+        val baseActivities = listOf(
+            Triple("Galian Tanah Lunak", "m3", "Excavator Standar"),
+            Triple("Galian Tanah Berbatu", "m3", "Excavator Standar"),
+            Triple("Loading Overburden", "m3", "Excavator Standar"),
+            Triple("Pekerjaan Parit & Saluran", "m3", "Excavator Mini"),
+            Triple("Pekerjaan Slope Long Arm", "m3", "Excavator Long Arm"),
+            Triple("Pemadatan Subgrade", "m2", "Compactor"),
+            Triple("Grading Mainroad", "m", "Motor Grader"),
+            Triple("Perawatan Jalan Hauling", "m", "Motor Grader"),
+            Triple("Clearing & Grubbing", "m2", "Excavator Standar"),
+            Triple("Penataan Disposal", "m3", "Excavator Standar"),
+            Triple("Pembersihan Sump Tambang", "m3", "Excavator Long Arm"),
+            Triple("Timbunan Tanah Pilihan", "m3", "Compactor")
+        )
+
+        for (i in 1..107) {
+            val sap = String.format(Locale.US, "ACT-SAP-%03d", i)
+            val base = baseActivities[(i - 1) % baseActivities.size]
+            val cat = when {
+                i > 100 -> "BREAKDOWN"
+                i > 95 -> "STANDBY"
+                i % 4 == 0 -> "INFRASTRUKTUR"
+                i % 3 == 0 -> "SUPPORT"
+                else -> "PRODUKSI"
+            }
+            val katStatus = when (cat) {
+                "STANDBY" -> "STANDBY"
+                "BREAKDOWN" -> "BREAKDOWN"
+                else -> "OPERASI"
+            }
+            val name = if (cat == "STANDBY") {
+                "Standby Operasional ${i - 95}"
+            } else if (cat == "BREAKDOWN") {
+                "Breakdown Mekanikal ${i - 100}"
+            } else {
+                "${base.first} Sektor $i"
+            }
+            val unit = if (katStatus != "OPERASI") "ALL" else base.third
+            list.add(
+                ActivityPayload(
+                    sapCode = sap,
+                    activityName = name,
+                    unitOfMeasure = if (katStatus != "OPERASI") "jam" else base.second,
+                    description = "Aktivitas standar operasional $name",
+                    category = cat,
+                    kategoriStatus = katStatus,
+                    jenisUnit = unit
+                )
+            )
+        }
+        return list // Total 107 activities
     }
 }
