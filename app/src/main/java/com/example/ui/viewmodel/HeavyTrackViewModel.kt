@@ -236,13 +236,13 @@ class HeavyTrackViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Master Lokasi Kerja (Debounced 250ms, Wilayah-filtered, LIMIT 40 di SQLite untuk 3.614+ baris)
+    // Master Lokasi Kerja (Debounced 200ms, Wilayah-filtered, proses di Dispatchers.IO tanpa limit untuk 3.614+ data)
     private val _lokasiSearchQuery = MutableStateFlow("")
     val lokasiSearchQuery: StateFlow<String> = _lokasiSearchQuery.asStateFlow()
 
     @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val lokasiPilihan: StateFlow<List<LokasiEntity>> = combine(
-        _lokasiSearchQuery.debounce(250).distinctUntilChanged(),
+        _lokasiSearchQuery.debounce(200).distinctUntilChanged(),
         _currentSupervisorSession
     ) { query, session ->
         query to session
@@ -252,7 +252,7 @@ class HeavyTrackViewModel(
         } else {
             session?.wilayah ?: repository.userSessionManager.getCurrentUserWilayah()
         }
-        repository.searchLokasiFast(userWilayah, query)
+        repository.getAllLokasiFiltered(wilayahFilter = userWilayah, query = query)
     }.flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

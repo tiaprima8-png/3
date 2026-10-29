@@ -181,6 +181,9 @@ class HeavyTrackRepository(
     fun getAllLokasi(): Flow<List<LokasiEntity>> =
         lokasiDao.getAllLokasi()
 
+    fun getAllLokasiFiltered(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>> =
+        lokasiDao.getAllLokasiFiltered(wilayahFilter, query)
+
     fun searchLokasiFast(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>> =
         lokasiDao.searchLokasiFast(wilayahFilter, query)
 

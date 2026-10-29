@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -716,9 +717,11 @@ fun OperatorSelectorItemCard(
 }
 
 /**
- * Item for Lokasi Kerja Selector - Minimalis (Hanya Kode Lokasi)
- * Displays only:
- * - kode_lokasi (e.g., "001A", "002B", "100A")
+ * Item for Lokasi Kerja Selector - Minimalis & Lightweight (Anti-Lag 3.614 Data)
+ * Displays:
+ * - Kode Lokasi (Teks bold monospace)
+ * - Subteks Wilayah & Luas
+ * - Checkmark indicator bila terpilih
  */
 @Composable
 fun LokasiSelectorItemCard(
@@ -730,17 +733,39 @@ fun LokasiSelectorItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(vertical = 14.dp, horizontal = 16.dp)
+            .padding(vertical = 12.dp, horizontal = 18.dp)
             .testTag("lokasi_item_${lokasi.kodeLokasi}"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = lokasi.kodeLokasi,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 16.sp,
-            color = if (isSelected) Emerald700 else Slate900
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = lokasi.kodeLokasi,
+                fontWeight = FontWeight.Bold,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                fontSize = 15.sp,
+                color = if (isSelected) Emerald700 else Slate900
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 2.dp)
+            ) {
+                Text(
+                    text = "Wilayah: ${lokasi.wilayah}",
+                    fontSize = 12.sp,
+                    color = Slate500
+                )
+                if (lokasi.luasNetto > 0.0 || lokasi.luasBruto > 0.0) {
+                    val luasText = if (lokasi.luasNetto > 0.0) "${lokasi.luasNetto} Ha" else "${lokasi.luasBruto} Ha"
+                    Text(
+                        text = "•  Luas: $luasText",
+                        fontSize = 12.sp,
+                        color = Slate400
+                    )
+                }
+            }
+        }
         if (isSelected) {
             Icon(
                 imageVector = Icons.Default.Check,
@@ -772,16 +797,15 @@ fun LokasiSearchableSelectorSheet(
 
     val filteredList = remember(activeQuery, lokasiList, onSearchQueryChange != null) {
         if (onSearchQueryChange != null) {
-            // Query & LIMIT 40 sudah diproses super cepat (< 5ms) di SQLite via ViewModel Debounce
+            // Query seluruh 3.614+ data diproses reaktif di Dispatchers.IO via ViewModel
             lokasiList
         } else if (activeQuery.isBlank()) {
-            lokasiList.take(40)
+            lokasiList
         } else {
             val q = activeQuery.trim()
-            lokasiList.asSequence()
-                .filter { it.kodeLokasi.contains(q, ignoreCase = true) }
-                .take(40)
-                .toList()
+            lokasiList.filter {
+                it.kodeLokasi.contains(q, ignoreCase = true) || it.wilayah.contains(q, ignoreCase = true)
+            }
         }
     }
 
@@ -810,7 +834,7 @@ fun LokasiSearchableSelectorSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 280.dp, max = 560.dp)
+                .heightIn(min = 280.dp, max = 580.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -832,9 +856,9 @@ fun LokasiSearchableSelectorSheet(
                         )
                         Text(
                             text = if (!wilayahLabel.isNullOrBlank()) {
-                                "Menampilkan maks. 40 lokasi (${wilayahLabel})"
+                                "Pilih kode lokasi kerja (${wilayahLabel})"
                             } else {
-                                "Pilih kode lokasi kerja (maks. 40 hasil teratas)"
+                                "Pilih kode lokasi kerja"
                             },
                             style = MaterialTheme.typography.bodySmall.copy(color = Slate500)
                         )
@@ -916,10 +940,18 @@ fun LokasiSearchableSelectorSheet(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                val totalFormat = remember(filteredList.size) {
+                    try {
+                        java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID")).format(filteredList.size)
+                    } catch (_: Exception) {
+                        filteredList.size.toString()
+                    }
+                }
+
                 Text(
-                    text = "Menampilkan ${filteredList.size} Lokasi Kerja",
+                    text = "Menampilkan $totalFormat lokasi",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = Slate400,
+                        color = Slate500,
                         fontWeight = FontWeight.SemiBold
                     ),
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -942,11 +974,15 @@ fun LokasiSearchableSelectorSheet(
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
                     items(
                         items = filteredList,
-                        key = { it.kodeLokasi }
+                        key = { it.kodeLokasi },
+                        contentType = { "LokasiItem" }
                     ) { lokasi ->
                         LokasiSelectorItemCard(
                             lokasi = lokasi,
@@ -962,8 +998,8 @@ fun LokasiSearchableSelectorSheet(
                             }
                         )
                         HorizontalDivider(
-                            color = Color.LightGray.copy(alpha = 0.3f),
-                            thickness = 1.dp
+                            color = Color.LightGray.copy(alpha = 0.2f),
+                            thickness = 0.8.dp
                         )
                     }
                 }

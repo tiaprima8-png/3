@@ -35,17 +35,18 @@ interface LokasiDao {
               OR TRIM(:query) = '' 
               OR LOWER(kode_lokasi) LIKE '%' || LOWER(TRIM(:query)) || '%'
           )
-        ORDER BY kode_lokasi ASC 
-        LIMIT 40
+        ORDER BY kode_lokasi ASC
     """)
-    fun searchLokasiFast(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>>
+    fun getAllLokasiFiltered(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>>
+
+    fun searchLokasiFast(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>> =
+        getAllLokasiFiltered(wilayahFilter, query)
 
     @Query("""
         SELECT * FROM lokasi 
         WHERE kode_lokasi LIKE '%' || :query || '%' 
            OR wilayah LIKE '%' || :query || '%'
         ORDER BY kode_lokasi ASC
-        LIMIT 40
     """)
     fun searchLokasi(query: String): Flow<List<LokasiEntity>>
 

@@ -1122,7 +1122,7 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun test_fast_lokasi_search_3614_rows_with_limit_40_and_wilayah_filter() {
+    fun test_fast_lokasi_search_3614_rows_unlimited_with_wilayah_filter() {
         val totalRows = 3614
         val wilayahPool = listOf("PG1", "PG2", "PG3", "RC PG1", "Geodesi PG1")
         val masterLokasi3614 = (1..totalRows).map { idx ->
@@ -1142,7 +1142,7 @@ class ExampleUnitTest {
 
         assertEquals(3614, masterLokasi3614.size)
 
-        fun simulateSearchLokasiFast(
+        fun simulateGetAllLokasiFiltered(
             all: List<com.example.data.local.entity.LokasiEntity>,
             wilayahFilter: String?,
             query: String?
@@ -1169,19 +1169,21 @@ class ExampleUnitTest {
                     q.isEmpty() || lok.kodeLokasi.lowercase().contains(q)
                 }
                 .sortedBy { it.kodeLokasi }
-                .take(40)
                 .toList()
         }
 
-        // Saat Kasie dengan wilayah "RC PG1" membuka dialog (query kosong), maksimal 40 item dikembalikan secara instan
-        val initialOpenResults = simulateSearchLokasiFast(masterLokasi3614, "RC PG1", "")
-        assertEquals(40, initialOpenResults.size)
-        assertTrue(initialOpenResults.all { it.wilayah.contains("PG1") && it.status == "Aktif" })
+        // 1. Tanpa filter wilayah, seluruh 3.613 data aktif dikembalikan tanpa terpotong
+        val allActiveResults = simulateGetAllLokasiFiltered(masterLokasi3614, null, "")
+        assertEquals(3613, allActiveResults.size)
 
-        // Saat Kasie mengetik "048", hasil terfilter sesuai kode lokasi dan tetap dibatasi <= 40 baris
-        val searchResults = simulateSearchLokasiFast(masterLokasi3614, "RC PG1", "048")
+        // 2. Dengan filter wilayah "RC PG1", seluruh lokasi PG1 dikembalikan tanpa terpotong
+        val pg1Results = simulateGetAllLokasiFiltered(masterLokasi3614, "RC PG1", "")
+        assertTrue(pg1Results.size > 40)
+        assertTrue(pg1Results.all { it.wilayah.contains("PG1") && it.status == "Aktif" })
+
+        // 3. Pencarian kata kunci "048" menghasilkan semua item lokasi terkait
+        val searchResults = simulateGetAllLokasiFiltered(masterLokasi3614, "RC PG1", "048")
         assertTrue(searchResults.isNotEmpty())
-        assertTrue(searchResults.size <= 40)
         assertTrue(searchResults.all { it.kodeLokasi.contains("048", ignoreCase = true) })
     }
 }
