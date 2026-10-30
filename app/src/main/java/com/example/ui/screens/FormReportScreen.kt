@@ -163,6 +163,7 @@ fun FormReportScreen(
     val operators by viewModel.operators.collectAsState()
     val lokasiList by viewModel.lokasiPilihan.collectAsState()
     val lokasiSearchQuery by viewModel.lokasiSearchQuery.collectAsState()
+    val lokasiWilayahFilter by viewModel.lokasiWilayahFilter.collectAsState()
     val currentSupervisor by viewModel.currentSupervisorSession.collectAsState()
     val kendalaList by viewModel.kendalaList.collectAsState()
     val activeRencanaList by viewModel.activeRencanaList.collectAsState()
@@ -180,7 +181,7 @@ fun FormReportScreen(
     }
     val filteredActivitiesForRencana = remember(activities, selectedRencanaUnitType) {
         if (selectedRencanaUnitType.isBlank()) {
-            emptyList()
+            activities
         } else {
             viewModel.filterActivitiesByUnitType(activities, selectedRencanaUnitType)
         }
@@ -3394,6 +3395,8 @@ fun FormReportScreen(
             rencanaState.selectedActivity
         },
         unitType = selectedRencanaUnitType.takeIf { it.isNotBlank() },
+        unitCode = rencanaState.selectedUnit?.unitCode,
+        modelTipe = rencanaState.selectedUnit?.brandModel ?: selectedRencanaUnitType.takeIf { it.isNotBlank() },
         onActivitySelected = { act ->
             val subId = activeSubPlanActivityTarget
             if (subId != null) {
@@ -3433,7 +3436,9 @@ fun FormReportScreen(
         },
         searchQuery = lokasiSearchQuery,
         onSearchQueryChange = { viewModel.onLokasiSearchQueryChanged(it) },
-        wilayahLabel = currentSupervisor?.wilayah
+        wilayahLabel = currentSupervisor?.wilayah,
+        selectedWilayahFilter = lokasiWilayahFilter,
+        onWilayahFilterChange = { viewModel.setLokasiWilayahFilter(it) }
     )
 
     // Sheet 5: Realisasi Editable Activity Sheet
@@ -3443,6 +3448,8 @@ fun FormReportScreen(
         activities = filteredActivitiesForRealisasi,
         selectedActivity = realisasiState.selectedActivity,
         unitType = realisasiUnitType.takeIf { it.isNotBlank() },
+        unitCode = realisasiPlanUnitCode,
+        modelTipe = realisasiUnitType.takeIf { it.isNotBlank() },
         onActivitySelected = {
             viewModel.setRealisasiActivity(it)
             isRealisasiActivitySheetOpen = false
@@ -3465,7 +3472,9 @@ fun FormReportScreen(
         },
         searchQuery = lokasiSearchQuery,
         onSearchQueryChange = { viewModel.onLokasiSearchQueryChanged(it) },
-        wilayahLabel = currentSupervisor?.wilayah
+        wilayahLabel = currentSupervisor?.wilayah,
+        selectedWilayahFilter = lokasiWilayahFilter,
+        onWilayahFilterChange = { viewModel.setLokasiWilayahFilter(it) }
     )
 
     // Sheet 7: Master Kendala Searchable Selector Sheet

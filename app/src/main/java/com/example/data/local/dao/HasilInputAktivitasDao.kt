@@ -43,6 +43,25 @@ interface HasilInputAktivitasDao {
     """)
     fun getHasilForKasie(namaKasie: String, username: String): Flow<List<HasilInputAktivitasEntity>>
 
+    @Query("""
+        SELECT * FROM hasil_input_aktivitas 
+        WHERE LOWER(TRIM(operator)) = LOWER(TRIM(:operatorIdentifier))
+           OR LOWER(TRIM(operator_nik)) = LOWER(TRIM(:operatorIdentifier))
+           OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:operatorIdentifier, '@', '')))
+        ORDER BY created_at DESC, id DESC
+    """)
+    fun getHasilForOperator(operatorIdentifier: String): Flow<List<HasilInputAktivitasEntity>>
+
+    @Query("""
+        UPDATE hasil_input_aktivitas 
+        SET approval_status = 'Disetujui Kasie',
+            approved_by = :approvedBy,
+            approved_at = :approvedAt,
+            is_locked = 1
+        WHERE id = :id
+    """)
+    suspend fun approveRealization(id: Long, approvedBy: String, approvedAt: String = System.currentTimeMillis().toString())
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHasil(hasil: HasilInputAktivitasEntity): Long
 

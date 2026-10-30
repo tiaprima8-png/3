@@ -211,12 +211,10 @@ class HeavyTrackViewModel(
         if (session?.isManager == true || session?.isSuperAdmin == true) {
             repository.getAllUnits()
         } else if (kasieName.isNotBlank() || username.isNotBlank()) {
-            repository.getUnitsForCurrentKasie(kasieName, username)
+            repository.getUnitsForKasie(kasieName, username)
         } else {
             repository.getAllUnits()
         }
-    }.map { list ->
-        list.filter { com.example.data.model.UnitConstants.isJenisUnitValid(it.unitType) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Master Activities
@@ -242,23 +240,30 @@ class HeavyTrackViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Master Lokasi Kerja (Debounced 200ms, Wilayah-filtered, proses di Dispatchers.IO tanpa limit untuk 3.614+ data)
+    // Master Lokasi Kerja (Debounced 200ms, Flexible Wilayah Filter Chip: [Semua], [PG1], [PG2], [OTHER])
     private val _lokasiSearchQuery = MutableStateFlow("")
     val lokasiSearchQuery: StateFlow<String> = _lokasiSearchQuery.asStateFlow()
+
+    private val _lokasiWilayahFilter = MutableStateFlow("Semua")
+    val lokasiWilayahFilter: StateFlow<String> = _lokasiWilayahFilter.asStateFlow()
+
+    fun setLokasiWilayahFilter(wilayah: String) {
+        _lokasiWilayahFilter.value = wilayah
+    }
 
     @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val lokasiPilihan: StateFlow<List<LokasiEntity>> = combine(
         _lokasiSearchQuery.debounce(200).distinctUntilChanged(),
-        _currentSupervisorSession
-    ) { query, session ->
-        query to session
-    }.flatMapLatest { (query, session) ->
-        val userWilayah = if (session?.isManager == true || session?.isSuperAdmin == true) {
+        _lokasiWilayahFilter
+    ) { query, wilayahFilter ->
+        query to wilayahFilter
+    }.flatMapLatest { (query, filter) ->
+        val effectiveWilayah = if (filter.isBlank() || filter.equals("Semua", ignoreCase = true)) {
             null
         } else {
-            session?.wilayah ?: repository.userSessionManager.getCurrentUserWilayah()
+            filter
         }
-        repository.getAllLokasiFiltered(wilayahFilter = userWilayah, query = query)
+        repository.getAllActiveLokasi(searchQuery = query, wilayah = effectiveWilayah)
     }.flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -668,8 +673,6 @@ class HeavyTrackViewModel(
 
             // Selalu sinkronkan data master user terbaru dari Web Admin saat inisialisasi
             syncMasterUsers(silent = true)
-
-            repository.cleanDumpTruckAndBulldozer()
             repository.seedInitialDataIfEmpty(_activeSupervisor.value)
             repository.reconcileSyncStatus()
             fetchBootstrapData(showOverlay = false)
@@ -1337,17 +1340,56 @@ class HeavyTrackViewModel(
         }
     }
 
-    fun filterActivitiesByUnitType(allActivities: List<ActivityMasterEntity>, unitType: String?): List<ActivityMasterEntity> {
-        if (unitType.isNullOrBlank()) return emptyList()
-        val cleanType = unitType.trim().uppercase()
+    fun filterActivitiesByUnitType(
+        allActivities: List<ActivityMasterEntity>,
+        unitType: String?,
+        kategoriFilter: String? = "SEMUA",
+        searchQuery: String? = ""
+    ): List<ActivityMasterEntity> {
+        val cleanType = unitType?.trim()?.uppercase() ?: ""
+        val cleanCategory = kategoriFilter?.trim()?.uppercase() ?: "SEMUA"
+        val cleanQuery = searchQuery?.trim()?.lowercase() ?: ""
+
         return allActivities.filter { act ->
             val actType = act.jenisUnit.trim().uppercase()
-            actType == "ALL" || actType == cleanType ||
-            cleanType.contains(actType) || actType.contains(cleanType) ||
-            (cleanType.contains("EXCAVATOR") && actType.contains("EXCAVATOR")) ||
-            (cleanType.contains("GRADER") && actType.contains("GRADER")) ||
-            (cleanType.contains("COMPACTOR") && actType.contains("COMPACTOR"))
-        }
+
+            val matchesType = when {
+                cleanType.isBlank() -> true
+                actType == "ALL" || actType == "SEMUA" -> true
+                actType == cleanType -> true
+                // Strict unit model separation (Excavator Standar, Long Arm, Mini strictly isolated)
+                cleanType.contains("STANDAR") && actType.contains("STANDAR") -> true
+                cleanType.contains("LONG ARM") && actType.contains("LONG ARM") -> true
+                cleanType.contains("MINI") && actType.contains("MINI") -> true
+                cleanType.contains("GRADER") && actType.contains("GRADER") -> true
+                cleanType.contains("COMPACTOR") && actType.contains("COMPACTOR") -> true
+                (cleanType.contains("DUMP") || cleanType.contains("TRUCK")) && (actType.contains("DUMP") || actType.contains("TRUCK")) -> true
+                else -> false
+            }
+
+            val actStatus = act.kategoriStatus.trim().uppercase()
+            val actCategory = act.category.trim().uppercase()
+            val matchesCategory = cleanCategory == "SEMUA" || cleanCategory == "ALL" || cleanCategory.isBlank() ||
+                actStatus == cleanCategory || actCategory == cleanCategory
+
+            val matchesQuery = cleanQuery.isBlank() ||
+                act.activityName.lowercase().contains(cleanQuery) ||
+                act.sapCode.lowercase().contains(cleanQuery)
+
+            matchesType && matchesCategory && matchesQuery
+        }.sortedWith(
+            compareBy(
+                { act ->
+                    when (act.kategoriStatus.trim().uppercase()) {
+                        "OPERASI" -> 1
+                        "STANDBY" -> 2
+                        "BREAKDOWN" -> 3
+                        else -> 4
+                    }
+                },
+                { it.activityName }
+            )
+        )
     }
 
     fun selectRencanaOperator(operator: OperatorEntity) {
@@ -2818,9 +2860,7 @@ Halo Rekan Pengawas, berkas installer APK pembaruan aplikasi resmi terlampir ($f
     }
 
     fun cleanDumpTruckAndBulldozer() {
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.cleanDumpTruckAndBulldozer()
-        }
+        // No-op: Dump Truck and other active units are preserved
     }
 
     fun addOrUpdateUnit(unit: com.example.data.local.entity.UnitEntity, onComplete: () -> Unit = {}) {

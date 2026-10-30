@@ -130,8 +130,11 @@ class HeavyTrackRepository(
         _syncLogs.value = listOf(item) + _syncLogs.value.take(20)
     }
 
+    fun getUnitsForKasie(namaKasie: String, username: String): Flow<List<UnitEntity>> =
+        unitDao.getUnitsForKasie(namaKasie, username)
+
     fun getUnitsForCurrentKasie(kasieName: String, username: String): Flow<List<UnitEntity>> =
-        unitDao.getUnitsForCurrentKasie(kasieName, username)
+        unitDao.getUnitsForKasie(kasieName, username)
 
     fun getUnitsForSupervisor(supervisor: String): Flow<List<UnitEntity>> =
         unitDao.getUnitsForSupervisor(supervisor)
@@ -169,6 +172,21 @@ class HeavyTrackRepository(
     fun getActivitiesByJenisUnit(jenisUnit: String?): Flow<List<ActivityMasterEntity>> =
         activityDao.getActivitiesByJenisUnit(jenisUnit)
 
+    fun getAktivitasForUnit(
+        jenisUnit: String,
+        modelTipe: String = jenisUnit,
+        kategoriFilter: String?,
+        searchQuery: String?
+    ): Flow<List<ActivityMasterEntity>> =
+        activityDao.getAktivitasForUnit(jenisUnit, modelTipe, kategoriFilter, searchQuery)
+
+    fun getAktivitasStrict(
+        modelTipe: String,
+        kategoriFilter: String?,
+        searchQuery: String?
+    ): Flow<List<ActivityMasterEntity>> =
+        activityDao.getAktivitasStrict(modelTipe, kategoriFilter, searchQuery)
+
     fun getOperatorsForSupervisor(supervisor: String): Flow<List<OperatorEntity>> =
         operatorDao.getOperatorsForSupervisor(supervisor)
 
@@ -180,6 +198,18 @@ class HeavyTrackRepository(
 
     fun getAllLokasi(): Flow<List<LokasiEntity>> =
         lokasiDao.getAllLokasi()
+
+    fun getAllActiveLokasi(searchQuery: String?, wilayah: String?): Flow<List<LokasiEntity>> =
+        lokasiDao.getAllActiveLokasi(searchQuery, wilayah)
+
+    suspend fun getActiveLokasiCount(): Int =
+        lokasiDao.getActiveLokasiCount()
+
+    @androidx.room.Transaction
+    suspend fun updateMasterLokasi(newList: List<com.example.data.local.entity.MasterLokasiEntity>) {
+        lokasiDao.deleteAll()
+        lokasiDao.insertAll(newList)
+    }
 
     fun getAllLokasiFiltered(wilayahFilter: String?, query: String?): Flow<List<LokasiEntity>> =
         lokasiDao.getAllLokasiFiltered(wilayahFilter, query)
@@ -300,7 +330,6 @@ class HeavyTrackRepository(
                 )
             }
             unitDao.replaceAll(unitEntities)
-            database.cleanDumpTruckAndBulldozerDirect()
             reportDao.deleteOrphanedReports()
 
             // 2. Process Activities Aktif
@@ -382,7 +411,6 @@ class HeavyTrackRepository(
     suspend fun refreshLocalCacheOnly(bootstrap: BootstrapResponseData) = withContext(Dispatchers.IO) {
         // Eksekusi transaksi Clear and Replace Room HANYA di SQLite internal perangkat Android
         database.refreshLocalCacheOnly(bootstrap)
-        database.cleanDumpTruckAndBulldozerDirect()
         reportDao.deleteOrphanedReports()
 
         _lastSyncTimeMillis.value = System.currentTimeMillis()
@@ -1075,10 +1103,6 @@ class HeavyTrackRepository(
     }
 
     suspend fun cleanDumpTruckAndBulldozer() = withContext(Dispatchers.IO) {
-        database.cleanDumpTruckAndBulldozerDirect()
-        unitDao.deleteDumpTruckAndBulldozer()
-        rencanaDao.deleteOrphanedRencanaKerja()
-        reportDao.deleteOrphanedReports()
-        CompanyServerSimulator.cleanDumpTruckAndBulldozer()
+        // No-op: Dump Truck and other active fleet units are preserved
     }
 }

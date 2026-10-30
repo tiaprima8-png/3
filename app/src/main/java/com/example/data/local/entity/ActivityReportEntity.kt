@@ -54,6 +54,11 @@ data class ActivityReportEntity(
     val isSynced: Boolean = false,       // 0 = pending/offline, 1 = synced
     val isHmAwalCorrected: Boolean = false, // Audit: apakah HM Awal dikoreksi manual
     val alasanKoreksiHm: String? = null,  // Catatan alasan koreksi HM
+    val approvalStatus: String = "Menunggu Approval",
+    val approvedBy: String? = null,
+    val approvedAt: String? = null,
+    val isLocked: Boolean = false,
+    val operatorNik: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val syncedAt: Long? = null
 )

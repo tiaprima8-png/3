@@ -23,13 +23,15 @@ data class UserSessionData(
     val username: String,
     val role: String,
     val wilayah: String,
+    val kasieAtasan: String = "",
     val status: String = "Aktif",
     val isLoggedIn: Boolean = false
 ) {
     val isManager: Boolean get() = role.equals("MANAGER", ignoreCase = true)
     val isSuperAdmin: Boolean get() = role.equals("SUPER ADMIN", ignoreCase = true) || role.equals("SUPERADMIN", ignoreCase = true)
+    val isOperator: Boolean get() = role.equals("OPERATOR", ignoreCase = true) || role.equals("operator", ignoreCase = true)
     val isExecutive: Boolean get() = isManager || isSuperAdmin
-    val isKasie: Boolean get() = !isExecutive
+    val isKasie: Boolean get() = role.equals("KASIE", ignoreCase = true) || (!isExecutive && !isOperator)
     val isAktif: Boolean get() = status.equals("Aktif", ignoreCase = true) || status.equals("Active", ignoreCase = true)
 }
 
@@ -45,6 +47,7 @@ class UserSessionManager(private val context: Context) {
         val KEY_USERNAME = stringPreferencesKey("username")
         val KEY_ROLE = stringPreferencesKey("role")
         val KEY_WILAYAH = stringPreferencesKey("wilayah")
+        val KEY_KASIE_ATASAN = stringPreferencesKey("kasie_atasan")
         val KEY_STATUS = stringPreferencesKey("status")
         val KEY_IS_LOGGED_IN = booleanPreferencesKey("is_logged_in")
     }
@@ -70,6 +73,7 @@ class UserSessionManager(private val context: Context) {
                     username = username,
                     role = prefs[KEY_ROLE] ?: "KASIE",
                     wilayah = prefs[KEY_WILAYAH] ?: "Geodesi 1",
+                    kasieAtasan = prefs[KEY_KASIE_ATASAN] ?: "",
                     status = prefs[KEY_STATUS] ?: "Aktif",
                     isLoggedIn = true
                 )
@@ -83,6 +87,7 @@ class UserSessionManager(private val context: Context) {
         username: String,
         role: String,
         wilayah: String,
+        kasieAtasan: String = "",
         status: String = "Aktif"
     ) {
         context.userSessionDataStore.edit { prefs ->
@@ -92,6 +97,7 @@ class UserSessionManager(private val context: Context) {
             prefs[KEY_USERNAME] = username
             prefs[KEY_ROLE] = role
             prefs[KEY_WILAYAH] = wilayah
+            prefs[KEY_KASIE_ATASAN] = kasieAtasan
             prefs[KEY_STATUS] = status
             prefs[KEY_IS_LOGGED_IN] = true
         }

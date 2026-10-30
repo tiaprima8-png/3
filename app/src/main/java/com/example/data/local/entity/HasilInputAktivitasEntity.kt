@@ -139,5 +139,20 @@ data class HasilInputAktivitasEntity(
     val statusKirim: String = "PENDING",
 
     @ColumnInfo(name = "wilayah", defaultValue = "Geodesi PG1")
-    val wilayah: String? = "Geodesi PG1"
+    val wilayah: String? = "Geodesi PG1",
+
+    @ColumnInfo(name = "approval_status", defaultValue = "'Menunggu Approval'")
+    val approvalStatus: String = "Menunggu Approval",
+
+    @ColumnInfo(name = "approved_by")
+    val approvedBy: String? = null,
+
+    @ColumnInfo(name = "approved_at")
+    val approvedAt: String? = null,
+
+    @ColumnInfo(name = "is_locked", defaultValue = "0")
+    val isLocked: Boolean = false,
+
+    @ColumnInfo(name = "operator_nik")
+    val operatorNik: String? = null
 )

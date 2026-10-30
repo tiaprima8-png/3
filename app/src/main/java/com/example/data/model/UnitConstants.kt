@@ -2,14 +2,16 @@ package com.example.data.model
 
 /**
  * Daftar Jenis Unit Operasional Aktif di RKCE (Web Admin & Mobile Android).
- * Jenis Dump Truck dan Bulldozer telah dihapus secara permanen.
+ * Mendukung Excavator, Motor Grader, Compactor, Dump Truck (termasuk TTM010 milik Kasie Jahidi), dll.
  */
 val LIST_JENIS_UNIT_AKTIF = listOf(
     "Excavator Long Arm",
     "Excavator Mini",
     "Excavator Standar",
     "Motor Grader",
-    "Compactor"
+    "Compactor",
+    "Dump Truck",
+    "DUMP TRUCK"
 )
 
 val LIST_JENIS_UNIT_FILTER = listOf(
@@ -18,7 +20,9 @@ val LIST_JENIS_UNIT_FILTER = listOf(
     "Excavator Mini",
     "Excavator Standar",
     "Motor Grader",
-    "Compactor"
+    "Compactor",
+    "Dump Truck",
+    "DUMP TRUCK"
 )
 
 object UnitConstants {
@@ -27,10 +31,6 @@ object UnitConstants {
 
     fun isJenisUnitValid(jenis: String?): Boolean {
         if (jenis.isNullOrBlank()) return false
-        val lower = jenis.lowercase().trim()
-        if (lower.contains("dump") || lower.contains("bulldozer") || lower.contains("dozer") || lower == "dt" || lower == "dz") {
-            return false
-        }
         return true
     }
 }

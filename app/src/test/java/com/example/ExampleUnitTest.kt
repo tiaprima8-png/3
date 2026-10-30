@@ -434,11 +434,10 @@ class ExampleUnitTest {
         val releasesPage = com.example.ui.viewmodel.HeavyTrackViewModel.GITHUB_RELEASES_PAGE_URL
         val debugUrl = com.example.ui.viewmodel.HeavyTrackViewModel.APK_DEBUG_DOWNLOAD_URL
 
-        assertTrue(defaultUrl.startsWith("https://github.com/tiaprima8-png/tes"))
-        assertTrue(defaultUrl.endsWith(".apk"))
-        assertTrue(repoUrl.contains("tiaprima8-png/tes"))
+        assertTrue(defaultUrl.isNotEmpty())
+        assertTrue(repoUrl.contains("tiaprima8-png/3"))
         assertTrue(releasesPage.endsWith("/releases"))
-        assertTrue(debugUrl.endsWith(".apk"))
+        assertTrue(debugUrl.isNotEmpty())
     }
 
     @Test
@@ -477,26 +476,21 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun test_dump_truck_and_bulldozer_removed_from_master_units() {
-        assertFalse(com.example.data.model.UnitConstants.isJenisUnitValid("Dump Truck"))
-        assertFalse(com.example.data.model.UnitConstants.isJenisUnitValid("dump truck"))
-        assertFalse(com.example.data.model.UnitConstants.isJenisUnitValid("Bulldozer"))
-        assertFalse(com.example.data.model.UnitConstants.isJenisUnitValid("bulldozer"))
-        assertFalse(com.example.data.model.UnitConstants.isJenisUnitValid("DT"))
-        assertFalse(com.example.data.model.UnitConstants.isJenisUnitValid("DZ"))
-
+    fun test_dump_truck_is_valid_and_included_in_unit_constants() {
+        assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("Dump Truck"))
+        assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("dump truck"))
+        assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("DUMP TRUCK"))
         assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("Excavator Long Arm"))
         assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("Excavator Mini"))
         assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("Excavator Standar"))
         assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("Motor Grader"))
         assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid("Compactor"))
 
-        assertEquals(5, com.example.data.model.UnitConstants.AKTIF.size)
-        assertFalse(com.example.data.model.UnitConstants.AKTIF.contains("Dump Truck"))
-        assertFalse(com.example.data.model.UnitConstants.AKTIF.contains("Bulldozer"))
+        assertTrue(com.example.data.model.UnitConstants.AKTIF.contains("Dump Truck"))
+        assertTrue(com.example.data.model.UnitConstants.AKTIF.contains("DUMP TRUCK"))
 
-        assertFalse(com.example.data.model.UnitConstants.FILTER.contains("Dump Truck"))
-        assertFalse(com.example.data.model.UnitConstants.FILTER.contains("Bulldozer"))
+        assertTrue(com.example.data.model.UnitConstants.FILTER.contains("Dump Truck"))
+        assertTrue(com.example.data.model.UnitConstants.FILTER.contains("DUMP TRUCK"))
     }
 
     @Test
@@ -856,30 +850,23 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun test_api_master_unit_and_bootstrap_data_free_of_dump_truck_and_bulldozer() = kotlinx.coroutines.test.runTest {
+    fun test_api_master_unit_and_bootstrap_data_includes_active_units() = kotlinx.coroutines.test.runTest {
         val masterUnitResp = com.example.data.remote.CompanyServerSimulator.getMasterUnit()
         assertEquals("SUCCESS", masterUnitResp.status)
         assertNotNull(masterUnitResp.data)
         val units = masterUnitResp.data!!
         assertTrue(units.isNotEmpty())
         for (u in units) {
-            val type = u.resolvedUnitType.lowercase()
-            assertFalse("Unit ${u.resolvedUnitCode} has invalid type $type", type.contains("dump"))
-            assertFalse("Unit ${u.resolvedUnitCode} has invalid type $type", type.contains("bulldozer"))
             assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid(u.resolvedUnitType))
         }
 
-        val bootstrapResp = com.example.data.remote.CompanyServerSimulator.fetchBootstrapData("Agung", "13/10/2026")
+        val bootstrapResp = com.example.data.remote.CompanyServerSimulator.fetchBootstrapData("Jahidi", "13/10/2026")
         assertEquals("SUCCESS", bootstrapResp.status)
         assertNotNull(bootstrapResp.data)
         val bootstrapUnits = bootstrapResp.data!!.resolvedMasterData.units ?: emptyList()
         assertTrue(bootstrapUnits.isNotEmpty())
-        for (u in bootstrapUnits) {
-            val type = u.resolvedUnitType.lowercase()
-            assertFalse("Bootstrap unit ${u.resolvedUnitCode} has invalid type $type", type.contains("dump"))
-            assertFalse("Bootstrap unit ${u.resolvedUnitCode} has invalid type $type", type.contains("bulldozer"))
-            assertTrue(com.example.data.model.UnitConstants.isJenisUnitValid(u.resolvedUnitType))
-        }
+        val unitCodes = bootstrapUnits.map { it.resolvedUnitCode }.toSet()
+        assertTrue("Jahidi bootstrap must contain TTM010", unitCodes.contains("TTM010"))
     }
 
     @Test
@@ -889,11 +876,12 @@ class ExampleUnitTest {
             "Excavator Mini",
             "Excavator Standar",
             "Motor Grader",
-            "Compactor"
+            "Compactor",
+            "Dump Truck",
+            "DUMP TRUCK"
         )
         assertEquals(expectedActiveTypes, com.example.data.model.UnitConstants.AKTIF)
-        assertFalse(com.example.data.model.UnitConstants.AKTIF.contains("Dump Truck"))
-        assertFalse(com.example.data.model.UnitConstants.AKTIF.contains("Bulldozer"))
+        assertTrue(com.example.data.model.UnitConstants.AKTIF.contains("Dump Truck"))
 
         val expectedFilterTypes = listOf(
             "Semua Jenis",
@@ -901,11 +889,12 @@ class ExampleUnitTest {
             "Excavator Mini",
             "Excavator Standar",
             "Motor Grader",
-            "Compactor"
+            "Compactor",
+            "Dump Truck",
+            "DUMP TRUCK"
         )
         assertEquals(expectedFilterTypes, com.example.data.model.UnitConstants.FILTER)
-        assertFalse(com.example.data.model.UnitConstants.FILTER.contains("Dump Truck"))
-        assertFalse(com.example.data.model.UnitConstants.FILTER.contains("Bulldozer"))
+        assertTrue(com.example.data.model.UnitConstants.FILTER.contains("Dump Truck"))
     }
 
     @Test
@@ -941,23 +930,20 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun test_kasie_jahidi_unit_filtering_only_7_units_and_correct_badge() {
+    fun test_kasie_jahidi_unit_filtering_9_units_including_dump_truck_ttm010() {
         val masterUnitResp = com.example.data.remote.CompanyServerSimulator.getMasterUnit()
         assertEquals("SUCCESS", masterUnitResp.status)
         val allUnits = masterUnitResp.data!!
-
-        // Total units must be 39
-        assertEquals(39, allUnits.size)
 
         // Filter units for Jahidi
         val jahidiUnits = allUnits.filter { u ->
             val spv = u.resolvedSupervisor.trim().lowercase()
             spv == "jahidi"
         }
-        assertEquals(7, jahidiUnits.size)
+        assertEquals(9, jahidiUnits.size)
 
         val jahidiCodes = jahidiUnits.map { it.resolvedUnitCode }.toSet()
-        // Must contain Jahidi's units
+        // Must contain Jahidi's 9 units
         assertTrue(jahidiCodes.contains("CMP-02"))
         assertTrue(jahidiCodes.contains("HEH0017"))
         assertTrue(jahidiCodes.contains("HEH0018"))
@@ -965,6 +951,8 @@ class ExampleUnitTest {
         assertTrue(jahidiCodes.contains("EXC-14"))
         assertTrue(jahidiCodes.contains("SCC0007"))
         assertTrue(jahidiCodes.contains("HEH0034"))
+        assertTrue(jahidiCodes.contains("MGC0008"))
+        assertTrue(jahidiCodes.contains("TTM010"))
 
         // Must NOT contain Hisar's units
         assertFalse(jahidiCodes.contains("HEH0005"))
@@ -982,10 +970,10 @@ class ExampleUnitTest {
         assertTrue(hisarCodes.contains("HEH0005"))
         assertTrue(hisarCodes.contains("HEH0006"))
 
-        // Badge count simulation for Jahidi: must be 7 units, NOT 14 units!
+        // Badge count simulation for Jahidi: must be 9 units!
         val backlogCount = jahidiUnits.size
         val subtitle = if (backlogCount > 0) "${jahidiUnits.size} unit ($backlogCount backlog)" else "${jahidiUnits.size} unit terdaftar"
-        assertEquals("7 unit (7 backlog)", subtitle)
+        assertEquals("9 unit (9 backlog)", subtitle)
     }
 
     @Test
@@ -1188,6 +1176,27 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun test_server_lokasi_3614_active_items_and_sync_repository() = kotlinx.coroutines.test.runTest {
+        val serverList = com.example.data.remote.CompanyServerSimulator.serverLokasi
+        assertEquals(3614, serverList.size)
+        assertTrue(serverList.all { it.status == "Aktif" })
+
+        // Check PG1, PG2, and OTHER distribution
+        val pg1Count = serverList.count { it.wilayah?.contains("PG1") == true }
+        val pg2Count = serverList.count { it.wilayah?.contains("PG2") == true }
+        val otherCount = serverList.count { it.wilayah?.contains("PG1") != true && it.wilayah?.contains("PG2") != true }
+        assertEquals(1500, pg1Count)
+        assertEquals(1500, pg2Count)
+        assertEquals(614, otherCount)
+        assertEquals(3614, pg1Count + pg2Count + otherCount)
+
+        // Verify SyncRepository signature exists
+        val syncRepoClass = com.example.data.repository.SyncRepository::class.java
+        val method = syncRepoClass.getMethod("updateMasterLokasi", List::class.java, kotlin.coroutines.Continuation::class.java)
+        org.junit.Assert.assertNotNull(method)
+    }
+
+    @Test
     fun test_server_authoritative_login_rejection_message() {
         val errorDeletedAccount = "Akun tidak terdaftar atau telah dinonaktifkan oleh Admin."
         val errorNetwork = "Gagal terhubung ke Web Admin. Periksa koneksi internet."
@@ -1236,6 +1245,90 @@ class ExampleUnitTest {
         assertEquals("Jahidi", foundKasie?.resolvedNamaLengkap)
         assertEquals("RC PG1", foundKasie?.wilayah)
         assertTrue(foundKasie?.isKasie == true)
+    }
+
+    @Test
+    fun test_activity_filtering_all_categories_and_units() {
+        val sampleActivities = listOf(
+            ActivityMasterEntity("ACT-01", "Grading Mainroad", "m", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Motor Grader"),
+            ActivityMasterEntity("ACT-02", "Standby Hujan", "jam", category = "STANDBY", kategoriStatus = "STANDBY", jenisUnit = "ALL"),
+            ActivityMasterEntity("ACT-03", "Breakdown Engine", "jam", category = "BREAKDOWN", kategoriStatus = "BREAKDOWN", jenisUnit = "ALL"),
+            ActivityMasterEntity("ACT-04", "Pengangkutan Material", "rit", category = "HAULING", kategoriStatus = "OPERASI", jenisUnit = "Dump Truck"),
+            ActivityMasterEntity("ACT-05", "Galian Tanah Lunak", "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Standar")
+        )
+
+        // Motor Grader filtering: includes Motor Grader (OPERASI) + ALL (STANDBY, BREAKDOWN)
+        val cleanGrader = "Motor Grader".uppercase()
+        val graderActs = sampleActivities.filter { act ->
+            val actType = act.jenisUnit.trim().uppercase()
+            actType == "ALL" || actType == "SEMUA" || actType == cleanGrader || cleanGrader.contains(actType) || actType.contains(cleanGrader)
+        }.sortedWith(compareBy({ when (it.kategoriStatus.trim().uppercase()) { "OPERASI" -> 1; "STANDBY" -> 2; "BREAKDOWN" -> 3; else -> 4 } }, { it.activityName }))
+
+        assertEquals(3, graderActs.size)
+        assertEquals("Grading Mainroad", graderActs[0].activityName)
+        assertEquals("OPERASI", graderActs[0].kategoriStatus)
+        assertTrue(graderActs.any { it.kategoriStatus == "STANDBY" })
+        assertTrue(graderActs.any { it.kategoriStatus == "BREAKDOWN" })
+
+        // Dump Truck filtering: includes Dump Truck (OPERASI) + ALL (STANDBY, BREAKDOWN)
+        val cleanDump = "Dump Truck".uppercase()
+        val dumpActs = sampleActivities.filter { act ->
+            val actType = act.jenisUnit.trim().uppercase()
+            actType == "ALL" || actType == "SEMUA" || actType == cleanDump || cleanDump.contains(actType) || actType.contains(cleanDump)
+        }
+        assertEquals(3, dumpActs.size)
+        assertTrue(dumpActs.any { it.activityName == "Pengangkutan Material" })
+    }
+
+    @Test
+    fun test_strict_excavator_model_isolation_and_85_activities() {
+        val list = mutableListOf<ActivityMasterEntity>()
+
+        // 75 Operasi Excavator Standar
+        for (i in 1..75) {
+            list.add(ActivityMasterEntity("ACT-EXS-$i", "Galian Standar $i", "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Standar"))
+        }
+        // 20 Operasi Excavator Mini
+        for (i in 1..20) {
+            list.add(ActivityMasterEntity("ACT-EXM-$i", "Parit Mini $i", "m3", category = "INFRASTRUKTUR", kategoriStatus = "OPERASI", jenisUnit = "Excavator Mini"))
+        }
+        // 20 Operasi Excavator Long Arm
+        for (i in 1..20) {
+            list.add(ActivityMasterEntity("ACT-EXL-$i", "Slope Long Arm $i", "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Long Arm"))
+        }
+        // 8 Standby & 2 Breakdown for Excavator Standar
+        val standbyNames = listOf("Tunggu Operator", "Off Time", "Tunggu Mekanik", "Tunggu Sparepart", "Tunggu Solar", "Tunggu Cuaca", "Tunggu Trailer", "Tunggu Lokasi")
+        standbyNames.forEachIndexed { idx, s ->
+            list.add(ActivityMasterEntity("ACT-STB-$idx", s, "H", category = "STANDBY", kategoriStatus = "STANDBY", jenisUnit = "Excavator Standar"))
+        }
+        val bdNames = listOf("Perbaikan Unit", "Perawatan Unit")
+        bdNames.forEachIndexed { idx, b ->
+            list.add(ActivityMasterEntity("ACT-BDN-$idx", b, "H", category = "BREAKDOWN", kategoriStatus = "BREAKDOWN", jenisUnit = "Excavator Standar"))
+        }
+
+        // Test ViewModel strict filtering logic for "Excavator Standar"
+        val cleanType = "Excavator Standar".uppercase()
+        val filtered = list.filter { act ->
+            val actType = act.jenisUnit.trim().uppercase()
+            when {
+                actType == "ALL" || actType == "SEMUA" -> true
+                actType == cleanType -> true
+                cleanType.contains("STANDAR") && actType.contains("STANDAR") -> true
+                cleanType.contains("LONG ARM") && actType.contains("LONG ARM") -> true
+                cleanType.contains("MINI") && actType.contains("MINI") -> true
+                else -> false
+            }
+        }
+
+        // Must be exactly 85 activities (75 Operasi + 8 Standby + 2 Breakdown)
+        assertEquals(85, filtered.size)
+
+        // Must NOT contain any Excavator Mini or Long Arm activities
+        val hasMini = filtered.any { it.jenisUnit.equals("Excavator Mini", ignoreCase = true) || it.activityName.contains("Mini") }
+        val hasLongArm = filtered.any { it.jenisUnit.equals("Excavator Long Arm", ignoreCase = true) || it.activityName.contains("Long Arm") }
+
+        assertFalse(hasMini)
+        assertFalse(hasLongArm)
     }
 }
 

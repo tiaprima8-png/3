@@ -27,6 +27,20 @@ interface RencanaKerjaDao {
     @Query("""
         SELECT * FROM rencana_kerja 
         WHERE (
+            LOWER(TRIM(operator)) = LOWER(TRIM(:operatorIdentifier))
+            OR LOWER(TRIM(nama_operator)) = LOWER(TRIM(:operatorIdentifier))
+            OR LOWER(TRIM(operator_nik)) = LOWER(TRIM(:operatorIdentifier))
+            OR LOWER(TRIM(created_by)) = LOWER(TRIM(REPLACE(:operatorIdentifier, '@', '')))
+        )
+        AND is_realized = 0
+        AND status_spk != 'SELESAI'
+        ORDER BY created_at DESC, id DESC
+    """)
+    fun getRencanaForOperator(operatorIdentifier: String): Flow<List<RencanaKerjaEntity>>
+
+    @Query("""
+        SELECT * FROM rencana_kerja 
+        WHERE (
             LOWER(TRIM(kasie)) = LOWER(TRIM(:namaKasie)) 
             OR LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:namaKasie))
             OR LOWER(TRIM(pengawas)) = LOWER(TRIM(:namaKasie))

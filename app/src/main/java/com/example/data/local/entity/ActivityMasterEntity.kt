@@ -36,8 +36,17 @@ data class ActivityMasterEntity(
     @SerializedName("jenis_unit")
     val jenisUnit: String = "ALL", // "EXCAVATOR", "DUMP TRUCK", "BULLDOZER", "WATER TRUCK", "MOTOR GRADER", "ALL"
 
+    @ColumnInfo(name = "status", defaultValue = "Aktif")
+    @SerializedName("status")
+    val status: String = "Aktif",
+
     @ColumnInfo(name = "updatedAt")
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val namaAktivitas: String get() = activityName
+    val kodeSap: String get() = sapCode
+    val satuan: String get() = unitOfMeasure
+    val kategori: String get() = kategoriStatus.ifBlank { category }
+}
 
 typealias MasterAktivitasEntity = ActivityMasterEntity

@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
@@ -32,6 +34,8 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -236,6 +240,7 @@ fun <T> SearchableSelectorSheet(
     emptyMessage: String = "Tidak ada hasil yang cocok",
     emptySubtitle: String = "Coba kata kunci pencarian yang lain",
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    extraHeaderContent: (@Composable () -> Unit)? = null,
     itemContent: @Composable (item: T, isSelected: Boolean, onClick: () -> Unit) -> Unit
 ) {
     if (isOpen) {
@@ -343,9 +348,11 @@ fun <T> SearchableSelectorSheet(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 14.dp)
+                        .padding(bottom = 12.dp)
                         .testTag("search_selector_input")
                 )
+
+                extraHeaderContent?.invoke()
 
                 // List of filtered items
                 if (filteredItems.isEmpty()) {
@@ -787,7 +794,9 @@ fun LokasiSearchableSelectorSheet(
     onLokasiSelected: (LokasiEntity) -> Unit,
     searchQuery: String? = null,
     onSearchQueryChange: ((String) -> Unit)? = null,
-    wilayahLabel: String? = null
+    wilayahLabel: String? = null,
+    selectedWilayahFilter: String? = null,
+    onWilayahFilterChange: ((String) -> Unit)? = null
 ) {
     if (!isOpen) return
 
@@ -795,16 +804,38 @@ fun LokasiSearchableSelectorSheet(
     var localSearchQuery by remember { mutableStateOf("") }
     val activeQuery = searchQuery ?: localSearchQuery
 
-    val filteredList = remember(activeQuery, lokasiList, onSearchQueryChange != null) {
-        if (onSearchQueryChange != null) {
-            // Query seluruh 3.614+ data diproses reaktif di Dispatchers.IO via ViewModel
+    val defaultWilayah = remember(wilayahLabel) {
+        when {
+            wilayahLabel?.contains("PG1", ignoreCase = true) == true -> "PG1"
+            wilayahLabel?.contains("PG2", ignoreCase = true) == true -> "PG2"
+            else -> "Semua"
+        }
+    }
+    var activeWilayahFilter by remember(selectedWilayahFilter, wilayahLabel) {
+        mutableStateOf(selectedWilayahFilter ?: defaultWilayah)
+    }
+
+    val listLokasi = remember(activeQuery, lokasiList, activeWilayahFilter, onSearchQueryChange != null, onWilayahFilterChange != null) {
+        val q = activeQuery.trim()
+        val queryFiltered = if (onSearchQueryChange != null) {
             lokasiList
-        } else if (activeQuery.isBlank()) {
+        } else if (q.isBlank()) {
             lokasiList
         } else {
-            val q = activeQuery.trim()
             lokasiList.filter {
                 it.kodeLokasi.contains(q, ignoreCase = true) || it.wilayah.contains(q, ignoreCase = true)
+            }
+        }
+
+        if (onWilayahFilterChange != null) {
+            queryFiltered
+        } else {
+            when (activeWilayahFilter) {
+                "Semua", "" -> queryFiltered
+                "PG1" -> queryFiltered.filter { it.wilayah.contains("PG1", ignoreCase = true) }
+                "PG2" -> queryFiltered.filter { it.wilayah.contains("PG2", ignoreCase = true) }
+                "OTHER" -> queryFiltered.filter { !it.wilayah.contains("PG1", ignoreCase = true) && !it.wilayah.contains("PG2", ignoreCase = true) }
+                else -> queryFiltered.filter { it.wilayah.contains(activeWilayahFilter, ignoreCase = true) }
             }
         }
     }
@@ -834,19 +865,20 @@ fun LokasiSearchableSelectorSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 280.dp, max = 580.dp)
+                .heightIn(min = 320.dp, max = 620.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 4.dp)
             ) {
+                // Header & Indikator Data
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Pilih Lokasi Kerja Lapangan",
                             style = MaterialTheme.typography.titleLarge.copy(
@@ -854,13 +886,20 @@ fun LokasiSearchableSelectorSheet(
                                 color = Slate900
                             )
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val countFormatted = if (listLokasi.size == 3614) "3.614" else {
+                            try {
+                                java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID")).format(listLokasi.size)
+                            } catch (_: Exception) {
+                                listLokasi.size.toString()
+                            }
+                        }
                         Text(
-                            text = if (!wilayahLabel.isNullOrBlank()) {
-                                "Pilih kode lokasi kerja (${wilayahLabel})"
-                            } else {
-                                "Pilih kode lokasi kerja"
-                            },
-                            style = MaterialTheme.typography.bodySmall.copy(color = Slate500)
+                            text = "Menampilkan $countFormatted Lokasi Aktif",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = Slate500,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         )
                     }
 
@@ -886,9 +925,46 @@ fun LokasiSearchableSelectorSheet(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Search Bar
+                // Filter Chip Wilayah: [Semua], [PG1], [PG2], [OTHER]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf("Semua", "PG1", "PG2", "OTHER").forEach { chipWilayah ->
+                        val isSelected = activeWilayahFilter.equals(chipWilayah, ignoreCase = true)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                activeWilayahFilter = chipWilayah
+                                onWilayahFilterChange?.invoke(chipWilayah)
+                            },
+                            label = {
+                                Text(
+                                    text = chipWilayah,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Emerald600,
+                                selectedLabelColor = Color.White,
+                                containerColor = Color(0xFFF1F5F9),
+                                labelColor = Slate700
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.testTag("filter_chip_$chipWilayah")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Kotak Pencarian Instan dengan Debounce
                 OutlinedTextField(
                     value = activeQuery,
                     onValueChange = { newVal ->
@@ -898,7 +974,7 @@ fun LokasiSearchableSelectorSheet(
                             localSearchQuery = newVal
                         }
                     },
-                    placeholder = { Text("Ketik kode lokasi (misal: 001A, 048C)...", color = Slate400, fontSize = 14.sp) },
+                    placeholder = { Text("Ketik kode lokasi (misal: 001 atau 081)...", color = Slate400, fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -938,27 +1014,10 @@ fun LokasiSearchableSelectorSheet(
                         .testTag("search_input_lokasi")
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val totalFormat = remember(filteredList.size) {
-                    try {
-                        java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID")).format(filteredList.size)
-                    } catch (_: Exception) {
-                        filteredList.size.toString()
-                    }
-                }
-
-                Text(
-                    text = "Menampilkan $totalFormat lokasi",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = Slate500,
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
-            if (filteredList.isEmpty()) {
+            if (listLokasi.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -973,6 +1032,7 @@ fun LokasiSearchableSelectorSheet(
                     )
                 }
             } else {
+                // Daftar Virtualized (LazyColumn)
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -980,27 +1040,54 @@ fun LokasiSearchableSelectorSheet(
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
                     items(
-                        items = filteredList,
-                        key = { it.kodeLokasi },
-                        contentType = { "LokasiItem" }
+                        items = listLokasi,
+                        key = { it.kodeLokasi }
                     ) { lokasi ->
-                        LokasiSelectorItemCard(
-                            lokasi = lokasi,
-                            isSelected = selectedLokasi?.kodeLokasi == lokasi.kodeLokasi,
-                            onClick = {
-                                onLokasiSelected(lokasi)
-                                if (onSearchQueryChange != null) {
-                                    onSearchQueryChange("")
-                                } else {
-                                    localSearchQuery = ""
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onLokasiSelected(lokasi)
+                                    if (onSearchQueryChange != null) {
+                                        onSearchQueryChange("")
+                                    } else {
+                                        localSearchQuery = ""
+                                    }
+                                    onDismissRequest()
                                 }
-                                onDismissRequest()
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                                .testTag("lokasi_item_${lokasi.kodeLokasi}"),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = lokasi.kodeLokasi,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Wilayah: ${lokasi.wilayah} • Bruto: ${lokasi.luasBruto} Ha",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        )
-                        HorizontalDivider(
-                            color = Color.LightGray.copy(alpha = 0.2f),
-                            thickness = 0.8.dp
-                        )
+                            // Badge status aktif kecil
+                            Surface(
+                                color = Color(0xFFE8F5E9),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "Aktif",
+                                    color = Color(0xFF2E7D32),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = Color.LightGray.copy(alpha = 0.3f), thickness = 0.5.dp)
                     }
                 }
             }
@@ -1094,23 +1181,132 @@ fun ActivitySearchableSelectorSheet(
     activities: List<ActivityMasterEntity>,
     selectedActivity: ActivityMasterEntity?,
     unitType: String? = null,
+    unitCode: String? = null,
+    modelTipe: String? = null,
     onActivitySelected: (ActivityMasterEntity) -> Unit
 ) {
-    val cleanUnit = unitType?.trim()?.takeIf { it.isNotBlank() }
+    var selectedCategoryTab by remember { mutableStateOf("Semua") }
+
+    val cleanCode = unitCode?.trim()?.takeIf { it.isNotBlank() }
+    val cleanModel = modelTipe?.trim()?.takeIf { it.isNotBlank() }
+    val cleanType = unitType?.trim()?.takeIf { it.isNotBlank() }
+
+    val unitLabel = remember(cleanCode, cleanModel, cleanType) {
+        when {
+            cleanCode != null && cleanModel != null && !cleanModel.equals(cleanCode, ignoreCase = true) ->
+                "$cleanCode ($cleanModel)"
+            cleanCode != null -> cleanCode
+            cleanModel != null -> cleanModel
+            cleanType != null -> cleanType
+            else -> null
+        }
+    }
+
+    // Filter by category tab: Semua, Operasi, Standby, Breakdown
+    val categoryFilteredActivities = remember(activities, selectedCategoryTab) {
+        val tab = selectedCategoryTab.trim().uppercase()
+        val list = if (tab == "SEMUA" || tab == "ALL" || tab.isBlank()) {
+            activities
+        } else {
+            activities.filter { act ->
+                val status = act.kategoriStatus.trim().uppercase()
+                val cat = act.category.trim().uppercase()
+                status == tab || cat == tab || status.contains(tab)
+            }
+        }
+        // Always sort OPERASI first (1), STANDBY second (2), BREAKDOWN third (3)
+        list.sortedWith(
+            compareBy(
+                { act ->
+                    when (act.kategoriStatus.trim().uppercase()) {
+                        "OPERASI" -> 1
+                        "STANDBY" -> 2
+                        "BREAKDOWN" -> 3
+                        else -> 4
+                    }
+                },
+                { it.activityName }
+            )
+        )
+    }
+
+    val dynamicSubtitle = remember(unitLabel, categoryFilteredActivities.size) {
+        if (unitLabel != null) {
+            "Sesuai Unit $unitLabel • ${categoryFilteredActivities.size} aktivitas"
+        } else {
+            "${categoryFilteredActivities.size} Aktivitas Lapangan"
+        }
+    }
+
     SearchableSelectorSheet(
         isOpen = isOpen,
         title = "Pilih Aktivitas Kerja Lapangan",
-        subtitle = cleanUnit?.let { "Sesuai Unit $it (${activities.size} aktivitas)" },
-        searchPlaceholder = if (cleanUnit != null) "Cari pekerjaan untuk $cleanUnit..." else "Cari jenis pekerjaan atau kode SAP...",
-        emptyMessage = if (cleanUnit != null) "Tidak ada aktivitas khusus unit $cleanUnit" else "Tidak ada hasil yang cocok",
-        emptySubtitle = if (cleanUnit != null) "Pilih jenis unit lain atau daftarkan di Web Admin" else "Coba kata kunci pencarian yang lain",
-        items = activities,
+        subtitle = dynamicSubtitle,
+        searchPlaceholder = "Cari nama aktivitas atau kode SAP...",
+        emptyMessage = if (unitLabel != null) "Tidak ada aktivitas untuk $unitLabel" else "Tidak ada hasil yang cocok",
+        emptySubtitle = "Ganti tab filter kategori [Semua/Operasi/Standby/Breakdown] atau ubah pencarian",
+        items = categoryFilteredActivities,
         filterPredicate = { act, query ->
             act.activityName.contains(query, ignoreCase = true) ||
-            act.sapCode.contains(query, ignoreCase = true)
+            act.sapCode.contains(query, ignoreCase = true) ||
+            act.category.contains(query, ignoreCase = true) ||
+            act.kategoriStatus.contains(query, ignoreCase = true)
         },
         onItemSelected = onActivitySelected,
-        onDismissRequest = onDismissRequest
+        onDismissRequest = onDismissRequest,
+        extraHeaderContent = {
+            // Quick Filter Chip Kategori Status: [Semua], [Operasi], [Standby], [Breakdown]
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val categoryTabs = listOf("Semua", "Operasi", "Standby", "Breakdown")
+                categoryTabs.forEach { tab ->
+                    val isSelected = selectedCategoryTab.equals(tab, ignoreCase = true)
+                    val (chipBg, chipText, chipBorder) = when {
+                        isSelected && tab.equals("Operasi", ignoreCase = true) ->
+                            Triple(Color(0xFFECFDF5), Color(0xFF059669), Color(0xFF059669))
+                        isSelected && tab.equals("Standby", ignoreCase = true) ->
+                            Triple(Color(0xFFFFFBEB), Color(0xFFD97706), Color(0xFFD97706))
+                        isSelected && tab.equals("Breakdown", ignoreCase = true) ->
+                            Triple(Color(0xFFFEF2F2), Color(0xFFDC2626), Color(0xFFDC2626))
+                        isSelected ->
+                            Triple(Emerald600, Color.White, Emerald600)
+                        else ->
+                            Triple(Color(0xFFF8FAFC), Slate700, Slate200)
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { selectedCategoryTab = tab }
+                            .testTag("filter_chip_${tab.lowercase()}"),
+                        shape = RoundedCornerShape(10.dp),
+                        color = chipBg,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, chipBorder)
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = tab,
+                                color = chipText,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 12.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
     ) { act, _, onClick ->
         ActivitySelectorItemCard(
             activity = act,

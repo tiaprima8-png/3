@@ -6,10 +6,42 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.example.data.local.entity.LokasiEntity
+import com.example.data.local.entity.MasterLokasiEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LokasiDao {
+    @Query("""
+        SELECT * FROM lokasi 
+        WHERE status = 'Aktif'
+          AND (
+              :wilayah IS NULL 
+              OR :wilayah = '' 
+              OR :wilayah = 'Semua' 
+              OR UPPER(TRIM(wilayah)) = UPPER(TRIM(:wilayah))
+              OR (:wilayah = 'PG1' AND (UPPER(wilayah) LIKE '%PG1' OR UPPER(wilayah) LIKE '%PG1 %' OR UPPER(wilayah) = 'PG1') AND UPPER(wilayah) NOT LIKE '%PG12%')
+              OR (:wilayah = 'PG2' AND (UPPER(wilayah) LIKE '%PG2' OR UPPER(wilayah) LIKE '%PG2 %' OR UPPER(wilayah) = 'PG2') AND UPPER(wilayah) NOT LIKE '%PG12%')
+              OR (:wilayah = 'OTHER' AND ((UPPER(wilayah) NOT LIKE '%PG1' AND UPPER(wilayah) NOT LIKE '%PG1 %' AND UPPER(wilayah) NOT LIKE '%PG2' AND UPPER(wilayah) NOT LIKE '%PG2 %') OR UPPER(wilayah) LIKE '%OTHER%' OR UPPER(wilayah) LIKE '%PG12%' OR UPPER(wilayah) LIKE '%PG3%'))
+              OR UPPER(TRIM(wilayah)) LIKE '%' || UPPER(TRIM(:wilayah)) || '%'
+          )
+          AND (
+              :searchQuery IS NULL 
+              OR :searchQuery = '' 
+              OR LOWER(kode_lokasi) LIKE '%' || LOWER(:searchQuery) || '%'
+          )
+        ORDER BY kode_lokasi ASC
+    """)
+    fun getAllActiveLokasi(searchQuery: String?, wilayah: String?): Flow<List<MasterLokasiEntity>>
+
+    @Query("SELECT COUNT(*) FROM lokasi WHERE status = 'Aktif'")
+    suspend fun getActiveLokasiCount(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(lokasiList: List<MasterLokasiEntity>)
+
+    @Query("DELETE FROM lokasi")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM lokasi ORDER BY kode_lokasi ASC")
     fun getAllLokasi(): Flow<List<LokasiEntity>>
 
@@ -22,13 +54,14 @@ interface LokasiDao {
           AND (
               :wilayahFilter IS NULL 
               OR TRIM(:wilayahFilter) = '' 
+              OR LOWER(TRIM(:wilayahFilter)) = 'semua' 
               OR LOWER(TRIM(:wilayahFilter)) = 'semua wilayah'
               OR UPPER(TRIM(wilayah)) = UPPER(TRIM(:wilayahFilter))
-              OR UPPER(TRIM(wilayah)) = UPPER(TRIM(REPLACE(REPLACE(REPLACE(:wilayahFilter, 'Geodesi ', ''), 'GEODESI ', ''), 'RC ', '')))
-              OR UPPER(TRIM(wilayah)) = UPPER(TRIM(REPLACE(REPLACE(:wilayahFilter, 'Lebung ', ''), 'LEBUNG ', '')))
-              OR UPPER(TRIM(:wilayahFilter)) LIKE '%' || UPPER(TRIM(wilayah)) || '%'
+              OR (:wilayahFilter = 'PG1' AND (UPPER(wilayah) LIKE '%PG1' OR UPPER(wilayah) LIKE '%PG1 %') AND UPPER(wilayah) NOT LIKE '%PG12%')
+              OR (:wilayahFilter = 'PG2' AND (UPPER(wilayah) LIKE '%PG2' OR UPPER(wilayah) LIKE '%PG2 %') AND UPPER(wilayah) NOT LIKE '%PG12%')
+              OR (:wilayahFilter = 'OTHER' AND (UPPER(wilayah) NOT LIKE '%PG1' AND UPPER(wilayah) NOT LIKE '%PG2%'))
               OR UPPER(TRIM(wilayah)) LIKE '%' || UPPER(TRIM(:wilayahFilter)) || '%'
-              OR (UPPER(:wilayahFilter) LIKE '%PG12%' AND UPPER(TRIM(wilayah)) IN ('PG1', 'PG2', 'PG12', 'LEBUNG PG12', 'RC PG1', 'RC PG2', 'GEODESI PG1', 'GEODESI PG2'))
+              OR UPPER(TRIM(:wilayahFilter)) LIKE '%' || UPPER(TRIM(wilayah)) || '%'
           )
           AND (
               :query IS NULL 
@@ -56,14 +89,8 @@ interface LokasiDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLokasiList(lokasiList: List<LokasiEntity>)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(lokasiList: List<LokasiEntity>)
-
     @Query("DELETE FROM lokasi")
     suspend fun clearAll()
-
-    @Query("DELETE FROM lokasi")
-    suspend fun deleteAll()
 
     @Transaction
     suspend fun replaceAll(listBaru: List<LokasiEntity>) {

@@ -48,6 +48,26 @@ interface ActivityReportDao {
 
     @Query("""
         SELECT * FROM activity_reports 
+        WHERE LOWER(TRIM(operatorNik)) = LOWER(TRIM(:operatorIdentifier))
+           OR LOWER(TRIM(operatorName)) = LOWER(TRIM(:operatorIdentifier))
+           OR LOWER(TRIM(createdBy)) = LOWER(TRIM(REPLACE(:operatorIdentifier, '@', '')))
+        ORDER BY createdAt DESC, id DESC
+    """)
+    fun getRealisasiForOperator(operatorIdentifier: String): Flow<List<ActivityReportEntity>>
+
+    @Query("""
+        UPDATE activity_reports 
+        SET approval_status = 'Disetujui Kasie',
+            approved_by = :approvedBy,
+            approved_at = :approvedAt,
+            is_locked = 1
+        WHERE id = :id
+    """)
+    suspend fun approveReport(id: Long, approvedBy: String, approvedAt: String = System.currentTimeMillis().toString())
+
+
+    @Query("""
+        SELECT * FROM activity_reports 
         WHERE (:wilayah IS NULL OR :wilayah = 'SEMUA' OR :wilayah = 'Semua Wilayah' OR :wilayah = '' 
                OR wilayah = :wilayah 
                OR REPLACE(wilayah, ' PG', ' ') = :wilayah 

@@ -41,7 +41,7 @@ import com.example.data.local.entity.UserEntity
         AktivitasUnitEntity::class,
         UserEntity::class
     ],
-    version = 25,
+    version = 26,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -124,15 +124,7 @@ abstract class AppDatabase : RoomDatabase() {
     }
 
     fun cleanDumpTruckAndBulldozerDirect() {
-        try {
-            val db = openHelper.writableDatabase
-            db.execSQL("CREATE VIEW IF NOT EXISTS master_unit AS SELECT unitCode AS kode_unit, unitType AS jenis_unit, brandModel AS merk_model, lastHm AS last_hm, supervisorAssigned AS supervisor, status, hmMinStandar, hmMaxStandar, wilayah, updatedAt FROM units")
-            db.execSQL("CREATE TRIGGER IF NOT EXISTS trigger_delete_master_unit INSTEAD OF DELETE ON master_unit BEGIN DELETE FROM units WHERE unitCode = OLD.kode_unit; END")
-            db.execSQL("DELETE FROM master_unit WHERE LOWER(jenis_unit) IN ('dump truck', 'bulldozer')")
-            db.execSQL("DELETE FROM units WHERE LOWER(unitType) IN ('dump truck', 'bulldozer') OR LOWER(unitType) LIKE '%dump%' OR LOWER(unitType) LIKE '%bulldozer%'")
-            db.execSQL("DELETE FROM rencana_kerja WHERE kode_unit NOT IN (SELECT kode_unit FROM master_unit)")
-            db.execSQL("DELETE FROM activity_reports WHERE unitCode NOT IN (SELECT unitCode FROM units) OR LOWER(unitType) IN ('dump truck', 'bulldozer')")
-        } catch (_: Exception) {}
+        // No-op: Dump Truck and other active fleet units are preserved
     }
 
     companion object {
@@ -154,10 +146,7 @@ abstract class AppDatabase : RoomDatabase() {
                                 db.execSQL("CREATE VIEW IF NOT EXISTS master_unit AS SELECT unitCode AS kode_unit, unitType AS jenis_unit, brandModel AS merk_model, lastHm AS last_hm, supervisorAssigned AS supervisor, status, hmMinStandar, hmMaxStandar, wilayah, updatedAt FROM units")
                                 db.execSQL("CREATE TRIGGER IF NOT EXISTS trigger_delete_master_unit INSTEAD OF DELETE ON master_unit BEGIN DELETE FROM units WHERE unitCode = OLD.kode_unit; END")
                                 db.execSQL("CREATE VIEW IF NOT EXISTS master_operator AS SELECT operatorId, name AS namaOperator, badgeNumber, supervisorAssigned AS kasiePenanggungJawab, skillLevel, status, wilayah, updatedAt FROM operators")
-                                db.execSQL("DELETE FROM master_unit WHERE LOWER(jenis_unit) IN ('dump truck', 'bulldozer')")
-                                db.execSQL("DELETE FROM units WHERE LOWER(unitType) IN ('dump truck', 'bulldozer') OR LOWER(unitType) LIKE '%dump%' OR LOWER(unitType) LIKE '%bulldozer%'")
-                                db.execSQL("DELETE FROM rencana_kerja WHERE kode_unit NOT IN (SELECT kode_unit FROM master_unit)")
-                                db.execSQL("DELETE FROM activity_reports WHERE unitCode NOT IN (SELECT unitCode FROM units) OR LOWER(unitType) IN ('dump truck', 'bulldozer')")
+                                db.execSQL("CREATE VIEW IF NOT EXISTS master_aktivitas AS SELECT sapCode AS kode_sap, activityName AS nama_aktivitas, unitOfMeasure AS satuan, description, category AS kategori, kategori_status, jenis_unit, status, updatedAt FROM master_activities")
                             } catch (_: Exception) {}
                         }
                     })

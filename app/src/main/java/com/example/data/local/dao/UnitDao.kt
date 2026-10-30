@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.example.data.local.entity.MasterUnitEntity
 import com.example.data.local.entity.UnitEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -15,12 +16,28 @@ typealias UnitAlatBeratDao = UnitDao
 interface UnitDao {
     @Query("""
         SELECT * FROM units 
+        WHERE (status = 'Aktif' OR status = 'OPERASIONAL' OR status = 'aktif' OR status = 'operasional' OR status != 'Nonaktif')
+          AND (
+              LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:namaKasie))
+              OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:username))
+              OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
+              OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:username, '@', '')))
+              OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:namaKasie, '@', '')))
+              OR (:namaKasie = 'Yono' AND LOWER(TRIM(supervisorAssigned)) = 'suyono')
+          )
+        ORDER BY unitCode ASC
+    """)
+    fun getUnitsForKasie(namaKasie: String, username: String): Flow<List<MasterUnitEntity>>
+
+    @Query("""
+        SELECT * FROM units 
         WHERE (
             LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:kasieName)) 
             OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(:username))
             OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
             OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:username, '@', '')))
             OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:kasieName, '@', '')))
+            OR (:kasieName = 'Yono' AND LOWER(TRIM(supervisorAssigned)) = 'suyono')
         )
         AND (status = 'Aktif' OR status = 'OPERASIONAL' OR status = 'aktif' OR status = 'operasional' OR status != 'Nonaktif')
         ORDER BY unitCode ASC
@@ -71,6 +88,7 @@ interface UnitDao {
             (:unitType LIKE '%EXCAVATOR%' AND (unitType LIKE '%EXCAVATOR%' OR unitType LIKE '%HE%')) OR
             (:unitType LIKE '%GRADER%' AND unitType LIKE '%GRADER%') OR
             (:unitType LIKE '%COMPACTOR%' AND unitType LIKE '%COMPACTOR%') OR
+            (:unitType LIKE '%DUMP%' AND unitType LIKE '%TRUCK%') OR
             unitType = :unitType OR
             unitType LIKE '%' || :unitType || '%'
           )
@@ -115,6 +133,6 @@ interface UnitDao {
         insertUnits(listBaru)
     }
 
-    @Query("DELETE FROM units WHERE LOWER(unitType) IN ('dump truck', 'bulldozer') OR LOWER(unitType) LIKE '%dump%' OR LOWER(unitType) LIKE '%bulldozer%'")
+    @Query("SELECT COUNT(*) FROM units")
     suspend fun deleteDumpTruckAndBulldozer(): Int
 }

@@ -548,7 +548,7 @@ class ApiClientManager(val context: Context) {
                     val un = unitArr.optJSONObject(i) ?: continue
                     val code = optStringFirst(un, "kode_unit", "unit_code", "unitCode")
                     if (code.isBlank()) continue
-                    val uType = optStringFirst(un, "model_unit", "brand_model", "jenis_unit", "unit_type", "unitType").ifBlank { "Excavator Standar" }
+                    val uType = optStringFirst(un, "jenis_unit", "unit_type", "unitType", "model_unit", "brand_model").ifBlank { "Excavator Standar" }
                     if (!com.example.data.model.UnitConstants.isJenisUnitValid(uType)) continue
                     val statusAktif = un.opt("status_aktif")
                     val isAktif = when (statusAktif) {

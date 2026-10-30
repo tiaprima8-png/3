@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -164,5 +165,72 @@ class ExampleRobolectricTest {
     assertEquals("Salah input shift sebelumnya oleh operator kemarin", req.alasan_koreksi_hm)
     assertEquals(correctedHm, req.hm_awal ?: 0.0, 0.01)
     assertEquals(hmAkhir, req.hm_akhir ?: 0.0, 0.01)
+  }
+
+  @Test
+  fun `verify Room LokasiDao stores and queries 3614 active locations with flexible filters`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.example.data.local.AppDatabase::class.java)
+        .allowMainThreadQueries()
+        .build()
+
+    try {
+      val lokasiDao = db.lokasiDao()
+      val syncRepo = com.example.data.repository.SyncRepository(lokasiDao)
+
+      // Generate 3614 active locations
+      val mock3614 = (0 until 3614).map { i ->
+        val num = (i / 26) + 1
+        val letter = ('A'.code + (i % 26)).toChar()
+        val kode = String.format(java.util.Locale.US, "%03d%c", num, letter)
+        val wilayah = when {
+          i < 1500 -> if (i % 2 == 0) "Geodesi PG1" else "RC PG1"
+          i < 3000 -> if (i % 2 == 0) "Geodesi PG2" else "RC PG2"
+          else -> if (i % 2 == 0) "LEBUNG PG3" else "OTHER"
+        }
+        com.example.data.local.entity.MasterLokasiEntity(
+          kodeLokasi = kode,
+          wilayah = wilayah,
+          luasBruto = 12.0,
+          luasNetto = 10.0,
+          status = "Aktif"
+        )
+      }
+
+      // Test updateMasterLokasi via SyncRepository
+      syncRepo.updateMasterLokasi(mock3614)
+
+      // Test getActiveLokasiCount
+      val count = syncRepo.getActiveLokasiCount()
+      assertEquals(3614, count)
+
+      // Test filter "Semua" -> 3614
+      val allList = lokasiDao.getAllActiveLokasi(searchQuery = "", wilayah = "Semua").first()
+      assertEquals(3614, allList.size)
+
+      // Test filter "PG1"
+      val pg1List = lokasiDao.getAllActiveLokasi(searchQuery = "", wilayah = "PG1").first()
+      assertEquals(1500, pg1List.size)
+
+      // Test filter "PG2"
+      val pg2List = lokasiDao.getAllActiveLokasi(searchQuery = "", wilayah = "PG2").first()
+      assertEquals(1500, pg2List.size)
+
+      // Test filter "OTHER"
+      val otherList = lokasiDao.getAllActiveLokasi(searchQuery = "", wilayah = "OTHER").first()
+      assertEquals(614, otherList.size)
+
+      // Test instant search "001"
+      val search001 = lokasiDao.getAllActiveLokasi(searchQuery = "001", wilayah = "Semua").first()
+      org.junit.Assert.assertTrue(search001.isNotEmpty())
+      org.junit.Assert.assertTrue(search001.all { it.kodeLokasi.contains("001") })
+
+      // Test instant search "081"
+      val search081 = lokasiDao.getAllActiveLokasi(searchQuery = "081", wilayah = "Semua").first()
+      org.junit.Assert.assertTrue(search081.isNotEmpty())
+      org.junit.Assert.assertTrue(search081.all { it.kodeLokasi.contains("081") })
+    } finally {
+      db.close()
+    }
   }
 }
