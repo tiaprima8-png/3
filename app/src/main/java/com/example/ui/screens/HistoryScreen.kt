@@ -718,7 +718,7 @@ fun HistoryScreen(
             isKasieSession = isKasieSession,
             onDismiss = { selectedRecordForDetail = null },
             onDelete = { id -> viewModel.deleteReport(id) },
-            onApprove = { rep -> viewModel.approveRealisasi(rep) },
+            onApprove = { rep -> viewModel.approveRealisasi(rep, context) },
             onKoreksi = { rep -> reportPendingCorrection = rep }
         )
     }
@@ -747,7 +747,7 @@ fun HistoryScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.approveRealisasi(targetReport)
+                        viewModel.approveRealisasi(targetReport, context)
                         reportPendingApproval = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Emerald600),

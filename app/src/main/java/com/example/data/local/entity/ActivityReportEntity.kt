@@ -55,17 +55,24 @@ data class ActivityReportEntity(
     val isSynced: Boolean = false,       // 0 = pending/offline, 1 = synced
     val isHmAwalCorrected: Boolean = false, // Audit: apakah HM Awal dikoreksi manual
     val alasanKoreksiHm: String? = null,  // Catatan alasan koreksi HM
+    @com.google.gson.annotations.SerializedName("approval_status")
     val approvalStatus: String = "Menunggu Approval",
+    @com.google.gson.annotations.SerializedName("approved_by")
     val approvedBy: String? = null,
+    @com.google.gson.annotations.SerializedName("approved_at")
     val approvedAt: String? = null,
+    @com.google.gson.annotations.SerializedName("is_locked")
     val isLocked: Boolean = false,
+    @com.google.gson.annotations.SerializedName("operator_nik")
     val operatorNik: String? = null,
+    @com.google.gson.annotations.SerializedName("nomor_spk")
     val nomorSpk: String = "SPK-AUTO-$clientUuid",
+    @com.google.gson.annotations.SerializedName("id_rencana_kerja")
     val idRencanaKerja: Long = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val syncedAt: Long? = null
 )
 
 typealias RealisasiEntity = ActivityReportEntity
-typealias MasterRealisasiEntity = ActivityReportEntity
+
 

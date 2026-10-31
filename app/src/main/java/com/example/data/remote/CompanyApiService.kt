@@ -119,8 +119,13 @@ interface CompanyApiService {
     @GET("api/health")
     suspend fun checkHealth(): Response<ApiResponse<Any>>
 
-    @PATCH("api/realisasi/{id}/approve")
+    @POST("api/realisasi/approve")
     suspend fun approveRealisasi(
+        @Body body: Map<String, String>
+    ): Response<ApiResponse<Any>>
+
+    @PATCH("api/realisasi/{id}/approve")
+    suspend fun approveRealisasiLegacy(
         @Path("id") id: String,
         @Body body: Map<String, String>
     ): Response<ResponseBody>
@@ -132,6 +137,8 @@ interface CompanyApiService {
         @Query("status") status: String? = null
     ): Response<ResponseBody>
 }
+
+typealias ApiService = CompanyApiService
 
 
 /**
@@ -1112,8 +1119,21 @@ class ApiClientManager(val context: Context) {
         val isSolar = obj.optBoolean("is_isi_solar", obj.optBoolean("isRefueled", false))
         val literSolar = obj.optDouble("jumlah_liter_solar", obj.optDouble("fuelLiters", 0.0))
         val pemakaianSolar = obj.optDouble("pemakaian_solar", obj.optDouble("pemakaianSolar", literSolar))
-        val approvalStatus = optStringFirst(obj, "approval_status", "approvalStatus").ifBlank { "Menunggu Approval" }
-        val isLocked = obj.optBoolean("is_locked", obj.optBoolean("isLocked", false))
+        val rawLocked = if (obj.has("is_locked")) obj.opt("is_locked") else obj.opt("isLocked")
+        val isLocked = when (rawLocked) {
+            is Boolean -> rawLocked
+            is Number -> rawLocked.toInt() == 1
+            is String -> rawLocked.equals("true", ignoreCase = true) || rawLocked == "1"
+            else -> false
+        }
+        val rawApproval = optStringFirst(obj, "approval_status", "approvalStatus", "status_approval", "status")
+        val approvalStatus = if (rawApproval.isNotBlank()) {
+            rawApproval
+        } else if (isLocked) {
+            "Disetujui Kasie"
+        } else {
+            "Menunggu"
+        }
         val nomorSpk = optStringFirst(obj, "nomor_spk", "nomorSpk", "spk")
         val clientTxId = optStringFirst(obj, "client_transaction_id", "client_uuid", "clientUuid")
 
@@ -1444,23 +1464,37 @@ class ApiClientManager(val context: Context) {
         throw Exception("Gagal terhubung ke Web Admin. Periksa koneksi internet.")
     }
 
-    suspend fun approveRealisasi(id: Long, approvedBy: String): String = withContext(Dispatchers.IO) {
+    fun getApiService(): CompanyApiService = apiService
+
+    suspend fun approveRealisasi(nomorSpk: String, kasieNama: String): String = withContext(Dispatchers.IO) {
         if (CompanyServerSimulator.isSimulatedOffline) {
+            CompanyServerSimulator.approveRealisasi(nomorSpk, kasieNama)
             return@withContext "Disetujui & dikunci di penyimpanan lokal (Mode Offline)"
         }
         val payload = mapOf(
-            "kasie_nama" to approvedBy,
-            "approval_status" to "Disetujui Kasie",
-            "approved_by" to approvedBy,
-            "is_locked" to "1",
-            "approved_at" to System.currentTimeMillis().toString()
+            "nomor_spk" to nomorSpk,
+            "kasie_nama" to kasieNama
         )
-        val response = apiService.approveRealisasi(id.toString(), payload)
-        if (response.isSuccessful) {
-            return@withContext "Realisasi #$id disetujui & dikunci permanen di server (${response.code()} OK)"
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+        try {
+            val response = apiService.approveRealisasi(payload)
+            if (response.isSuccessful && response.body()?.success == true) {
+                CompanyServerSimulator.approveRealisasi(nomorSpk, kasieNama)
+                return@withContext "Realisasi SPK $nomorSpk resmi disetujui di Server oleh $kasieNama"
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: response.message()
+                throw Exception("Server menolak approval: $errorMsg")
+            }
+        } catch (e: Exception) {
+            if (useSimulationFallback) {
+                CompanyServerSimulator.approveRealisasi(nomorSpk, kasieNama)
+                return@withContext "Disetujui di simulator lokal: ${e.message}"
+            }
+            throw e
         }
+    }
+
+    suspend fun approveRealisasi(id: Long, approvedBy: String): String {
+        return approveRealisasi(id.toString(), approvedBy)
     }
 
     suspend fun executeLogin(username: String, password: String): LoginResult = withContext(Dispatchers.IO) {

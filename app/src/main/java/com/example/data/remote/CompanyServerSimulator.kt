@@ -446,7 +446,7 @@ object CompanyServerSimulator {
         val unapproved = receivedReportsOnServer.filter { rpt ->
             val rptKasie = (rpt.nama_pengawas ?: rpt.supervisor_name ?: "").trim().removePrefix("@").lowercase()
             val matchesKasie = cleanTarget.isBlank() || cleanTarget == "semua" || rptKasie == cleanTarget || rptKasie.contains(cleanTarget) || cleanTarget.contains(rptKasie)
-            val notApproved = rpt.is_locked != true && !rpt.approval_status.equals("Disetujui Kasie", ignoreCase = true)
+            val notApproved = rpt.is_locked != true && !(rpt.approval_status ?: "").startsWith("Disetujui", ignoreCase = true)
             matchesKasie && notApproved
         }
         return ApiResponse(
@@ -454,6 +454,57 @@ object CompanyServerSimulator {
             message = "Ditemukan ${unapproved.size} realisasi operator menunggu verifikasi",
             data = unapproved
         )
+    }
+
+    fun approveRealisasi(nomorSpk: String, kasieNama: String): Boolean {
+        var updated = false
+        val cleanSpk = nomorSpk.trim()
+        val approvalStatus = "Disetujui oleh $kasieNama"
+        val timestamp = System.currentTimeMillis().toString()
+
+        for (i in receivedReportsOnServer.indices) {
+            val rpt = receivedReportsOnServer[i]
+            val rptSpk = (rpt.nomor_spk ?: "").trim()
+            val txId = (rpt.client_transaction_id ?: "").trim()
+            if (cleanSpk.isNotBlank() && (rptSpk.equals(cleanSpk, ignoreCase = true) || txId.equals(cleanSpk, ignoreCase = true))) {
+                receivedReportsOnServer[i] = rpt.copy(
+                    is_locked = true,
+                    approval_status = approvalStatus,
+                    approved_by = kasieNama,
+                    approved_at = timestamp
+                )
+                updated = true
+            }
+        }
+
+        for (i in serverHasilAktivitas.indices) {
+            val h = serverHasilAktivitas[i]
+            val hSpk = (h.nomor_spk ?: "").trim()
+            if (cleanSpk.isNotBlank() && hSpk.equals(cleanSpk, ignoreCase = true)) {
+                serverHasilAktivitas[i] = h.copy(
+                    is_locked = true,
+                    approval_status = approvalStatus,
+                    approved_by = kasieNama,
+                    approved_at = timestamp
+                )
+                updated = true
+            }
+        }
+
+        for (i in serverRencanaKerja.indices) {
+            val rk = serverRencanaKerja[i]
+            val rkSpk = (rk.nomor_spk ?: "").trim()
+            if (cleanSpk.isNotBlank() && rkSpk.equals(cleanSpk, ignoreCase = true)) {
+                serverRencanaKerja[i] = rk.copy(
+                    status_spk = "Approved",
+                    status_tahap = "REALISASI_SELESAI",
+                    is_realized = true
+                )
+                updated = true
+            }
+        }
+
+        return updated
     }
 
     // Methods for Web Admin simulator (Tambah / Edit / Hapus Master Data)

@@ -1,0 +1,722 @@
+package com.rkce.app.ui.screen.home
+
+import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.rkce.app.data.local.entity.MasterRealisasiEntity
+import com.rkce.app.data.local.entity.RencanaKerjaEntity
+
+// Palet Warna RKCE Enterprise
+private val BrandEmerald = Color(0xFF009663)
+private val BrandEmeraldLight = Color(0xFFE8F5E9)
+private val DarkSlate = Color(0xFF0F172A)
+private val MutedSlate = Color(0xFF64748B)
+private val SoftBorder = Color(0xFFE2E8F0)
+private val BackgroundCanvas = Color(0xFFF8FAFC)
+private val AmberBacklog = Color(0xFFF59E0B)
+private val AmberBacklogBg = Color(0xFFFEF3C7)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    viewModel: HomeViewModel,
+    onNavigateToBuatRencana: () -> Unit,
+    onNavigateToInputRealisasi: (RencanaKerjaEntity) -> Unit,
+    onNavigateToKoreksi: (RencanaKerjaEntity, MasterRealisasiEntity) -> Unit
+) {
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val pullRefreshState = rememberPullToRefreshState()
+
+    var selectedFilter by remember { mutableStateOf("SEMUA") }
+
+    Scaffold(
+        topBar = {
+            RKCETopAppBar(
+                isSyncing = uiState.isGlobalSyncing,
+                onSyncClick = { viewModel.performFullTwoWaySync(context) },
+                onUnduhApkClick = { viewModel.downloadLatestApk(context) },
+                onLogoutClick = { viewModel.logout() }
+            )
+        },
+        containerColor = BackgroundCanvas
+    ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.fetchRencanaKerjaTerbaru() },
+            state = pullRefreshState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 1. KASIE PROFILE & SLIM PROGRESS BAR (Ringkas ~42dp)
+                item {
+                    CompactHeaderSection(
+                        kasieNama = uiState.currentUserNama,
+                        wilayah = uiState.currentWilayah,
+                        totalUnit = uiState.totalUnitHariIni,
+                        completedUnit = uiState.unitSelesaiCount
+                    )
+                }
+
+                // 2. TOMBOL AKSI UTAMA & FILTER CHIPS HORIZONTAL
+                item {
+                    ActionBarAndFilters(
+                        selectedFilter = selectedFilter,
+                        onFilterSelected = { selectedFilter = it },
+                        totalSemua = uiState.listRencana.size,
+                        totalSiang = uiState.listRencana.count { it.shift.equals("SIANG", true) },
+                        totalMalam = uiState.listRencana.count { it.shift.equals("MALAM", true) },
+                        totalSiapApprove = uiState.listRencana.count { rencana ->
+                            val r = uiState.mapRealisasi[rencana.nomorSpk]
+                            r != null && !r.isLocked && (r.totalHm > 0 || r.konsumsiSolar > 0 || r.hasilKerja > 0)
+                        },
+                        onBuatRencanaClick = onNavigateToBuatRencana
+                    )
+                }
+
+                // 3. DAFTAR KARTU PENUGASAN ULTRA-DENSE (Muat 4-5 kartu per layar)
+                val filteredList = when (selectedFilter) {
+                    "SIANG" -> uiState.listRencana.filter { it.shift.equals("SIANG", true) }
+                    "MALAM" -> uiState.listRencana.filter { it.shift.equals("MALAM", true) }
+                    "APPROVE" -> uiState.listRencana.filter { rencana ->
+                        val r = uiState.mapRealisasi[rencana.nomorSpk]
+                        r != null && !r.isLocked && (r.totalHm > 0 || r.konsumsiSolar > 0 || r.hasilKerja > 0)
+                    }
+                    else -> uiState.listRencana
+                }
+
+                if (filteredList.isEmpty()) {
+                    item {
+                        EmptyPlanPlaceholder(isRefreshing = isRefreshing)
+                    }
+                } else {
+                    items(filteredList, key = { it.nomorSpk }) { rencana ->
+                        val existingRealisasi = uiState.mapRealisasi[rencana.nomorSpk]
+                        val hasOperatorInput = existingRealisasi != null && 
+                                (!existingRealisasi.isLocked) && 
+                                (existingRealisasi.totalHm > 0 || existingRealisasi.konsumsiSolar > 0 || existingRealisasi.hasilKerja > 0)
+
+                        UltraDenseTaskCard(
+                            item = rencana,
+                            existingRealisasi = existingRealisasi,
+                            hasOperatorInput = hasOperatorInput,
+                            onInputClick = { onNavigateToInputRealisasi(rencana) },
+                            onKoreksiClick = {
+                                if (existingRealisasi != null) {
+                                    onNavigateToKoreksi(rencana, existingRealisasi)
+                                }
+                            },
+                            onApproveClick = {
+                                if (existingRealisasi != null) {
+                                    viewModel.approveLaporan(existingRealisasi.nomorSpk, context)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ======================================================================
+// KOMPONEN 1: TOP APP BAR DENGAN SINKRON DUA ARAH
+// ======================================================================
+@Composable
+fun RKCETopAppBar(
+    isSyncing: Boolean,
+    onSyncClick: () -> Unit,
+    onUnduhApkClick: () -> Unit,
+    onLogoutClick: () -> Unit
+) {
+    Surface(
+        color = Color(0xFF1B3A57),
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(BrandEmerald),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PrecisionManufacturing,
+                        contentDescription = "Logo",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "RKCE",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Civil Engineering",
+                        fontSize = 10.sp,
+                        color = Color(0xFF93C5FD)
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Tombol Sinkron Two-Way
+                SmallNavButton(
+                    text = if (isSyncing) "Syncing..." else "Sinkron",
+                    icon = Icons.Default.Sync,
+                    enabled = !isSyncing,
+                    onClick = onSyncClick
+                )
+
+                // Tombol Unduh APK
+                SmallNavButton(
+                    text = "APK",
+                    icon = Icons.Default.Download,
+                    enabled = true,
+                    onClick = onUnduhApkClick
+                )
+
+                // Tombol Keluar
+                IconButton(
+                    onClick = onLogoutClick,
+                    modifier = Modifier.size(30.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Logout,
+                        contentDescription = "Keluar",
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmallNavButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = Color.White.copy(alpha = 0.12f),
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = text,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
+    }
+}
+
+// ======================================================================
+// KOMPONEN 2: HEADER RINGKAS + INLINE PROGRESS
+// ======================================================================
+@Composable
+fun CompactHeaderSection(
+    kasieNama: String,
+    wilayah: String,
+    totalUnit: Int,
+    completedUnit: Int
+) {
+    val progress = if (totalUnit > 0) completedUnit.toFloat() / totalUnit.toFloat() else 0f
+    val percentInt = (progress * 100).toInt()
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, SoftBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(BrandEmeraldLight),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = kasieNama.take(2).uppercase(),
+                        fontWeight = FontWeight.Bold,
+                        color = BrandEmerald,
+                        fontSize = 11.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "$kasieNama • $wilayah",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = DarkSlate
+                    )
+                    Text(
+                        text = "Target Operasional",
+                        fontSize = 10.sp,
+                        color = MutedSlate
+                    )
+                }
+            }
+
+            // Slim Gauge Progres
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "$completedUnit/$totalUnit Unit ($percentInt%)",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (percentInt == 100) BrandEmerald else DarkSlate
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .width(100.dp)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = BrandEmerald,
+                    trackColor = SoftBorder,
+                )
+            }
+        }
+    }
+}
+
+// ======================================================================
+// KOMPONEN 3: ACTION BAR + HORIZONTAL FILTER CHIPS
+// ======================================================================
+@Composable
+fun ActionBarAndFilters(
+    selectedFilter: String,
+    onFilterSelected: (String) -> Unit,
+    totalSemua: Int,
+    totalSiang: Int,
+    totalMalam: Int,
+    totalSiapApprove: Int,
+    onBuatRencanaClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Tombol Buat Rencana (Dibuat Slim Height 36dp)
+        Button(
+            onClick = onBuatRencanaClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = BrandEmerald),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Buat Rencana Kerja Baru",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        // Horizontal Segmented Filter Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            FilterChipItem(
+                label = "Semua",
+                count = totalSemua,
+                isSelected = selectedFilter == "SEMUA",
+                onClick = { onFilterSelected("SEMUA") }
+            )
+            FilterChipItem(
+                label = "Siang",
+                count = totalSiang,
+                isSelected = selectedFilter == "SIANG",
+                onClick = { onFilterSelected("SIANG") }
+            )
+            FilterChipItem(
+                label = "Malam",
+                count = totalMalam,
+                isSelected = selectedFilter == "MALAM",
+                onClick = { onFilterSelected("MALAM") }
+            )
+            FilterChipItem(
+                label = "Siap Approve",
+                count = totalSiapApprove,
+                isSelected = selectedFilter == "APPROVE",
+                highlight = totalSiapApprove > 0,
+                onClick = { onFilterSelected("APPROVE") }
+            )
+        }
+    }
+}
+
+@Composable
+fun FilterChipItem(
+    label: String,
+    count: Int,
+    isSelected: Boolean,
+    highlight: Boolean = false,
+    onClick: () -> Unit
+) {
+    val activeBg = if (highlight) AmberBacklog else BrandEmerald
+    val inactiveBg = Color.White
+    val contentColor = if (isSelected) Color.White else DarkSlate
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (isSelected) activeBg else inactiveBg,
+        border = BorderStroke(
+            1.dp,
+            if (isSelected) Color.Transparent else if (highlight) AmberBacklog else SoftBorder
+        ),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = contentColor
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(
+                        if (isSelected) Color.White.copy(alpha = 0.25f)
+                        else if (highlight) AmberBacklogBg else Color(0xFFF1F5F9)
+                    )
+                    .padding(horizontal = 5.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = count.toString(),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) Color.White else if (highlight) AmberBacklog else MutedSlate
+                )
+            }
+        }
+    }
+}
+
+// ======================================================================
+// KOMPONEN 4: ULTRA-DENSE TASK CARD (HANYA ~95dp TINGGI)
+// ======================================================================
+@Composable
+fun UltraDenseTaskCard(
+    item: RencanaKerjaEntity,
+    existingRealisasi: MasterRealisasiEntity?,
+    hasOperatorInput: Boolean,
+    onInputClick: () -> Unit,
+    onKoreksiClick: () -> Unit,
+    onApproveClick: () -> Unit
+) {
+    val isSiang = item.shift.equals("SIANG", ignoreCase = true)
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, if (hasOperatorInput) AmberBacklog.copy(alpha = 0.6f) else SoftBorder),
+        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            // BARIS 1: UNIT • SHIFT • KATEGORI • BACKLOG • SPK MINI
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = item.kodeUnit,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = DarkSlate
+                    )
+
+                    // Shift Badge
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (isSiang) BrandEmeraldLight else Color(0xFFEDE7F6))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = if (isSiang) "SIANG" else "MALAM",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSiang) BrandEmerald else Color(0xFF512DA8)
+                        )
+                    }
+
+                    // Kategori Tag
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color(0xFFF1F5F9))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = item.kategori?.take(3)?.uppercase() ?: "OPS",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MutedSlate
+                        )
+                    }
+
+                    // Backlog Tag
+                    if (item.isBacklog == true || item.targetTerkunci == true) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(AmberBacklogBg)
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "BACKLOG",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = AmberBacklog
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = item.nomorSpk.takeLast(10),
+                    fontSize = 10.sp,
+                    color = Color(0xFF94A3B8)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            // BARIS 2: NAMA AKTIVITAS & OPERATOR/LOKASI (DIPADATKAN)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.namaAktivitas,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DarkSlate,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "👤 ${item.operator} • 📍 ${item.lokasi} • 📅 ${item.tanggal.takeLast(5)}",
+                        fontSize = 10.sp,
+                        color = MutedSlate,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Jika sudah ada data operator, tampilkan ringkasan metrik
+                if (hasOperatorInput && existingRealisasi != null) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "+${existingRealisasi.totalHm} HM • ${existingRealisasi.konsumsiSolar}L",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandEmerald
+                        )
+                        Text(
+                            text = "Hasil: ${existingRealisasi.hasilKerja} ${existingRealisasi.satuan ?: "ha"}",
+                            fontSize = 9.sp,
+                            color = MutedSlate
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // BARIS 3: DUAL-ACTION MINI BUTTONS (Tinggi 32dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Tombol Kiri: Input (jika kosong) atau Koreksi (jika sudah ada inputan)
+                if (hasOperatorInput) {
+                    OutlinedButton(
+                        onClick = onKoreksiClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(32.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, BrandEmerald),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandEmerald),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Koreksi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = onInputClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(32.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandEmerald),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Text("Input Realisasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Tombol Kanan: Setujui (Aktif Hijau jika ada data operator, Disabled jika belum)
+                Button(
+                    onClick = onApproveClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(32.dp),
+                    enabled = hasOperatorInput,
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BrandEmerald,
+                        disabledContainerColor = Color(0xFFF1F5F9),
+                        disabledContentColor = Color(0xFFCBD5E1)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Setujui",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ======================================================================
+// KOMPONEN PLACEHOLDER JIKA DATA KOSONG
+// ======================================================================
+@Composable
+fun EmptyPlanPlaceholder(isRefreshing: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 40.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Default.AssignmentTurnedIn,
+                contentDescription = null,
+                tint = Color(0xFFCBD5E1),
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = if (isRefreshing) "Menarik data penugasan..." else "Tidak ada rencana kerja aktif",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = MutedSlate
+            )
+            Text(
+                text = "Tarik layar ke bawah untuk memperbarui",
+                fontSize = 11.sp,
+                color = Color(0xFF94A3B8)
+            )
+        }
+    }
+}

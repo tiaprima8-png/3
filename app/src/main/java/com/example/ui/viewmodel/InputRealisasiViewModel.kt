@@ -64,5 +64,19 @@ class InputRealisasiViewModel(
             }
         }
     }
+
+    fun approveLaporan(nomorSpk: String, kasieNama: String, context: Context) {
+        viewModelScope.launch {
+            isLoadingValue = true
+            val result = realisasiRepository.approveLaporan(nomorSpk, kasieNama)
+            isLoadingValue = false
+
+            result.onSuccess {
+                Toast.makeText(context, "Laporan resmi disetujui di Server & Lokal!", Toast.LENGTH_SHORT).show()
+            }.onFailure { err ->
+                Toast.makeText(context, "Gagal simpan ke Web Admin: ${err.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 }
 

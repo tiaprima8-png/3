@@ -60,6 +60,17 @@ class HeavyTrackRepository(
     private val aktivitasUnitDao = database.aktivitasUnitDao()
     private val userDao = database.userDao()
 
+    val realisasiRepository: RealisasiRepository by lazy {
+        RealisasiRepository(
+            apiClientManager = apiClientManager,
+            realisasiDao = hasilDao,
+            rencanaKerjaDao = rencanaDao,
+            reportDao = reportDao
+        )
+    }
+
+    fun getPendingApprovalList(): Flow<List<ActivityReportEntity>> = reportDao.getPendingApprovalList()
+
     // ==========================================
     // USER SESSION & ROLE MANAGEMENT (ROOM SQLITE & DATASTORE PREFERENCES)
     // ==========================================
@@ -1757,21 +1768,29 @@ class HeavyTrackRepository(
 
     suspend fun approveRealisasi(reportId: Long, approvedBy: String): Result<String> = withContext(Dispatchers.IO) {
         try {
+            val targetReport = reportDao.getReportById(reportId)
+            val nomorSpk = targetReport?.nomorSpk?.takeIf { it.isNotBlank() && it != "-" && it != "SPK Menyusul" }
+                ?: "SPK-$reportId"
+
+            val serverResult = realisasiRepository.approveLaporan(nomorSpk, approvedBy)
+
             val timestampStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+            val statusApproval = "Disetujui oleh $approvedBy"
             reportDao.approveReport(reportId, approvedBy, timestampStr)
             try {
-                reportDao.updateApprovalStatus(reportId, "Disetujui Kasie", true, approvedBy, timestampStr)
+                reportDao.updateApprovalStatus(reportId, statusApproval, true, approvedBy, timestampStr)
+                reportDao.updateApproval(nomorSpk, statusApproval, true, timestampStr)
             } catch (_: Exception) {}
             try {
                 hasilDao.approveRealization(reportId, approvedBy, timestampStr)
-                hasilDao.updateApprovalStatus(reportId, "Disetujui Kasie", true, approvedBy, timestampStr)
+                hasilDao.updateApprovalStatus(reportId, statusApproval, true, approvedBy, timestampStr)
+                hasilDao.updateApproval(nomorSpk, statusApproval, true, timestampStr)
             } catch (_: Exception) {}
-            val targetReport = reportDao.getReportById(reportId)
             if (targetReport != null) {
                 rencanaDao.updateStatus(
                     nomorSpk = targetReport.nomorSpk ?: "",
                     id = targetReport.idRencanaKerja,
-                    status = "Terealisasi & Approved"
+                    status = "Approved"
                 )
                 if (!targetReport.nomorSpk.isNullOrBlank()) {
                     try {
@@ -1779,18 +1798,19 @@ class HeavyTrackRepository(
                     } catch (_: Exception) {}
                 }
             }
-            try {
-                val msg = apiClientManager.approveRealisasi(reportId, approvedBy)
+
+            if (serverResult.isSuccess) {
                 val now = System.currentTimeMillis()
                 reportDao.markReportAsSynced(reportId, now)
-                addLog("PATCH /api/realisasi/$reportId/approve", "PATCH", "200 OK", "Disetujui oleh $approvedBy (Terkunci & Synced)", true)
+                addLog("POST /api/realisasi/approve", "POST", "200 OK", "Disetujui oleh $approvedBy (Terkunci & Synced)", true)
                 _lastSyncTimeMillis.value = now
-                Result.success(msg)
-            } catch (netEx: Exception) {
+                Result.success("Laporan resmi disetujui di Server & Lokal!")
+            } else {
+                val err = serverResult.exceptionOrNull()
                 reportDao.markReportAsUnsynced(reportId)
                 com.example.worker.OfflineSyncWorker.scheduleAutoSync(apiClientManager.context)
-                addLog("PATCH /api/realisasi/$reportId/approve", "PATCH", "OFFLINE/PENDING", "Disetujui oleh $approvedBy (Terkunci lokal, masuk antrean sync)", false)
-                Result.success("Disetujui Kasie ($approvedBy) & dikunci lokal. Masuk antrean sync offline.")
+                addLog("POST /api/realisasi/approve", "POST", "OFFLINE/PENDING", "Disetujui oleh $approvedBy (Terkunci lokal: ${err?.message})", false)
+                Result.success("Disetujui Kasie ($approvedBy) & dikunci lokal. Masuk antrean sync.")
             }
         } catch (e: Exception) {
             Result.failure(e)

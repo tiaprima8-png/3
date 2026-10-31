@@ -1,0 +1,437 @@
+package com.example.ui.screens
+
+import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.local.entity.MasterRealisasiEntity
+import com.example.data.local.entity.RencanaKerjaEntity
+import com.example.ui.viewmodel.HomeViewModel
+
+private val BrandEmerald = Color(0xFF009663)
+private val BrandEmeraldLight = Color(0xFFE8F5E9)
+private val DarkSlate = Color(0xFF0F172A)
+private val MutedSlate = Color(0xFF64748B)
+private val SoftBorder = Color(0xFFE2E8F0)
+private val BackgroundCanvas = Color(0xFFF8FAFC)
+private val AmberBacklog = Color(0xFFF59E0B)
+private val AmberBacklogBg = Color(0xFFFEF3C7)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    viewModel: HomeViewModel,
+    onNavigateToBuatRencana: () -> Unit,
+    onNavigateToInputRealisasi: (RencanaKerjaEntity) -> Unit,
+    onNavigateToKoreksi: (RencanaKerjaEntity, MasterRealisasiEntity) -> Unit
+) {
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val pullRefreshState = rememberPullToRefreshState()
+
+    var selectedFilter by remember { mutableStateOf("SEMUA") }
+    val isKasie = uiState.currentUserRole.contains("kasie", ignoreCase = true)
+
+    Scaffold(
+        topBar = {
+            Surface(color = Color(0xFF1B3A57), tonalElevation = 2.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(BrandEmerald),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PrecisionManufacturing,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("RKCE", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Civil Engineering", fontSize = 10.sp, color = Color(0xFF93C5FD))
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.White.copy(alpha = 0.12f),
+                            modifier = Modifier.clickable(!uiState.isGlobalSyncing) {
+                                viewModel.performFullTwoWaySync(context)
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Sync, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (uiState.isGlobalSyncing) "Syncing..." else "Sinkron", fontSize = 11.sp, color = Color.White)
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.White.copy(alpha = 0.12f),
+                            modifier = Modifier.clickable { viewModel.downloadLatestApk(context) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("APK", fontSize = 11.sp, color = Color.White)
+                            }
+                        }
+
+                        IconButton(onClick = { viewModel.logout() }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Logout, contentDescription = null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        },
+        containerColor = BackgroundCanvas
+    ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.fetchRencanaKerjaTerbaru() },
+            state = pullRefreshState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 1. SLIM USER & PROGRESS BAR (Satu Baris ~38dp)
+                item {
+                    val progress = if (uiState.totalUnitHariIni > 0) uiState.unitSelesaiCount.toFloat() / uiState.totalUnitHariIni.toFloat() else 0f
+                    val percentInt = (progress * 100).toInt()
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, SoftBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandEmeraldLight),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(uiState.currentUserNama.take(2).uppercase(), fontWeight = FontWeight.Bold, color = BrandEmerald, fontSize = 10.sp)
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("${uiState.currentUserNama} • ${uiState.currentWilayah}", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = DarkSlate)
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${uiState.unitSelesaiCount}/${uiState.totalUnitHariIni} Unit ($percentInt%)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = DarkSlate)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier
+                                        .width(64.dp)
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp)),
+                                    color = BrandEmerald,
+                                    trackColor = SoftBorder,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 2. TOMBOL BUAT RENCANA (Hanya Kasie) & HORIZONTAL FILTER CHIPS
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (isKasie) {
+                            Button(
+                                onClick = onNavigateToBuatRencana,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp),
+                                shape = RoundedCornerShape(6.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandEmerald),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Buat Rencana Kerja Baru", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Filter Chips
+                        val countSemua = uiState.listRencana.size
+                        val countSiang = uiState.listRencana.count { it.shift.equals("SIANG", true) }
+                        val countMalam = uiState.listRencana.count { it.shift.equals("MALAM", true) }
+                        val countApprove = uiState.listRencana.count { r ->
+                            val real = uiState.mapRealisasi[r.nomorSpk]
+                            real != null && !real.isLocked && (real.totalHm > 0 || real.konsumsiSolar > 0 || real.hasilKerja > 0)
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                Triple("SEMUA", "Semua", countSemua),
+                                Triple("SIANG", "Siang", countSiang),
+                                Triple("MALAM", "Malam", countMalam),
+                                Triple("APPROVE", "Siap Approve", countApprove)
+                            ).forEach { (key, label, count) ->
+                                val isSelected = selectedFilter == key
+                                val isHighlight = key == "APPROVE" && count > 0
+
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) (if (isHighlight) AmberBacklog else BrandEmerald) else Color.White,
+                                    border = BorderStroke(1.dp, if (isSelected) Color.Transparent else if (isHighlight) AmberBacklog else SoftBorder),
+                                    modifier = Modifier.clickable { selectedFilter = key }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) Color.White else DarkSlate
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(if (isSelected) Color.White.copy(alpha = 0.25f) else Color(0xFFF1F5F9))
+                                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                text = count.toString(),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) Color.White else MutedSlate
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. DAFTAR TUGAS ULTRA COMPACT
+                val filteredList = when (selectedFilter) {
+                    "SIANG" -> uiState.listRencana.filter { it.shift.equals("SIANG", true) }
+                    "MALAM" -> uiState.listRencana.filter { it.shift.equals("MALAM", true) }
+                    "APPROVE" -> uiState.listRencana.filter { r ->
+                        val real = uiState.mapRealisasi[r.nomorSpk]
+                        real != null && !real.isLocked && (real.totalHm > 0 || real.konsumsiSolar > 0 || real.hasilKerja > 0)
+                    }
+                    else -> uiState.listRencana
+                }
+
+                if (filteredList.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Tidak ada rencana kerja aktif", fontSize = 12.sp, color = MutedSlate)
+                        }
+                    }
+                } else {
+                    items(filteredList, key = { it.nomorSpk }) { rencana ->
+                        val existingRealisasi = uiState.mapRealisasi[rencana.nomorSpk]
+                        val hasOperatorInput = existingRealisasi != null &&
+                                (!existingRealisasi.isLocked) &&
+                                (existingRealisasi.totalHm > 0 || existingRealisasi.konsumsiSolar > 0 || existingRealisasi.hasilKerja > 0)
+
+                        val isSiang = rencana.shift.equals("SIANG", ignoreCase = true)
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White,
+                            border = BorderStroke(1.dp, if (hasOperatorInput) AmberBacklog.copy(alpha = 0.6f) else SoftBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                                // Baris 1: Unit • Shift • Kategori • SPK Mini
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(rencana.kodeUnit, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = DarkSlate)
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(if (isSiang) BrandEmeraldLight else Color(0xFFEDE7F6))
+                                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(if (isSiang) "SIANG" else "MALAM", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = if (isSiang) BrandEmerald else Color(0xFF512DA8))
+                                        }
+                                        if (rencana.isBacklog == true || rencana.targetTerkunci == true) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(3.dp))
+                                                    .background(AmberBacklogBg)
+                                                    .padding(horizontal = 3.dp, vertical = 1.dp)
+                                            ) {
+                                                Text("BACKLOG", fontSize = 7.sp, fontWeight = FontWeight.Bold, color = AmberBacklog)
+                                            }
+                                        }
+                                    }
+                                    Text(rencana.nomorSpk.takeLast(10), fontSize = 9.sp, color = Color(0xFF94A3B8))
+                                }
+
+                                // Baris 2: Aktivitas & Lokasi
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(rencana.namaAktivitas, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DarkSlate, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("👤 ${rencana.operator} • 📍 ${rencana.lokasi} • 📅 ${rencana.tanggal.takeLast(5)}", fontSize = 9.sp, color = MutedSlate, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    if (hasOperatorInput && existingRealisasi != null) {
+                                        Text("+${existingRealisasi.totalHm} HM • ${existingRealisasi.konsumsiSolar}L", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = BrandEmerald)
+                                    }
+                                }
+
+                                // Baris 3: Tombol Aksi
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (isKasie) {
+                                    // TAMPILAN KASIE: 2 TOMBOL BERDAMPINGAN
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        if (hasOperatorInput) {
+                                            OutlinedButton(
+                                                onClick = { onNavigateToKoreksi(rencana, existingRealisasi!!) },
+                                                modifier = Modifier.weight(1f).height(30.dp),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, BrandEmerald),
+                                                contentPadding = PaddingValues(0.dp)
+                                            ) {
+                                                Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(12.dp), tint = BrandEmerald)
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text("Koreksi", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BrandEmerald)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { onNavigateToInputRealisasi(rencana) },
+                                                modifier = Modifier.weight(1f).height(30.dp),
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = BrandEmerald),
+                                                contentPadding = PaddingValues(0.dp)
+                                            ) {
+                                                Text("Input Realisasi", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                if (hasOperatorInput && existingRealisasi != null) {
+                                                    viewModel.approveLaporan(existingRealisasi.nomorSpk, context)
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f).height(30.dp),
+                                            enabled = hasOperatorInput,
+                                            shape = RoundedCornerShape(6.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = BrandEmerald,
+                                                disabledContainerColor = Color(0xFFF1F5F9),
+                                                disabledContentColor = Color(0xFFCBD5E1)
+                                            ),
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(12.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Setujui", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                } else {
+                                    // TAMPILAN OPERATOR: 1 TOMBOL PENUH (INPUT REALISASI)
+                                    Button(
+                                        onClick = { onNavigateToInputRealisasi(rencana) },
+                                        modifier = Modifier.fillMaxWidth().height(30.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandEmerald),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("Input Realisasi Lapangan", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -95,7 +95,28 @@ interface HasilInputAktivitasDao {
         approvedAt: String? = null
     )
 
+    @Query("""
+        UPDATE hasil_input_aktivitas 
+        SET approval_status = :status,
+            is_locked = CASE WHEN :isLocked THEN 1 ELSE 0 END,
+            approved_by = :status,
+            approved_at = :approvedAt
+        WHERE nomor_spk = :nomorSpk AND :nomorSpk != ''
+    """)
+    suspend fun updateApproval(
+        nomorSpk: String,
+        status: String,
+        isLocked: Boolean,
+        approvedAt: String = System.currentTimeMillis().toString()
+    )
 
+    @Query("""
+        SELECT * FROM hasil_input_aktivitas 
+        WHERE is_locked = 0 
+          AND (approval_status LIKE '%Menunggu%' OR approval_status IS NULL OR approval_status = 'Menunggu')
+        ORDER BY id DESC
+    """)
+    fun getPendingApprovalList(): Flow<List<HasilInputAktivitasEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHasil(hasil: HasilInputAktivitasEntity): Long
 

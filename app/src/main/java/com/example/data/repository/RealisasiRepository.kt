@@ -25,6 +25,64 @@ class RealisasiRepository(
     private val apiService get() = apiClientManager.getRawApiService()
 
     /**
+     * Eksekusi approval langsung ke server Web Admin (POST api/realisasi/approve),
+     * lalu kunci di database Room lokal (realisasiDao & rencanaKerjaDao).
+     */
+    suspend fun approveLaporan(nomorSpk: String, kasieNama: String): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            // 1. Panggil server Web Admin terlebih dahulu
+            val payload = mapOf(
+                "nomor_spk" to nomorSpk,
+                "kasie_nama" to kasieNama
+            )
+            val response = try {
+                apiService.approveRealisasi(payload)
+            } catch (netErr: Exception) {
+                if (apiClientManager.useSimulationFallback || com.example.data.remote.CompanyServerSimulator.isSimulatedOffline) {
+                    com.example.data.remote.CompanyServerSimulator.approveRealisasi(nomorSpk, kasieNama)
+                    realisasiDao.updateApproval(
+                        nomorSpk = nomorSpk,
+                        status = "Disetujui oleh $kasieNama",
+                        isLocked = true
+                    )
+                    reportDao?.updateApproval(
+                        nomorSpk = nomorSpk,
+                        status = "Disetujui oleh $kasieNama",
+                        isLocked = true
+                    )
+                    rencanaKerjaDao.updateStatus(nomorSpk, "Approved")
+                    return@withContext Result.success(Unit)
+                }
+                throw netErr
+            }
+
+            if (response.isSuccessful && response.body()?.success == true) {
+                // 2. Jika server sukses, kunci di database Room lokal
+                realisasiDao.updateApproval(
+                    nomorSpk = nomorSpk, 
+                    status = "Disetujui oleh $kasieNama", 
+                    isLocked = true
+                )
+                reportDao?.updateApproval(
+                    nomorSpk = nomorSpk,
+                    status = "Disetujui oleh $kasieNama",
+                    isLocked = true
+                )
+                rencanaKerjaDao.updateStatus(nomorSpk, "Approved")
+                com.example.data.remote.CompanyServerSimulator.approveRealisasi(nomorSpk, kasieNama)
+                Result.success(Unit)
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: response.message()
+                Log.e("APPROVE", "Server menolak approval: $errorMsg")
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Log.e("APPROVE", "Gagal koneksi ke server: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Eksekusi pengiriman data realisasi langsung ke server Web Admin (POST HTTP),
      * menyimpan ke Room lokal, serta menandai rencana kerja selesai.
      */

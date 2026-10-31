@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.local.entity.ActivityReportEntity
+import com.example.data.local.entity.MasterRealisasiEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -118,8 +119,28 @@ interface ActivityReportDao {
         approvedAt: String? = null
     )
 
+    @Query("""
+        UPDATE activity_reports 
+        SET approvalStatus = :status,
+            isLocked = CASE WHEN :isLocked THEN 1 ELSE 0 END,
+            approvedBy = :status,
+            approvedAt = :approvedAt
+        WHERE nomorSpk = :nomorSpk AND :nomorSpk != ''
+    """)
+    suspend fun updateApproval(
+        nomorSpk: String,
+        status: String,
+        isLocked: Boolean,
+        approvedAt: String = System.currentTimeMillis().toString()
+    )
 
-
+    @Query("""
+        SELECT * FROM activity_reports 
+        WHERE isLocked = 0 
+          AND (approvalStatus LIKE '%Menunggu%' OR approvalStatus IS NULL OR approvalStatus = 'Menunggu')
+        ORDER BY id DESC
+    """)
+    fun getPendingApprovalList(): Flow<List<ActivityReportEntity>>
 
     @Query("""
         SELECT * FROM activity_reports 

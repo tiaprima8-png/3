@@ -208,6 +208,11 @@ class HeavyTrackViewModel(
     private val _activeSupervisor = MutableStateFlow("")
     val activeSupervisor: StateFlow<String> = _activeSupervisor.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    val realisasiRepository: com.example.data.repository.RealisasiRepository get() = repository.realisasiRepository
+
     // Supervisor Login Session
     private val _currentSupervisorSession = MutableStateFlow<Supervisor?>(null)
     val currentSupervisorSession: StateFlow<Supervisor?> = _currentSupervisorSession.asStateFlow()
@@ -2182,6 +2187,31 @@ class HeavyTrackViewModel(
         }
     }
 
+    fun selectRencanaForKoreksi(rencana: RencanaKerjaEntity, report: ActivityReportEntity) {
+        selectRencanaForRealisasi(rencana)
+        val hmAwalStr = if (report.hmAwal > 0.0) String.format(Locale.US, "%.1f", report.hmAwal) else _realisasiFormState.value.hmAwalInput
+        val hmAkhirStr = if (report.hmAkhir > 0.0) String.format(Locale.US, "%.1f", report.hmAkhir) else ""
+        val solarStr = if (report.fuelLiters > 0.0) String.format(Locale.US, "%.1f", report.fuelLiters) else if (report.pemakaianSolar > 0.0) String.format(Locale.US, "%.1f", report.pemakaianSolar) else ""
+        val hasilStr = if (report.workOutput > 0.0) String.format(Locale.US, "%.1f", report.workOutput) else ""
+
+        val cleanAwal = report.hmAwal.takeIf { it > 0.0 } ?: _realisasiFormState.value.hmAwal
+        val cleanAkhir = report.hmAkhir.takeIf { it > 0.0 }
+        val (isValid, running, errorMsg) = validateHm(cleanAwal, cleanAkhir)
+
+        _realisasiFormState.value = _realisasiFormState.value.copy(
+            hmAwal = cleanAwal,
+            hmAwalInput = hmAwalStr,
+            hmAkhirInput = hmAkhirStr,
+            isIsiSolar = report.isRefueled || (report.fuelLiters > 0.0),
+            jumlahLiterSolarInput = solarStr,
+            hasilKerjaInput = hasilStr,
+            keterangan = report.notes.ifBlank { _realisasiFormState.value.keterangan },
+            isHmValid = isValid,
+            hmHarianBerjalan = running,
+            hmErrorMessage = errorMsg
+        )
+    }
+
     // Fitur Koreksi Manual HM Awal & Logika Pergantian Shift
     fun toggleKoreksiHmAwal() {
         val current = _realisasiFormState.value
@@ -3401,16 +3431,46 @@ Halo Rekan Pengawas & Operator, berkas installer APK pembaruan aplikasi resmi te
         val approver = _currentSupervisorSession.value?.resolvedNamaLengkap?.ifBlank { _activeSupervisor.value }
             ?: _activeSupervisor.value.ifBlank { "Kasie Lapangan" }
         viewModelScope.launch {
+            _isLoading.value = true
             val res = repository.approveRealisasi(report.id, approver)
-            res.onSuccess {
+            _isLoading.value = false
+
+            res.onSuccess { msg ->
                 context?.let { ctx ->
-                    android.widget.Toast.makeText(ctx, "Laporan berhasil disetujui dan dikunci resmi.", android.widget.Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, "Laporan resmi disetujui di Server & Lokal!", Toast.LENGTH_SHORT).show()
                 }
                 _uiEvents.emit(
                     UiMessage.Success("✔ Realisasi Unit ${report.unitCode} berhasil disetujui oleh $approver & dikunci permanen!")
                 )
             }.onFailure { err ->
-                _uiEvents.emit(UiMessage.Error("Gagal menyetujui realisasi: ${err.message}"))
+                context?.let { ctx ->
+                    Toast.makeText(ctx, "Gagal simpan ke Web Admin: ${err.message}", Toast.LENGTH_LONG).show()
+                }
+                _uiEvents.emit(UiMessage.Error("Gagal simpan ke Web Admin: ${err.message}"))
+            }
+        }
+    }
+
+    fun approveLaporan(nomorSpk: String, kasieNama: String, context: Context? = null) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val result = repository.realisasiRepository.approveLaporan(nomorSpk, kasieNama)
+            _isLoading.value = false
+
+            result.onSuccess {
+                context?.let { ctx ->
+                    Toast.makeText(ctx, "Laporan resmi disetujui di Server & Lokal!", Toast.LENGTH_SHORT).show()
+                }
+                _uiEvents.emit(
+                    UiMessage.Success("Laporan resmi disetujui di Server & Lokal!")
+                )
+            }.onFailure { err ->
+                context?.let { ctx ->
+                    Toast.makeText(ctx, "Gagal simpan ke Web Admin: ${err.message}", Toast.LENGTH_LONG).show()
+                }
+                _uiEvents.emit(
+                    UiMessage.Error("Gagal simpan ke Web Admin: ${err.message}")
+                )
             }
         }
     }
@@ -3451,6 +3511,55 @@ Halo Rekan Pengawas & Operator, berkas installer APK pembaruan aplikasi resmi te
                 _uiEvents.emit(UiMessage.Success("Koreksi data realisasi Unit ${report.unitCode} berhasil disimpan."))
             }.onFailure { err ->
                 _uiEvents.emit(UiMessage.Error("Gagal menyimpan koreksi: ${err.message}"))
+            }
+        }
+    }
+
+    fun saveRealisasiFromMasterEntity(entity: com.example.data.local.entity.MasterRealisasiEntity, context: Context? = null) {
+        viewModelScope.launch {
+            val reportEntity = entity.toActivityReportEntity()
+            if (entity.id > 0) {
+                repository.correctRealisasi(reportEntity).onSuccess {
+                    _uiEvents.emit(UiMessage.Success("Data realisasi unit ${entity.kodeUnit} berhasil dikoreksi!"))
+                }.onFailure { err ->
+                    _uiEvents.emit(UiMessage.Error("Gagal mengoreksi data: ${err.message}"))
+                }
+            } else {
+                val hasilEntity = HasilInputAktivitasEntity(
+                    rencanaId = 0L,
+                    nomorSpk = entity.nomorSpk,
+                    supervisorName = entity.kasie.ifBlank { _activeSupervisor.value },
+                    namaKasie = entity.kasie.ifBlank { _activeSupervisor.value },
+                    createdBy = entity.kasie.ifBlank { _activeSupervisor.value },
+                    kodeUnit = entity.kodeUnit,
+                    operator = entity.operator,
+                    kodeLokasi = entity.lokasi,
+                    activityName = entity.namaAktivitas,
+                    sapCode = "ACT-SAP-101",
+                    satuan = entity.satuan ?: "m3",
+                    unitStatus = "OPERASI",
+                    shift = entity.shift,
+                    jamKerja = 7.0,
+                    hmAwal = entity.hmAwal,
+                    hmAkhir = entity.hmAkhir,
+                    hmHarianBerjalan = entity.totalHm,
+                    isIsiSolar = entity.konsumsiSolar > 0,
+                    jumlahLiterSolar = entity.konsumsiSolar,
+                    stikSolarAwal = entity.stikSolarAwal,
+                    stikSolarAkhir = entity.stikSolarAkhir,
+                    pemakaianSolar = entity.konsumsiSolar,
+                    hasilKerja = entity.hasilKerja,
+                    keterangan = entity.keterangan ?: "",
+                    createdAt = System.currentTimeMillis(),
+                    tanggalFormat = normalizeDateToIso(entity.tanggal),
+                    approvalStatus = entity.approvalStatus ?: "Menunggu",
+                    isLocked = entity.isLocked
+                )
+                repository.submitHasilAktivitas(hasilEntity).onSuccess {
+                    _uiEvents.emit(UiMessage.Success("Realisasi unit ${entity.kodeUnit} berhasil disimpan!"))
+                }.onFailure { err ->
+                    _uiEvents.emit(UiMessage.Error("Gagal menyimpan realisasi: ${err.message}"))
+                }
             }
         }
     }
@@ -3505,6 +3614,5 @@ class HeavyTrackViewModelFactory(
 }
 
 typealias RencanaKerjaViewModel = HeavyTrackViewModel
-typealias RealisasiViewModel = HeavyTrackViewModel
 typealias RiwayatViewModel = HeavyTrackViewModel
 

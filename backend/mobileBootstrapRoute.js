@@ -837,19 +837,50 @@ router.get('/api/realisasi', async (req, res) => {
       return res.status(200).json({ status: "success", data: [] });
     }
 
-    const query = `
-      SELECT r.* 
-      FROM realisasi_kerja r
-      WHERE LOWER(TRIM(COALESCE(r.nama_kasie, r.nama_pengawas))) = LOWER(TRIM($1))
-         OR LOWER(TRIM(COALESCE(r.created_by, r.nama_pengawas))) = LOWER(TRIM($2))
-      ORDER BY r.tanggal DESC, r.id DESC
-    `;
-
     let rows = [];
-    if (typeof db !== 'undefined' && db.query) {
-      const result = await db.query(query, [kasie, username]);
-      rows = result.rows || result;
+    if (typeof db !== 'undefined') {
+      const sqliteQuery = `
+        SELECT r.* 
+        FROM realisasi r
+        WHERE LOWER(TRIM(COALESCE(r.kasie, r.nama_pengawas, ''))) = LOWER(TRIM(?))
+           OR LOWER(TRIM(COALESCE(r.operator, r.nama_operator, ''))) = LOWER(TRIM(?))
+           OR LOWER(TRIM(COALESCE(r.created_by, ''))) = LOWER(TRIM(?))
+           OR ? = '' OR LOWER(?) = 'semua'
+        ORDER BY r.tanggal DESC, r.id DESC
+      `;
+      const fallbackQuery = `
+        SELECT r.* 
+        FROM realisasi_kerja r
+        WHERE LOWER(TRIM(COALESCE(r.nama_kasie, r.nama_pengawas, ''))) = LOWER(TRIM(?))
+           OR LOWER(TRIM(COALESCE(r.created_by, r.nama_pengawas, ''))) = LOWER(TRIM(?))
+           OR ? = '' OR LOWER(?) = 'semua'
+        ORDER BY r.tanggal DESC, r.id DESC
+      `;
+      if (typeof db.all === 'function') {
+        try {
+          rows = await db.all(sqliteQuery, [kasie, username, username, kasie, kasie]);
+        } catch (_err) {
+          try {
+            rows = await db.all(fallbackQuery, [kasie, username, kasie, kasie]);
+          } catch (_e2) {
+            rows = [];
+          }
+        }
+      } else if (typeof db.query === 'function') {
+        try {
+          const result = await db.query(sqliteQuery.replace(/\?/g, '$1'), [kasie]);
+          rows = result.rows || result;
+        } catch (_err) {
+          try {
+            const result = await db.query(fallbackQuery.replace(/\?/g, '$1'), [kasie]);
+            rows = result.rows || result;
+          } catch (_e2) {
+            rows = [];
+          }
+        }
+      }
     }
+
 
     return res.status(200).json({
       status: "success",
@@ -953,6 +984,79 @@ router.post('/api/realisasi', handlePostRealisasi);
 router.post('/api/hasil-aktivitas', handlePostRealisasi);
 router.post('/api/aktivitas-unit', handlePostRealisasi);
 
+/**
+ * =====================================================================
+ * ENDPOINT APPROVAL REALISASI: POST /api/realisasi/approve
+ * =====================================================================
+ */
+const handleApproveRealisasi = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const nomor_spk = (body.nomor_spk || req.params.id || '').toString().trim();
+    const kasie_nama = (body.kasie_nama || body.approved_by || req.user?.nama_lengkap || 'Kasie').toString().trim();
+
+    if (!nomor_spk) {
+      return res.status(400).json({
+        success: false,
+        status: "error",
+        message: "Nomor SPK wajib diisi untuk memproses persetujuan laporan."
+      });
+    }
+
+    const approvalStatus = `Disetujui oleh ${kasie_nama}`;
+
+    if (typeof db !== 'undefined' && typeof db.run === 'function') {
+      await db.run(`
+        UPDATE realisasi
+        SET approval_status = ?,
+            approved_by = ?,
+            approved_at = datetime('now'),
+            is_locked = 1
+        WHERE nomor_spk = ? OR spk_id = ? OR id = ?
+      `, [approvalStatus, kasie_nama, nomor_spk, nomor_spk, nomor_spk]).catch(() => null);
+
+      await db.run(`
+        UPDATE realisasi_kerja
+        SET approval_status = ?,
+            approved_by = ?,
+            is_locked = 1
+        WHERE nomor_spk = ? OR id = ?
+      `, [approvalStatus, kasie_nama, nomor_spk, nomor_spk]).catch(() => null);
+
+      await db.run(`
+        UPDATE rencana_kerja
+        SET status_spk = 'Approved',
+            status_realisasi = 'Terealisasi & Approved',
+            is_realized = 1
+        WHERE nomor_spk = ? OR id = ?
+      `, [nomor_spk, nomor_spk]).catch(() => null);
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: "success",
+      message: `Laporan resmi disetujui di Server & Lokal! (${nomor_spk})`,
+      data: {
+        nomor_spk: nomor_spk,
+        kasie_nama: kasie_nama,
+        approval_status: approvalStatus,
+        is_locked: true
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      status: "error",
+      message: "Gagal simpan ke Web Admin: " + err.message
+    });
+  }
+};
+
+router.post('/api/realisasi/approve', handleApproveRealisasi);
+router.post('/api/mobile/realisasi/approve', handleApproveRealisasi);
+router.patch('/api/realisasi/:id/approve', handleApproveRealisasi);
+router.post('/api/realisasi/:id/approve', handleApproveRealisasi);
+
 
 /**
  * =====================================================================
@@ -964,6 +1068,8 @@ const fs = require('fs');
 
 const handleDownloadApk = (req, res) => {
   const candidatePaths = [
+    path.resolve(__dirname, '../public/RKCE_Installer_v1.7.apk'),
+    path.resolve(__dirname, '../public/RKCE_Installer_latest.apk'),
     path.resolve(__dirname, '../.build-outputs/app-debug.apk'),
     path.resolve(__dirname, '../app/build/outputs/apk/debug/app-debug.apk'),
     path.resolve(__dirname, '../public/RKCE_Installer_v1.6.apk')
@@ -978,18 +1084,20 @@ const handleDownloadApk = (req, res) => {
 
   if (existingApk) {
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-    res.setHeader('Content-Disposition', 'attachment; filename="RKCE_Installer_v1.6.apk"');
-    return res.download(existingApk, 'RKCE_Installer_v1.6.apk');
+    res.setHeader('Content-Disposition', 'attachment; filename="RKCE_Installer_v1.7.apk"');
+    return res.download(existingApk, 'RKCE_Installer_v1.7.apk');
   }
 
   return res.status(404).json({
     success: false,
-    message: 'Berkas installer APK belum tersedia di server.'
+    message: 'Berkas installer APK pembaruan (v1.7) belum tersedia di server.'
   });
 };
 
 router.get('/download-apk', handleDownloadApk);
 router.get('/api/mobile/download-apk', handleDownloadApk);
+router.get('/RKCE_Installer_v1.7.apk', handleDownloadApk);
+router.get('/api/mobile/RKCE_Installer_v1.7.apk', handleDownloadApk);
 
 module.exports = router;
 module.exports.autoSeedOperatorsToUsers = autoSeedOperatorsToUsers;

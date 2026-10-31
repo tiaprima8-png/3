@@ -72,7 +72,7 @@ fun DistributionDialog(
     onDismiss: () -> Unit,
     currentApkUrl: String,
     appVersionName: String = "1.7",
-    apkFileSize: String = "18.6 MB",
+    apkFileSize: String = "24.8 MB",
     onSaveApkLocally: () -> Unit,
     onShareWhatsApp: () -> Unit,
     onShareGeneral: () -> Unit,

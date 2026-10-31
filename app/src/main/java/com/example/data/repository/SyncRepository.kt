@@ -47,11 +47,20 @@ class SyncRepository(
                 val spk = (req.nomor_spk ?: "").trim()
                 val renId = req.id_rencana_kerja ?: 0L
                 val resolvedSpk = spk.ifBlank { "SPK-AUTO-${if (renId > 0) renId else uuid}" }
-                val isLocked = req.is_locked == true || req.approval_status.equals("Disetujui Kasie", ignoreCase = true)
+                val statusStr = req.approval_status?.lowercase()?.trim() ?: ""
+                val isLocked = req.is_locked == true ||
+                    statusStr.startsWith("disetujui") ||
+                    statusStr.contains("disetujui") ||
+                    statusStr == "approved"
                 val hmAwal = req.hm_awal ?: 0.0
                 val hmAkhir = req.hm_akhir ?: 0.0
                 val hmDaily = if ((req.hm_harian_berjalan ?: 0.0) > 0.0) req.hm_harian_berjalan!! else if (hmAkhir > hmAwal) hmAkhir - hmAwal else 0.0
                 val spv = req.nama_pengawas ?: req.supervisor_name ?: kasieName
+                val resolvedApproval = if (isLocked) {
+                    req.approval_status?.takeIf { it.isNotBlank() } ?: "Disetujui Kasie"
+                } else {
+                    req.approval_status?.takeIf { it.isNotBlank() } ?: "Menunggu"
+                }
 
                 val entity = com.example.data.local.entity.ActivityReportEntity(
                     id = (idx + 1).toLong(),
@@ -75,7 +84,7 @@ class SyncRepository(
                     isRefueled = req.is_isi_solar == true,
                     fuelLiters = req.jumlah_liter_solar ?: 0.0,
                     pemakaianSolar = req.pemakaian_solar ?: req.jumlah_liter_solar ?: 0.0,
-                    approvalStatus = if (isLocked) "Disetujui Kasie" else (req.approval_status ?: "Menunggu Approval"),
+                    approvalStatus = resolvedApproval,
                     isLocked = isLocked,
                     nomorSpk = resolvedSpk,
                     idRencanaKerja = renId,
