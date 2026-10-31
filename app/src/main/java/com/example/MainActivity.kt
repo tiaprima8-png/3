@@ -12,8 +12,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
@@ -141,7 +144,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HeavyTrackApp() {
     val context = LocalContext.current
@@ -156,6 +159,7 @@ fun HeavyTrackApp() {
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showProfilePopup by remember { mutableStateOf(false) }
     var showDistributionDialog by remember { mutableStateOf(false) }
+    var showResetLocalDataDialog by remember { mutableStateOf(false) }
     val customApkUrl by viewModel.customApkUrl.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val isManagerSession by viewModel.isManagerSession.collectAsState()
@@ -296,7 +300,11 @@ fun HeavyTrackApp() {
                                     .padding(end = 6.dp)
                                     .height(34.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .clickable(enabled = !isSyncing) { viewModel.forceSyncWithServer() }
+                                    .combinedClickable(
+                                        enabled = !isSyncing,
+                                        onClick = { viewModel.forceSyncWithServer() },
+                                        onLongClick = { showResetLocalDataDialog = true }
+                                    )
                                     .testTag("appbar_quick_sync_btn")
                             ) {
                                 Row(
@@ -624,6 +632,7 @@ fun HeavyTrackApp() {
                 onDismiss = { showDistributionDialog = false },
                 currentApkUrl = customApkUrl,
                 appVersionName = viewModel.getAppVersionName(context),
+                apkFileSize = viewModel.getApkFileSizeFormatted(context),
                 onSaveApkLocally = {
                     viewModel.downloadApk(context)
                     showDistributionDialog = false
@@ -645,6 +654,9 @@ fun HeavyTrackApp() {
                 },
                 onUpdateApkUrl = { newUrl ->
                     viewModel.updateCustomApkUrl(newUrl)
+                },
+                onCopyLink = { url ->
+                    viewModel.copyApkUrlToClipboard(context, url)
                 }
             )
         }
@@ -729,6 +741,24 @@ fun HeavyTrackApp() {
                             ProfileDetailRow("Jabatan / Role", supervisorSession?.roleTitle ?: if (isManagerSession) "Manager Operasional" else "Kasie Lapangan")
                             ProfileDetailRow("Wilayah Kerja", supervisorSession?.wilayah ?: if (isManagerSession) "Semua Wilayah" else "Geodesi 1")
                             ProfileDetailRow("Status Akun", "Aktif", isStatusSuccess = true)
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    showProfilePopup = false
+                                    showResetLocalDataDialog = true
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRose),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRose.copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_profile_reset_local_data")
+                            ) {
+                                Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Reset Data Lokal", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
                         }
                     }
                 },
@@ -792,11 +822,29 @@ fun HeavyTrackApp() {
                     )
                 },
                 text = {
-                    Text(
-                        text = "Apakah Anda yakin ingin keluar dari sesi pengawas ($spvName)? Anda dapat masuk kembali dengan memilih nama atau memasukkan NIK/PIN pengawas.",
-                        fontSize = 13.sp,
-                        color = Slate600
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Apakah Anda yakin ingin keluar dari sesi pengawas ($spvName)? Anda dapat masuk kembali dengan memilih nama atau memasukkan NIK/PIN pengawas.",
+                            fontSize = 13.sp,
+                            color = Slate600
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                showLogoutDialog = false
+                                showResetLocalDataDialog = true
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRose),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRose.copy(alpha = 0.45f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_logout_menu_reset_local_data")
+                        ) {
+                            Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Reset Data Lokal", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
                 },
                 confirmButton = {
                     Button(
@@ -826,6 +874,76 @@ fun HeavyTrackApp() {
                         ),
                         border = androidx.compose.foundation.BorderStroke(1.dp, Slate300),
                         modifier = Modifier.testTag("btn_cancel_logout")
+                    ) {
+                        Text(text = "Batal")
+                    }
+                },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(16.dp)
+            )
+        }
+
+        if (showResetLocalDataDialog) {
+            AlertDialog(
+                onDismissRequest = { showResetLocalDataDialog = false },
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .background(ErrorRose50, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            tint = ErrorRose,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Reset Data Lokal",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Slate900
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Apakah Anda ingin membersihkan seluruh cache transaksi lokal?",
+                        fontSize = 13.sp,
+                        color = Slate600
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showResetLocalDataDialog = false
+                            viewModel.resetLocalTransactionData(context)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = ErrorRose,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("btn_confirm_reset_local_data")
+                    ) {
+                        Text(
+                            text = "YA",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { showResetLocalDataDialog = false },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Slate700
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Slate300),
+                        modifier = Modifier.testTag("btn_cancel_reset_local_data")
                     ) {
                         Text(text = "Batal")
                     }

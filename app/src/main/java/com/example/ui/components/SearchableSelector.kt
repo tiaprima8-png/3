@@ -650,74 +650,40 @@ fun OperatorSelectorItemCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable { onClick() }
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
             .testTag("operator_item_${operator.operatorId}"),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) Emerald50 else Color.White
-        ),
+        color = if (isSelected) Color(0xFFF0FDF4) else Color.White,
         border = androidx.compose.foundation.BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) Emerald600 else Slate200
+            color = if (isSelected) Color(0xFF009663) else Slate200
         ),
-        shape = RoundedCornerShape(14.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = operator.name,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = Slate900
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Color(0xFFE0E7FF)
-                    ) {
-                        Text(
-                            text = operator.badgeNumber,
-                            color = Color(0xFF3730A3),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Kasie: ${operator.supervisorAssigned}",
-                    style = MaterialTheme.typography.bodySmall.copy(color = Slate500)
-                )
-            }
-
+            Text(
+                text = operator.name.uppercase(),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1E293B)
+                ),
+                modifier = Modifier.weight(1f)
+            )
             if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .background(Emerald600, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Terpilih",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = Color(0xFF009663),
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -1154,20 +1120,19 @@ fun OperatorSearchableSelectorSheet(
         isOpen = isOpen,
         title = "Pilih Operator Pelaksana",
         subtitle = "${displayedOperators.size} Operator Aktif",
-        searchPlaceholder = "Cari nama operator atau NIK...",
+        searchPlaceholder = "Cari nama operator...",
         emptyMessage = "Operator tidak ditemukan",
         emptySubtitle = "Hanya operator binaan Kasie yang terdaftar di sistem",
         items = displayedOperators,
         filterPredicate = { op, query ->
-            op.name.contains(query, ignoreCase = true) ||
-            op.badgeNumber.contains(query, ignoreCase = true)
+            op.name.contains(query, ignoreCase = true)
         },
         onItemSelected = onOperatorSelected,
         onDismissRequest = onDismissRequest
     ) { op, _, onClick ->
         OperatorSelectorItemCard(
             operator = op,
-            isSelected = selectedOperator?.operatorId == op.operatorId,
+            isSelected = selectedOperator?.operatorId == op.operatorId || selectedOperator?.name?.equals(op.name, ignoreCase = true) == true,
             onClick = onClick
         )
     }
@@ -1330,13 +1295,13 @@ fun UnitPlanSelectorItemCard(
         isSelected -> Emerald50
         status.isBacklog -> Color(0xFFFEF2F2)
         status.isSusulan -> Color(0xFFF0FDF4)
-        else -> Color.White
+        else -> Color(0xFFF0FDF4)
     }
     val borderColor = when {
         isSelected -> Emerald600
         status.isBacklog -> Color(0xFFFCA5A5)
         status.isSusulan -> Color(0xFF86EFAC)
-        else -> Slate200
+        else -> Color(0xFF86EFAC)
     }
 
     Card(
@@ -1398,21 +1363,21 @@ fun UnitPlanSelectorItemCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Badge status: Kasus A (Backlog), Kasus B (Belum Ada Rencana), Kasus C (Sudah Ada Rencana / Tambah Susulan)
+                // Badge status: Kasus A (Backlog), Kasus B (Tertib / Siap Hari Ini), Kasus C (Sudah Ada Rencana / Tambah Susulan)
                 val badgeBg = when {
                     status.isBacklog -> Color(0xFFFEE2E2)
                     status.isSusulan -> Color(0xFFDCFCE7)
-                    else -> Color(0xFFEFF6FF)
+                    else -> Color(0xFFDCFCE7)
                 }
                 val badgeBorder = when {
                     status.isBacklog -> Color(0xFFEF4444)
                     status.isSusulan -> Emerald600
-                    else -> Color(0xFF93C5FD)
+                    else -> Color(0xFF059669)
                 }
                 val badgeTextCol = when {
                     status.isBacklog -> Color(0xFF991B1B)
                     status.isSusulan -> Emerald900
-                    else -> Color(0xFF1E40AF)
+                    else -> Color(0xFF065F46)
                 }
 
                 Surface(
@@ -1502,11 +1467,17 @@ fun UnitPlanSearchableSelectorSheet(
         }
     }
     val backlogCount = displayedUnits.count { it.isBacklog }
+    val readyCount = displayedUnits.size - backlogCount
+    val subtitleText = when {
+        backlogCount > 0 && readyCount > 0 -> "${displayedUnits.size} unit ($backlogCount backlog, $readyCount siap hari ini)"
+        backlogCount > 0 -> "${displayedUnits.size} unit ($backlogCount backlog)"
+        else -> "${displayedUnits.size} unit (semua tertib & siap hari ini)"
+    }
 
     SearchableSelectorSheet(
         isOpen = isOpen,
         title = "Pilih Unit Alat Berat",
-        subtitle = if (backlogCount > 0) "${displayedUnits.size} unit ($backlogCount backlog)" else "${displayedUnits.size} unit terdaftar",
+        subtitle = subtitleText,
         searchPlaceholder = "Cari kode unit atau jenis (mis. EX-201, Dozer)...",
         emptyMessage = "Unit alat berat tidak ditemukan",
         emptySubtitle = "Cek filter pengawas atau hubungi Admin Alat Berat",

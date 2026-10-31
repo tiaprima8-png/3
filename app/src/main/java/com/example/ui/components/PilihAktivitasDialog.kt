@@ -280,9 +280,11 @@ fun PilihAktivitasContent(
             ) {
                 items(
                     items = filteredActivities,
-                    key = { it.sapCode }
+                    key = { "${it.id}_${it.sapCode}_${it.activityName}" }
                 ) { activity ->
-                    val isSelected = selectedActivity?.sapCode == activity.sapCode
+                    val isSelected = (selectedActivity?.id != 0L && selectedActivity?.id == activity.id) ||
+                        (selectedActivity?.sapCode?.isNotBlank() == true && selectedActivity.sapCode == activity.sapCode && selectedActivity.activityName == activity.activityName) ||
+                        (selectedActivity?.activityName == activity.activityName && selectedActivity?.kategoriStatus == activity.kategoriStatus)
                     PilihAktivitasItemCard(
                         activity = activity,
                         isSelected = isSelected,

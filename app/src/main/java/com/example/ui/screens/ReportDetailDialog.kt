@@ -34,6 +34,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrecisionManufacturing
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -45,6 +50,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -144,11 +150,16 @@ fun ReportDetailDialog(
     report: ActivityReportEntity,
     nomorSpk: String? = null,
     isReadOnly: Boolean = false,
+    isKasieSession: Boolean = false,
     onDismiss: () -> Unit,
-    onDelete: (Long) -> Unit
+    onDelete: (Long) -> Unit,
+    onApprove: ((ActivityReportEntity) -> Unit)? = null,
+    onKoreksi: ((ActivityReportEntity) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showFullscreenPhoto by remember { mutableStateOf(false) }
+    var showApproveConfirmDialog by remember { mutableStateOf(false) }
+    val effectiveReadOnly = isReadOnly || report.isLocked
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -238,6 +249,62 @@ fun ReportDetailDialog(
                         ) {
                             ShiftBadge(shift = report.shift)
                             SyncStatusBadge(isSynced = report.isSynced)
+                        }
+                    }
+
+                    // Banner Status Verifikasi & Penguncian Permanen Kasie
+                    if (report.isLocked) {
+                        val approver = report.approvedBy?.takeIf { it.isNotBlank() } ?: report.supervisorName
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Emerald50,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.Emerald200),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Terkunci",
+                                    tint = Emerald700,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "✔ Disetujui oleh $approver • Terkunci (Read-Only)",
+                                    color = Emerald900,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFFEF3C7),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Schedule,
+                                    contentDescription = "Menunggu Verifikasi",
+                                    tint = Color(0xFFB45309),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Menunggu Verifikasi Kasie",
+                                    color = Color(0xFF92400E),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
                         }
                     }
 
@@ -632,58 +699,139 @@ fun ReportDetailDialog(
                 // ==========================================
                 // 3. PINNED BOTTOM ACTIONS (Selalu terlihat)
                 // ==========================================
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 18.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (!isReadOnly) {
-                        OutlinedButton(
-                            onClick = {
-                                onDelete(report.id)
-                                onDismiss()
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRose),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRose.copy(alpha = 0.5f)),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .weight(0.9f)
-                                .height(44.dp)
+                    if (!report.isLocked && isKasieSession && (onApprove != null || onKoreksi != null)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Hapus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            if (onKoreksi != null) {
+                                OutlinedButton(
+                                    onClick = {
+                                        onDismiss()
+                                        onKoreksi(report)
+                                    },
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Slate700),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate400),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(42.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Koreksi", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                            if (onApprove != null) {
+                                Button(
+                                    onClick = { showApproveConfirmDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .weight(1.5f)
+                                        .height(42.dp)
+                                ) {
+                                    Text("✔ Setujui Realisasi (Approve)", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
                         }
                     }
 
-                    OutlinedButton(
-                        onClick = { shareReportDetails(context, report, nomorSpk) },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Emerald700),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Emerald600),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .weight(1.1f)
-                            .height(44.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = null, tint = Emerald700, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Bagikan", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
+                        if (!effectiveReadOnly) {
+                            OutlinedButton(
+                                onClick = {
+                                    onDelete(report.id)
+                                    onDismiss()
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRose),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRose.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(0.9f)
+                                    .height(44.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Hapus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
 
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                    ) {
-                        Text("Tutup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        OutlinedButton(
+                            onClick = { shareReportDetails(context, report, nomorSpk) },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Emerald700),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Emerald600),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1.1f)
+                                .height(44.dp)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, tint = Emerald700, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Bagikan", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                        ) {
+                            Text("Tutup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showApproveConfirmDialog && onApprove != null) {
+        AlertDialog(
+            onDismissRequest = { showApproveConfirmDialog = false },
+            title = {
+                Text(
+                    text = "Setujui Realisasi Lapangan?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = Slate900
+                )
+            },
+            text = {
+                Text(
+                    text = "Pastikan angka HM dan solar telah sesuai. Setelah disetujui, data akan terkunci permanen dan tidak dapat diubah lagi.",
+                    fontSize = 13.sp,
+                    color = Slate700
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showApproveConfirmDialog = false
+                        onApprove(report)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600)
+                ) {
+                    Text("Ya, Setujui & Kunci", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showApproveConfirmDialog = false }) {
+                    Text("Batal", color = Slate700)
+                }
+            }
+        )
     }
 
     if (showFullscreenPhoto) {

@@ -85,6 +85,8 @@ fun AnalyticsScreen(
 ) {
     val activeSupervisor by viewModel.activeSupervisor.collectAsState()
     val isManagerSession by viewModel.isManagerSession.collectAsState()
+    val isOperatorSession by viewModel.isOperatorSession.collectAsState()
+    val currentSupervisor by viewModel.currentSupervisorSession.collectAsState()
     val analyticsState by viewModel.analyticsState.collectAsState()
     val units by viewModel.units.collectAsState()
     val period by viewModel.analyticsPeriod.collectAsState()
@@ -301,6 +303,32 @@ fun AnalyticsScreen(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val totalOutputVolumeAll = analyticsState.activitySummaries.sumOf { it.totalOutputVolume }
 
+                if (isOperatorSession) {
+                    val operatorDisplayName = currentSupervisor?.resolvedNamaLengkap?.takeIf { it.isNotBlank() } ?: activeSupervisor
+                    val kasieAtasanName = currentSupervisor?.kasieAtasan?.takeIf { it.isNotBlank() } ?: "Kasie Lapangan"
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Emerald50),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Emerald200),
+                        modifier = Modifier.fillMaxWidth().testTag("card_operator_personal_kpi")
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "KPI Kinerja Pribadi Operator: $operatorDisplayName",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Emerald900
+                            )
+                            Text(
+                                text = "Kasie Atasan: $kasieAtasanName • Ringkasan jam kerja (HM), pemakaian solar & rasio L/HM hasil kerja Anda sendiri",
+                                fontSize = 11.sp,
+                                color = Emerald700,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
+                }
+
                 // 3 KARTU METRIK RINGKASAN STATUS JAM KERJA BERDAMPINGAN
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -352,7 +380,11 @@ fun AnalyticsScreen(
                     KpiSummaryCard(
                         title = "Total Solar Digunakan",
                         value = "${String.format(Locale.US, "%.1f", analyticsState.totalSolarLiters)} L",
-                        subtitle = if (isManagerSession) "Akumulasi BBM Seluruh Fleet" else "Akumulasi BBM Kasie",
+                        subtitle = when {
+                            isManagerSession -> "Akumulasi BBM Seluruh Fleet"
+                            isOperatorSession -> "Total Pemakaian Solar Pribadi"
+                            else -> "Akumulasi BBM Kasie"
+                        },
                         icon = Icons.Default.LocalGasStation,
                         iconColor = Color(0xFFD97706),
                         iconBg = Color(0xFFFEF3C7),
@@ -363,7 +395,7 @@ fun AnalyticsScreen(
                     KpiSummaryCard(
                         title = "Total HM Berjalan",
                         value = "${String.format(Locale.US, "%.1f", analyticsState.totalHmRunning)} Jam",
-                        subtitle = "Jam Kerja Alat Berat",
+                        subtitle = if (isOperatorSession) "Total Jam Kerja (HM) Pribadi" else "Jam Kerja Alat Berat",
                         icon = Icons.Default.Speed,
                         iconColor = Emerald600,
                         iconBg = Emerald50,

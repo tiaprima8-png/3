@@ -7,10 +7,12 @@ import com.google.gson.annotations.SerializedName
 
 @Entity(tableName = "master_activities")
 data class ActivityMasterEntity(
-    @PrimaryKey
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+
     @ColumnInfo(name = "sapCode")
     @SerializedName("kode_sap")
-    val sapCode: String,                  // e.g. "ACT-SAP-101", "ACT-SAP-102"
+    val sapCode: String = "",                  // e.g. "ACT-SAP-101", "ACT-SAP-102"
 
     @ColumnInfo(name = "activityName")
     @SerializedName("nama_aktivitas")

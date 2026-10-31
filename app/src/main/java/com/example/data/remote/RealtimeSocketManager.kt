@@ -36,11 +36,31 @@ data class RealtimeDeleteData(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class RealtimeRealisasiData(
+    val id: String = "",
+    val rencanaId: Long = 0L,
+    val unitKode: String = "",
+    val operator: String = "",
+    val operatorNik: String = "",
+    val kasie: String = "",
+    val hmAwal: Double = 0.0,
+    val hmAkhir: Double = 0.0,
+    val totalHm: Double = 0.0,
+    val solar: Double = 0.0,
+    val tanggal: String = "",
+    val shift: String = "",
+    val nomorSpk: String = "",
+    val approvalStatus: String = "Menunggu Approval",
+    val isLocked: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 /**
  * Real-time Native WebSocket & Socket.IO Client connected to Web Admin.
  * Listens directly to real-time events:
  * - SPK_PUBLISHED / SPK_TERBIT / UPDATE_RENCANA / RENCANA_STATUS_UPDATED
  * - RENCANA_KERJA_DELETED (penghapusan rencana kerja oleh Admin Web)
+ * - realisasi_created / hasil_aktivitas_created / activity_report_created
  * and dispatches them to Room SQLite and UI state.
  */
 class RealtimeSocketManager(
@@ -70,8 +90,12 @@ class RealtimeSocketManager(
     private val _rencanaDeletedEvents = MutableSharedFlow<RealtimeDeleteData>(extraBufferCapacity = 64)
     val rencanaDeletedEvents = _rencanaDeletedEvents.asSharedFlow()
 
+    private val _realisasiCreatedEvents = MutableSharedFlow<RealtimeRealisasiData>(extraBufferCapacity = 64)
+    val realisasiCreatedEvents = _realisasiCreatedEvents.asSharedFlow()
+
     var onConnectedCallback: (() -> Unit)? = null
     var onRencanaDeletedCallback: ((RealtimeDeleteData) -> Unit)? = null
+    var onRealisasiCreatedCallback: ((RealtimeRealisasiData) -> Unit)? = null
 
     val socket: Socket?
         get() = socketIo
@@ -165,6 +189,17 @@ class RealtimeSocketManager(
                 }
             }
 
+            // 3. REAL-TIME LISTENER REALISASI OPERATOR (SOCKET.IO)
+            val realisasiEventNames = arrayOf(
+                "realisasi_created", "hasil_aktivitas_created", "activity_report_created",
+                "REALISASI_CREATED", "HASIL_AKTIVITAS_CREATED", "REPORT_CREATED"
+            )
+            for (evtName in realisasiEventNames) {
+                sIo.on(evtName) { args ->
+                    handleSocketIoRealisasi(args)
+                }
+            }
+
             sIo.connect()
         } catch (e: Exception) {
             Log.w("RealtimeSocketManager", "Socket.IO connection warning: ${e.localizedMessage}")
@@ -205,6 +240,24 @@ class RealtimeSocketManager(
 
                         val dataObj = root.optJSONObject("data")
                         val payloadObj = root.optJSONObject("payload")
+
+                        // Cek Event Realisasi Operator
+                        val isRealisasiEvent = event.equals("realisasi_created", ignoreCase = true) ||
+                                event.equals("hasil_aktivitas_created", ignoreCase = true) ||
+                                event.equals("activity_report_created", ignoreCase = true) ||
+                                event.equals("REALISASI_CREATED", ignoreCase = true) ||
+                                event.equals("HASIL_AKTIVITAS_CREATED", ignoreCase = true) ||
+                                event.equals("REPORT_CREATED", ignoreCase = true)
+
+                        if (isRealisasiEvent) {
+                            val relData = parseRealisasiFromData(dataObj, payloadObj, root)
+                            Log.d("RealtimeSocketManager", "📝 Native WS Realisasi Created: unit=${relData.unitKode}, operator=${relData.operator}")
+                            scope.launch {
+                                _realisasiCreatedEvents.emit(relData)
+                            }
+                            onRealisasiCreatedCallback?.invoke(relData)
+                            return
+                        }
 
                         // Cek Event Penghapusan Rencana Kerja (RENCANA_KERJA_DELETED)
                         val isDeleteEvent = event.equals("RENCANA_KERJA_DELETED", ignoreCase = true) ||
@@ -366,6 +419,97 @@ class RealtimeSocketManager(
             _rencanaDeletedEvents.emit(event)
         }
         onRencanaDeletedCallback?.invoke(event)
+    }
+
+    private fun handleSocketIoRealisasi(args: Array<Any>?) {
+        try {
+            if (args != null && args.isNotEmpty()) {
+                val data = when (val first = args[0]) {
+                    is JSONObject -> first
+                    is String -> JSONObject(first)
+                    else -> JSONObject()
+                }
+                val relData = parseRealisasiFromData(data)
+                Log.d("RealtimeSocketManager", "📝 Socket.IO Realisasi Created: unit=${relData.unitKode}, operator=${relData.operator}")
+                scope.launch {
+                    _realisasiCreatedEvents.emit(relData)
+                }
+                onRealisasiCreatedCallback?.invoke(relData)
+            }
+        } catch (e: Exception) {
+            Log.e("RealtimeSocketManager", "Error handling Socket.IO Realisasi event", e)
+        }
+    }
+
+    private fun parseRealisasiFromData(vararg sources: JSONObject?): RealtimeRealisasiData {
+        val id = extractFirstNonEmpty(*sources, keys = arrayOf("id", "realisasi_id", "report_id", "id_realisasi"))
+        val renIdStr = extractFirstNonEmpty(*sources, keys = arrayOf("rencana_id", "id_rencana_kerja", "idRencanaKerja", "rencanaId"))
+        val rencanaId = renIdStr.filter { it.isDigit() }.toLongOrNull() ?: 0L
+        val unitKode = extractFirstNonEmpty(*sources, keys = arrayOf("kode_unit", "unit_kode", "unit", "kodeUnit", "unitKode"))
+        val operator = extractFirstNonEmpty(*sources, keys = arrayOf("nama_operator", "operator", "operator_name", "operatorName"))
+        val operatorNik = extractFirstNonEmpty(*sources, keys = arrayOf("operator_nik", "operatorNik", "nik"))
+        val kasie = extractFirstNonEmpty(*sources, keys = arrayOf("nama_pengawas", "kasie", "supervisor_name", "supervisorName", "namaKasie"))
+        val tanggal = extractFirstNonEmpty(*sources, keys = arrayOf("tanggal", "report_date", "reportDate", "tanggal_kerja"))
+        val shift = extractFirstNonEmpty(*sources, keys = arrayOf("shift", "shift_kerja"))
+        val nomorSpk = extractFirstNonEmpty(*sources, keys = arrayOf("nomor_spk", "nomorSpk", "no_spk", "spk"))
+
+        var hmAwal = 0.0
+        var hmAkhir = 0.0
+        var totalHm = 0.0
+        var solar = 0.0
+        var approvalStatus = "Menunggu Approval"
+        var isLocked = false
+
+        for (src in sources) {
+            if (src == null) continue
+            if (src.has("hm_awal") || src.has("hmAwal")) {
+                hmAwal = src.optDouble("hm_awal", src.optDouble("hmAwal", hmAwal))
+            }
+            if (src.has("hm_akhir") || src.has("hmAkhir")) {
+                hmAkhir = src.optDouble("hm_akhir", src.optDouble("hmAkhir", hmAkhir))
+            }
+            if (src.has("hm_harian_berjalan") || src.has("hmDailyRunning") || src.has("total_hm")) {
+                totalHm = src.optDouble("hm_harian_berjalan", src.optDouble("hmDailyRunning", src.optDouble("total_hm", totalHm)))
+            }
+            if (src.has("jumlah_liter_solar") || src.has("fuelLiters") || src.has("pemakaian_solar") || src.has("pemakaianSolar")) {
+                solar = src.optDouble("jumlah_liter_solar", src.optDouble("fuelLiters", src.optDouble("pemakaian_solar", src.optDouble("pemakaianSolar", solar))))
+            }
+            if (src.has("approval_status") || src.has("approvalStatus")) {
+                approvalStatus = src.optString("approval_status", src.optString("approvalStatus", approvalStatus))
+            }
+            if (src.has("is_locked") || src.has("isLocked")) {
+                isLocked = src.optBoolean("is_locked", src.optBoolean("isLocked", isLocked))
+            }
+        }
+
+        if (totalHm <= 0.0 && hmAkhir > hmAwal) {
+            totalHm = hmAkhir - hmAwal
+        }
+
+        return RealtimeRealisasiData(
+            id = id,
+            rencanaId = rencanaId,
+            unitKode = unitKode,
+            operator = operator,
+            operatorNik = operatorNik,
+            kasie = kasie,
+            hmAwal = hmAwal,
+            hmAkhir = hmAkhir,
+            totalHm = totalHm,
+            solar = solar,
+            tanggal = tanggal,
+            shift = shift,
+            nomorSpk = nomorSpk,
+            approvalStatus = approvalStatus,
+            isLocked = isLocked
+        )
+    }
+
+    fun dispatchRealisasiCreated(relData: RealtimeRealisasiData) {
+        scope.launch {
+            _realisasiCreatedEvents.emit(relData)
+        }
+        onRealisasiCreatedCallback?.invoke(relData)
     }
 
     fun disconnect() {

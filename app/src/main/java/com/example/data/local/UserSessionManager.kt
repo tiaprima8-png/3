@@ -16,6 +16,18 @@ import java.io.IOException
 
 val Context.userSessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "user_session_preferences")
 
+fun isKasieRole(roleStr: String?): Boolean {
+    if (roleStr.isNullOrBlank()) return false
+    val r = roleStr.trim().lowercase()
+    return r.contains("kasie") && !r.contains("operator")
+}
+
+fun isOperatorRole(roleStr: String?): Boolean {
+    if (roleStr.isNullOrBlank()) return false
+    val r = roleStr.trim().lowercase()
+    return r.contains("operator")
+}
+
 data class UserSessionData(
     val token: String,
     val userId: String,
@@ -27,13 +39,17 @@ data class UserSessionData(
     val status: String = "Aktif",
     val isLoggedIn: Boolean = false
 ) {
+    val nama: String get() = namaLengkap
     val isManager: Boolean get() = role.equals("MANAGER", ignoreCase = true)
     val isSuperAdmin: Boolean get() = role.equals("SUPER ADMIN", ignoreCase = true) || role.equals("SUPERADMIN", ignoreCase = true)
-    val isOperator: Boolean get() = role.equals("OPERATOR", ignoreCase = true) || role.equals("operator", ignoreCase = true)
+    val isOperator: Boolean get() = isOperatorRole(role)
     val isExecutive: Boolean get() = isManager || isSuperAdmin
-    val isKasie: Boolean get() = role.equals("KASIE", ignoreCase = true) || (!isExecutive && !isOperator)
+    val isKasie: Boolean get() = isKasieRole(role) || (!isExecutive && !isOperator)
     val isAktif: Boolean get() = status.equals("Aktif", ignoreCase = true) || status.equals("Active", ignoreCase = true)
 }
+
+typealias SessionManager = UserSessionManager
+
 
 /**
  * Manages persistent user session and authentication token in DataStore Preferences.

@@ -45,6 +45,9 @@ object CompanyServerSimulator {
     private val _rencanaDeletedEventFlow = MutableSharedFlow<RencanaDeletedEvent>(extraBufferCapacity = 64)
     val rencanaDeletedEventFlow = _rencanaDeletedEventFlow.asSharedFlow()
 
+    private val _realisasiCreatedEventFlow = MutableSharedFlow<PostActivityReportRequest>(extraBufferCapacity = 64)
+    val realisasiCreatedEventFlow = _realisasiCreatedEventFlow.asSharedFlow()
+
     // Map of planId -> published SPK
     val publishedSpkMap = ConcurrentHashMap<Long, String>()
 
@@ -80,44 +83,15 @@ object CompanyServerSimulator {
 
     // Central received reports in Web Admin
     val receivedReportsOnServer = CopyOnWriteArrayList<PostActivityReportRequest>()
-    val serverRencanaKerja = CopyOnWriteArrayList<PostRencanaKerjaRequest>().apply {
-        add(
-            PostRencanaKerjaRequest(
-                id = "REN-HEH0013",
-                id_rencana_kerja = "REN-HEH0013",
-                rencana_id = "REN-HEH0013",
-                status_unit = "OPERASI",
-                kode_unit = "HEH0013",
-                unit_kode = "HEH0013",
-                unit = "HEH0013",
-                nama_unit = "Komatsu PC200-8",
-                operator = "Ahmad Fauzi",
-                nama_operator = "Ahmad Fauzi",
-                sap_code = "ACT-SAP-101",
-                kode_sap = "ACT-SAP-101",
-                nama_aktivitas = "Galian Tanah Lunak",
-                aktivitas = "Galian Tanah Lunak",
-                satuan_aktivitas = "m3",
-                satuan = "m3",
-                kode_lokasi = "001A",
-                lokasi = "001A",
-                wilayah = "Geodesi PG1",
-                shift_kerja = "SIANG",
-                shift = "SIANG",
-                keterangan = "Penggalian front cut site A",
-                keterangan_rencana = "Penggalian front cut site A",
-                nomor_spk = null,
-                status_spk = "MENUNGGU_SPK",
-                status_tahap = "RENCANA",
-                is_realized = false,
-                nama_pengawas = "Agung",
-                pengawas = "Agung",
-                tanggal = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()),
-                tanggal_kerja = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-            )
-        )
-    }
+    val serverRencanaKerja = CopyOnWriteArrayList<PostRencanaKerjaRequest>()
     val serverHasilAktivitas = CopyOnWriteArrayList<PostHasilAktivitasRequest>()
+
+    fun clearAllTransactions() {
+        receivedReportsOnServer.clear()
+        serverRencanaKerja.clear()
+        serverHasilAktivitas.clear()
+        publishedSpkMap.clear()
+    }
 
     suspend fun fetchMasterData(supervisorName: String): ApiResponse<MasterDataPayload> {
         delay(600) // network latency
@@ -186,91 +160,6 @@ object CompanyServerSimulator {
             it.status_tahap == "RENCANA"
         }
 
-        // 3. Initial historical activity reports on server ONLY for Agung (owner of HEH0013, CMP-01, GRD-01)
-        if (cleanPengawas.equals("Agung", ignoreCase = true) &&
-            receivedReportsOnServer.none { it.nama_pengawas.equals("Agung", ignoreCase = true) || it.supervisor_name.equals("Agung", ignoreCase = true) }
-        ) {
-            receivedReportsOnServer.addAll(
-                listOf(
-                    PostActivityReportRequest(
-                        tanggal = tanggal,
-                        nama_pengawas = "Agung",
-                        kode_unit = "HEH0013",
-                        jenis_unit = "Excavator Standar",
-                        nama_aktivitas = "Galian Tanah Lunak",
-                        kode_sap = "ACT-SAP-101",
-                        satuan = "m3",
-                        nama_operator = "Ahmad Fauzi",
-                        lokasi_kerja = "001A",
-                        shift = "SIANG",
-                        durasi_jam_kerja = 7.0,
-                        hm_awal = 11.0,
-                        hm_akhir = 12.0,
-                        hm_harian_berjalan = 1.0,
-                        hasil_kerja = 450.0,
-                        keterangan = "Penggalian front cut berjalan lancar dan aman.",
-                        status_unit = "OPERASI",
-                        is_isi_solar = true,
-                        jumlah_liter_solar = 120.0,
-                        stik_solar_awal = 80.0,
-                        stik_solar_akhir = 48.0,
-                        pemakaian_solar = 152.0,
-                        client_uuid = "SRV-REP-Agung-HEH0013-12.0",
-                        client_transaction_id = "TX-SRV-001"
-                    ),
-                    PostActivityReportRequest(
-                        tanggal = tanggal,
-                        nama_pengawas = "Agung",
-                        kode_unit = "CMP-01",
-                        jenis_unit = "Compactor",
-                        nama_aktivitas = "Pemadatan Subgrade",
-                        kode_sap = "ACT-SAP-201",
-                        satuan = "m2",
-                        nama_operator = "Eko Prasetyo",
-                        lokasi_kerja = "002B",
-                        shift = "SIANG",
-                        durasi_jam_kerja = 6.0,
-                        hm_awal = 2094.0,
-                        hm_akhir = 2100.0,
-                        hm_harian_berjalan = 6.0,
-                        hasil_kerja = 850.0,
-                        keterangan = "Pemadatan subgrade area disposal selesai padat.",
-                        status_unit = "OPERASI",
-                        is_isi_solar = true,
-                        jumlah_liter_solar = 75.0,
-                        stik_solar_awal = 60.0,
-                        stik_solar_akhir = 35.0,
-                        pemakaian_solar = 100.0,
-                        client_uuid = "SRV-REP-Agung-CMP01-2100.0",
-                        client_transaction_id = "TX-SRV-002"
-                    ),
-                    PostActivityReportRequest(
-                        tanggal = tanggal,
-                        nama_pengawas = "Agung",
-                        kode_unit = "GRD-01",
-                        jenis_unit = "Motor Grader",
-                        nama_aktivitas = "Grading Mainroad Tambang",
-                        kode_sap = "ACT-SAP-202",
-                        satuan = "m",
-                        nama_operator = "Hendra Gunawan",
-                        lokasi_kerja = "MAINROAD-01",
-                        shift = "SIANG",
-                        durasi_jam_kerja = 6.5,
-                        hm_awal = 1863.5,
-                        hm_akhir = 1870.0,
-                        hm_harian_berjalan = 6.5,
-                        hasil_kerja = 1250.0,
-                        keterangan = "Perawatan dan grading mainroad hauling jalan lancar.",
-                        status_unit = "OPERASI",
-                        is_isi_solar = false,
-                        jumlah_liter_solar = 0.0,
-                        client_uuid = "SRV-REP-Agung-GRD01-1870.0",
-                        client_transaction_id = "TX-SRV-003"
-                    )
-                )
-            )
-        }
-
         val supervisorReports = receivedReportsOnServer.filter {
             (it.nama_pengawas.equals(cleanPengawas, ignoreCase = true) ||
              it.supervisor_name.equals(cleanPengawas, ignoreCase = true)) &&
@@ -310,8 +199,9 @@ object CompanyServerSimulator {
             } else {
                 val matchesKasie = plan.resolvedPengawas.equals(cleanPengawas, ignoreCase = true) ||
                         plan.nama_pengawas.equals(cleanPengawas, ignoreCase = true)
+                val matchesOperator = plan.resolvedOperator.equals(cleanPengawas, ignoreCase = true)
                 val matchesUnit = ownedUnitCodes.isEmpty() || plan.resolvedUnitKode.uppercase() in ownedUnitCodes
-                matchesKasie && matchesUnit
+                (matchesKasie && matchesUnit) || matchesOperator
             }
         }
         return ApiResponse(
@@ -326,7 +216,17 @@ object CompanyServerSimulator {
         if (isSimulatedOffline) {
             throw java.io.IOException("Mode Offline Lapangan: Rencana kerja tersimpan di lokal (MENUNGGU_SPK)")
         }
-        serverRencanaKerja.add(request)
+        val reqSpk = request.nomor_spk?.trim() ?: ""
+        val reqId = request.id?.trim() ?: ""
+        val existingIdx = serverRencanaKerja.indexOfFirst {
+            (reqSpk.isNotBlank() && reqSpk != "SPK Menyusul" && reqSpk != "-" && it.nomor_spk.equals(reqSpk, ignoreCase = true)) ||
+            (reqId.isNotBlank() && reqId != "0" && it.id == reqId && reqSpk.isBlank())
+        }
+        if (existingIdx >= 0) {
+            serverRencanaKerja[existingIdx] = request
+        } else {
+            serverRencanaKerja.add(request)
+        }
 
         return ApiResponse(
             status = "SUCCESS",
@@ -341,7 +241,7 @@ object CompanyServerSimulator {
     suspend fun adminPublishSpk(planId: Long, kodeUnit: String, supervisorName: String): String {
         val spkNum = "SPK-2026-X" + (100 + (planId % 900))
         publishedSpkMap[planId] = spkNum
-        val idx = serverRencanaKerja.indexOfFirst { it.id == planId.toString() || it.numericId == planId || it.kode_unit == kodeUnit }
+        val idx = serverRencanaKerja.indexOfFirst { it.id == planId.toString() || it.numericId == planId }
         if (idx >= 0) {
             val old = serverRencanaKerja[idx]
             serverRencanaKerja[idx] = old.copy(nomor_spk = spkNum, status_spk = "TERBIT_SPK")
@@ -363,7 +263,7 @@ object CompanyServerSimulator {
     suspend fun adminDeleteRencana(planId: Long, unitKode: String, supervisorName: String = "") {
         serverRencanaKerja.removeIf {
             (planId > 0 && (it.numericId == planId || it.id == planId.toString())) ||
-            (unitKode.isNotBlank() && it.resolvedUnitKode.equals(unitKode, ignoreCase = true))
+            (planId <= 0 && unitKode.isNotBlank() && it.resolvedUnitKode.equals(unitKode, ignoreCase = true))
         }
         publishedSpkMap.remove(planId)
         _rencanaDeletedEventFlow.emit(
@@ -385,14 +285,18 @@ object CompanyServerSimulator {
         }
     }
 
-    fun markRencanaRealized(planId: Long) {
-        val idx = serverRencanaKerja.indexOfFirst { it.id == planId.toString() || it.numericId == planId }
+    fun markRencanaRealized(planId: Long, nomorSpk: String = "") {
+        val cleanSpk = nomorSpk.trim()
+        val idx = serverRencanaKerja.indexOfFirst {
+            (planId > 0 && (it.id == planId.toString() || it.numericId == planId)) ||
+            (cleanSpk.isNotBlank() && cleanSpk != "SPK Menyusul" && cleanSpk != "-" && it.nomor_spk.equals(cleanSpk, ignoreCase = true))
+        }
         if (idx >= 0) {
             val old = serverRencanaKerja[idx]
             serverRencanaKerja[idx] = old.copy(
                 is_realized = true,
                 status_tahap = "REALISASI_SELESAI",
-                status_spk = "SELESAI"
+                status_spk = "Terealisasi"
             )
         }
     }
@@ -405,9 +309,14 @@ object CompanyServerSimulator {
             throw java.io.IOException("Mode Offline Lapangan: Hasil kerja disimpan ke penyimpanan lokal")
         }
 
-        // Anti-duplikasi di server simulator
+        // Anti-duplikasi berdasarkan client_transaction_id atau nomor_spk
         val txId = request.client_transaction_id
-        if (!txId.isNullOrBlank() && serverHasilAktivitas.any { it.client_transaction_id == txId }) {
+        val spkVal = request.nomor_spk?.trim() ?: ""
+        val renIdVal = request.rencana_id ?: request.id_rencana_kerja ?: 0L
+        if ((!txId.isNullOrBlank() && serverHasilAktivitas.any { it.client_transaction_id == txId }) ||
+            (spkVal.isNotBlank() && spkVal != "SPK Menyusul" && spkVal != "-" && serverHasilAktivitas.any { it.nomor_spk.equals(spkVal, ignoreCase = true) })
+        ) {
+            markRencanaRealized(renIdVal, spkVal)
             return ApiResponse(
                 status = "SUCCESS",
                 message = "Realisasi Unit ${request.kode_unit ?: ""} sudah tercatat di Web Admin (Anti-Duplikat Terverifikasi).",
@@ -416,6 +325,7 @@ object CompanyServerSimulator {
         }
 
         serverHasilAktivitas.add(request)
+        markRencanaRealized(renIdVal, spkVal)
 
         val targetUnitCode = request.kode_unit ?: ""
         val lastHmVal = request.hm_akhir ?: 0.0
@@ -424,6 +334,41 @@ object CompanyServerSimulator {
         if (index >= 0) {
             val old = serverUnits[index]
             serverUnits[index] = old.copy(last_hm = lastHmVal, lastHm = lastHmVal)
+        }
+
+        val convertedReport = PostActivityReportRequest(
+            id_rencana_kerja = renIdVal,
+            kode_unit = request.kode_unit,
+            nama_operator = request.operator_nik ?: "",
+            operator_nik = request.operator_nik,
+            nama_pengawas = request.nama_pengawas,
+            supervisor_name = request.nama_pengawas,
+            tanggal = request.tanggal,
+            shift = request.shift,
+            wilayah = request.wilayah,
+            durasi_jam_kerja = request.jam_kerja,
+            hm_awal = request.hm_awal,
+            hm_akhir = request.hm_akhir,
+            hm_harian_berjalan = request.hm_harian_berjalan,
+            hasil_kerja = request.hasil_kerja,
+            keterangan = request.keterangan,
+            is_isi_solar = request.is_isi_solar,
+            jumlah_liter_solar = request.jumlah_liter_solar,
+            pemakaian_solar = request.pemakaian_solar,
+            nomor_spk = request.nomor_spk,
+            approval_status = request.approval_status ?: "Menunggu Approval",
+            is_locked = request.is_locked ?: false,
+            client_uuid = request.client_transaction_id,
+            client_transaction_id = request.client_transaction_id
+        )
+        val isDuplicateReport = receivedReportsOnServer.any { existing ->
+            (!txId.isNullOrBlank() && (existing.client_transaction_id == txId || existing.client_uuid == txId)) ||
+            (spkVal.isNotBlank() && spkVal != "SPK Menyusul" && spkVal != "-" && existing.nomor_spk.equals(spkVal, ignoreCase = true)) ||
+            (renIdVal > 0 && existing.id_rencana_kerja == renIdVal)
+        }
+        if (!isDuplicateReport) {
+            receivedReportsOnServer.add(convertedReport)
+            _realisasiCreatedEventFlow.tryEmit(convertedReport)
         }
 
         val kendalaItems = request.kendala_lapangan ?: request.kendala_list ?: request.daftar_kendala
@@ -445,9 +390,19 @@ object CompanyServerSimulator {
             throw java.io.IOException("Jaringan tidak tersedia: Laporan disimpan ke penyimpanan lokal perangkat")
         }
 
-        // Anti-duplikasi di server simulator
         val clientUuidVal = report.client_uuid ?: report.client_transaction_id
-        if (!clientUuidVal.isNullOrBlank() && receivedReportsOnServer.any { (it.client_uuid ?: it.client_transaction_id) == clientUuidVal }) {
+        val spkVal = report.nomor_spk?.trim() ?: ""
+        val renIdVal = report.id_rencana_kerja ?: 0L
+        markRencanaRealized(renIdVal, spkVal)
+
+        // Anti-duplikasi berdasarkan UUID, nomor_spk, atau id_rencana_kerja
+        val existingIdx = receivedReportsOnServer.indexOfFirst { existing ->
+            (!clientUuidVal.isNullOrBlank() && ((existing.client_uuid ?: existing.client_transaction_id) == clientUuidVal || existing.client_transaction_id == clientUuidVal)) ||
+            (spkVal.isNotBlank() && spkVal != "SPK Menyusul" && spkVal != "-" && existing.nomor_spk.equals(spkVal, ignoreCase = true)) ||
+            (renIdVal > 0 && existing.id_rencana_kerja == renIdVal)
+        }
+        if (existingIdx >= 0) {
+            receivedReportsOnServer[existingIdx] = report
             return ApiResponse(
                 status = "SUCCESS",
                 message = "Laporan sudah tercatat sebelumnya di server Web Admin (Anti-Duplikat Terverifikasi).",
@@ -457,6 +412,7 @@ object CompanyServerSimulator {
 
         // Add to server log
         receivedReportsOnServer.add(report)
+        _realisasiCreatedEventFlow.tryEmit(report)
 
         val targetUnitCode = report.kode_unit ?: report.unit_code ?: ""
         val lastHmVal = report.hm_akhir ?: 0.0
@@ -482,6 +438,21 @@ object CompanyServerSimulator {
             status = "SUCCESS",
             message = "Laporan berhasil dikirim dan diverifikasi oleh Server Web Admin.$rptKendalaInfo$statusInfo$fuelInfo$auditInfo. HM Unit diperbarui ke $lastHmVal.$photoInfo",
             data = "REPORT-ACK-${System.currentTimeMillis()}"
+        )
+    }
+
+    fun getRealisasiForKasie(kasieName: String): ApiResponse<List<PostActivityReportRequest>> {
+        val cleanTarget = kasieName.trim().removePrefix("@").lowercase()
+        val unapproved = receivedReportsOnServer.filter { rpt ->
+            val rptKasie = (rpt.nama_pengawas ?: rpt.supervisor_name ?: "").trim().removePrefix("@").lowercase()
+            val matchesKasie = cleanTarget.isBlank() || cleanTarget == "semua" || rptKasie == cleanTarget || rptKasie.contains(cleanTarget) || cleanTarget.contains(rptKasie)
+            val notApproved = rpt.is_locked != true && !rpt.approval_status.equals("Disetujui Kasie", ignoreCase = true)
+            matchesKasie && notApproved
+        }
+        return ApiResponse(
+            status = "SUCCESS",
+            message = "Ditemukan ${unapproved.size} realisasi operator menunggu verifikasi",
+            data = unapproved
         )
     }
 
@@ -556,34 +527,36 @@ object CompanyServerSimulator {
     }
 
     suspend fun authenticate(username: String, pin: String): LoginResult {
-        delay(300) // latency simulation
-        val trimmedUser = username.trim()
-        val trimmedPin = pin.trim()
+        delay(150) // latency simulation
+        val trimmedUser = username.toString().trim().removePrefix("@").trim()
+        val trimmedPin = pin.toString().trim()
 
         if (trimmedUser.isBlank()) {
-            return LoginResult.Error("Gagal Masuk: Akun tidak terdaftar atau telah dinonaktifkan di Website Admin.")
+            return LoginResult.Error("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
         }
 
         if (trimmedUser.contains("nonaktif", ignoreCase = true) || trimmedUser.contains("inactive", ignoreCase = true)) {
-            return LoginResult.Error("Gagal Masuk: Akun tidak terdaftar atau telah dinonaktifkan di Website Admin.")
+            return LoginResult.Error("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
         }
 
         val (matched, errorMsg) = com.example.data.model.SupervisorDirectory.authenticateKasie(trimmedUser, trimmedPin)
         if (matched == null) {
-            return LoginResult.Error(errorMsg ?: "Gagal Masuk: Akun tidak terdaftar atau kata sandi salah di Website Admin.")
+            return LoginResult.Error(errorMsg ?: "Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
         }
 
         return LoginResult.Success(
-            token = "SIM-JWT-${System.currentTimeMillis()}",
+            token = "token-auth-session",
             user = UserProfileDto(
                 id = matched.userId,
+                nama = matched.namaLengkap,
                 nama_lengkap = matched.namaLengkap,
                 username = matched.username,
-                role = matched.role,
+                role = if (matched.isOperator) "operator" else "kasie",
+                kasie_atasan = matched.kasieAtasan,
                 wilayah = matched.wilayah,
                 status = matched.status
             ),
-            message = "Login berhasil sebagai Kasie Lapangan"
+            message = if (matched.isOperator) "Login berhasil sebagai Operator" else "Login berhasil sebagai Kasie Lapangan"
         )
     }
 
@@ -635,20 +608,40 @@ object CompanyServerSimulator {
     }
 
     private fun createDefaultServerUsers(): List<UserApiPayload> {
-        return listOf(
-            UserApiPayload(id = "33", nama_lengkap = "Farid", username = "farid", hak_akses = "Super Admin", role = "SUPER ADMIN", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "34", nama_lengkap = "Deni", username = "deni", hak_akses = "Super Admin", role = "SUPER ADMIN", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "35", nama_lengkap = "Agung", username = "agung", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "Geodesi PG1", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "36", nama_lengkap = "Zainudin", username = "zainudin", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "Geodesi PG2", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "37", nama_lengkap = "Jahidi", username = "jahidi", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG1", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "38", nama_lengkap = "Hisar", username = "hisar", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG1", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "39", nama_lengkap = "Yono", username = "yono1", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG2", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "40", nama_lengkap = "Nyoman", username = "nyoman", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "RC PG3", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "41", nama_lengkap = "Saipul", username = "saipul", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "LEBUNG PG12", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "42", nama_lengkap = "Galung", username = "galung", hak_akses = "Kasie Lapangan", role = "KASIE", wilayah = "LEBUNG PG3", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "43", nama_lengkap = "Lutfi", username = "lutfi", hak_akses = "Manager Operasional", role = "MANAGER", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
-            UserApiPayload(id = "44", nama_lengkap = "Putut", username = "putut", hak_akses = "Manager Operasional", role = "MANAGER", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif")
+        val baseUsers = listOf(
+            UserApiPayload(id = "33", nama = "Farid", nama_lengkap = "Farid", username = "farid", password = "123", hak_akses = "Super Admin", role = "SUPER ADMIN", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "34", nama = "Deni", nama_lengkap = "Deni", username = "deni", password = "123", hak_akses = "Super Admin", role = "SUPER ADMIN", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "35", nama = "Agung", nama_lengkap = "Agung", username = "agung", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "Geodesi PG1", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "36", nama = "Zainudin", nama_lengkap = "Zainudin", username = "zainudin", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "Geodesi PG2", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "37", nama = "Jahidi", nama_lengkap = "Jahidi", username = "jahidi", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "RC PG1", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "38", nama = "Hisar", nama_lengkap = "Hisar", username = "hisar", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "RC PG1", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "39", nama = "Yono", nama_lengkap = "Yono", username = "yono1", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "RC PG2", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "40", nama = "Nyoman", nama_lengkap = "Nyoman", username = "nyoman", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "RC PG3", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "41", nama = "Saipul", nama_lengkap = "Saipul", username = "saipul", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "LEBUNG PG12", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "42", nama = "Galung", nama_lengkap = "Galung", username = "galung", password = "123", hak_akses = "Kasie Lapangan", role = "kasie", wilayah = "LEBUNG PG3", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "43", nama = "Lutfi", nama_lengkap = "Lutfi", username = "lutfi", password = "123", hak_akses = "Manager Operasional", role = "MANAGER", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif"),
+            UserApiPayload(id = "44", nama = "Putut", nama_lengkap = "Putut", username = "putut", password = "123", hak_akses = "Manager Operasional", role = "MANAGER", wilayah = "Semua Wilayah", status_aktif = 1, status = "Aktif")
         )
+        // Auto-seed 35 akun operator dari master_operator (status = 'Aktif') ke tabel users
+        val operatorUsers = createDefaultServerOperators()
+            .filter { it.resolvedStatus.equals("Aktif", ignoreCase = true) }
+            .mapIndexed { idx, op ->
+                val nik = op.resolvedBadgeNumber
+                UserApiPayload(
+                    id = "${101 + idx}",
+                    nama = op.resolvedName,
+                    nama_lengkap = op.resolvedName,
+                    username = nik,
+                    password = nik,
+                    hak_akses = "Operator Alat Berat",
+                    role = "operator",
+                    kasie_atasan = op.resolvedSupervisor,
+                    wilayah = op.resolvedWilayah,
+                    status_aktif = 1,
+                    status = "Aktif"
+                )
+            }
+        return baseUsers + operatorUsers
     }
 
     private fun createDefaultServerLokasi(): List<LokasiPayload> {
@@ -814,16 +807,15 @@ object CompanyServerSimulator {
             "Faisal Akbar", "Rahmat Hidayat", "Agus Setiawan", "Ilham Maulana", "Rizki Ramadhan",
             "Wahyu Hidayat", "Bayu Saputra", "Guruh Prasetyo", "Hari Wibowo", "Irfan Hakim",
             "Julianto", "Kusnadi", "Lukman Hakim", "Mansur", "Nanang Kosim",
-            "Oki Setiawan", "Panji Tri", "Rudi Hartono", "Slamet Riyadi", "Tri Wahyudi",
-            "Untung Slamet", "Viko Pratama", "Wawan Kurnia", "Yadi Mulyadi", "Zaenal Abidin",
-            "Ari Wibowo", "Candra Wijaya", "Dani Saputra", "Endang Sutrisno", "Fajar Sidiq"
+            "Oki Setiawan", "Panji Tri", "Rudi Hartono", "Slamet Riyadi", "Tri Wahyudi"
         )
 
-        for (i in 0 until 45) {
+        // 35 Operator Aktif dengan NIK 8-digit murni (mulai dari '85044295')
+        for (i in 0 until 35) {
             val (kasie, wil) = kasieList[i % kasieList.size]
             val opName = names.getOrElse(i) { "Operator ${i + 1}" }
+            val pureNik = (85044295 + i).toString()
             val opId = String.format(Locale.US, "OPR-%03d", i + 1)
-            val badge = String.format(Locale.US, "NIK-%05d", 80000 + i + 1)
             val level = when (i % 3) {
                 0 -> "Class A - Excavator"
                 1 -> "Class A - Grader"
@@ -833,18 +825,18 @@ object CompanyServerSimulator {
                 OperatorPayload(
                     operatorId = opId,
                     name = opName,
-                    badgeNumber = badge,
+                    badgeNumber = pureNik,
                     supervisorAssigned = kasie,
                     kasie_penanggung_jawab = kasie,
                     kasiePenanggungJawab = kasie,
                     kasie = kasie,
                     skillLevel = level,
-                    status = "AKTIF",
+                    status = "Aktif",
                     wilayah = wil
                 )
             )
         }
-        return list // Total 45 operators
+        return list // Total 35 operators aktif
     }
 
     private fun createDefaultServerActivities(): List<ActivityPayload> {

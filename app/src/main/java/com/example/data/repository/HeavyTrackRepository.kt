@@ -11,6 +11,7 @@ import com.example.data.local.entity.OperatorEntity
 import com.example.data.local.entity.RencanaKerjaEntity
 import com.example.data.local.entity.UnitEntity
 import com.example.data.local.entity.UserEntity
+import com.example.data.model.SupervisorDirectory
 import com.example.data.remote.ApiClientManager
 import com.example.data.remote.BootstrapResponseData
 import com.example.data.remote.CompanyServerSimulator
@@ -26,9 +27,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import com.example.data.remote.RealtimeRealisasiData
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 data class SyncLogItem(
     val timestamp: String,
@@ -79,8 +82,14 @@ class HeavyTrackRepository(
                 namaLengkap = dsSession.namaLengkap,
                 nik = dsSession.username,
                 role = dsSession.role,
-                roleTitle = if (dsSession.isManager) "Manager Operasional" else if (dsSession.isSuperAdmin) "Super Admin" else "Kasie Lapangan",
+                roleTitle = when {
+                    dsSession.isManager -> "Manager Operasional"
+                    dsSession.isSuperAdmin -> "Super Admin"
+                    dsSession.isOperator -> "Operator Alat Berat"
+                    else -> "Kasie Lapangan"
+                },
                 wilayah = dsSession.wilayah,
+                kasieAtasan = dsSession.kasieAtasan,
                 status = dsSession.status,
                 defaultShift = if (dsSession.isExecutive) "ALL" else "SIANG",
                 assignedSector = if (dsSession.isExecutive) "Seluruh Proyek Lapangan" else "Sektor Operasional Lapangan",
@@ -109,9 +118,11 @@ class HeavyTrackRepository(
             username = user.username,
             role = user.role,
             wilayah = user.wilayah ?: "Geodesi 1",
+            kasieAtasan = user.kasieAtasan ?: "",
             status = user.status
         )
     }
+
 
     suspend fun clearUserSession() = withContext(Dispatchers.IO) {
         userDao.clearActiveSessions()
@@ -229,6 +240,18 @@ class HeavyTrackRepository(
     fun getAllRencanaKerjaForKasie(namaKasie: String, username: String): Flow<List<RencanaKerjaEntity>> =
         rencanaDao.getAllRencanaKerjaForKasie(namaKasie, username)
 
+    fun getRencanaForOperator(operatorIdentifier: String): Flow<List<RencanaKerjaEntity>> =
+        rencanaDao.getRencanaForOperator(operatorIdentifier)
+
+    fun getPendingTugasForOperator(namaOperator: String, nikOperator: String): Flow<List<RencanaKerjaEntity>> =
+        rencanaDao.getPendingTugasForOperator(namaOperator, nikOperator)
+
+    fun getAllRencanaForOperator(operatorIdentifier: String): Flow<List<RencanaKerjaEntity>> =
+        rencanaDao.getAllRencanaForOperator(operatorIdentifier)
+
+    fun getAllTugasForOperator(namaOperator: String, nikOperator: String): Flow<List<RencanaKerjaEntity>> =
+        rencanaDao.getAllTugasForOperator(namaOperator, nikOperator)
+
     fun getAllRencana(): Flow<List<RencanaKerjaEntity>> =
         rencanaDao.getAllRencana()
 
@@ -240,6 +263,12 @@ class HeavyTrackRepository(
 
     fun getHasilForKasie(namaKasie: String, username: String): Flow<List<HasilInputAktivitasEntity>> =
         hasilDao.getHasilForKasie(namaKasie, username)
+
+    fun getHasilForOperator(operatorIdentifier: String): Flow<List<HasilInputAktivitasEntity>> =
+        hasilDao.getHasilForOperator(operatorIdentifier)
+
+    fun getRiwayatHasilForOperator(namaOperator: String, nikOperator: String): Flow<List<HasilInputAktivitasEntity>> =
+        hasilDao.getRiwayatHasilForOperator(namaOperator, nikOperator)
 
     fun getAllHasil(): Flow<List<HasilInputAktivitasEntity>> =
         hasilDao.getAllHasil()
@@ -255,6 +284,13 @@ class HeavyTrackRepository(
 
     fun getRealisasiForKasie(namaKasie: String, username: String): Flow<List<ActivityReportEntity>> =
         reportDao.getRealisasiForKasie(namaKasie, username)
+
+    fun getRealisasiForOperator(operatorIdentifier: String): Flow<List<ActivityReportEntity>> =
+        reportDao.getRealisasiForOperator(operatorIdentifier)
+
+    fun getRiwayatForOperator(namaOperator: String, nikOperator: String): Flow<List<ActivityReportEntity>> =
+        reportDao.getRiwayatForOperator(namaOperator, nikOperator)
+
 
     fun getUnsyncedReports(): Flow<List<ActivityReportEntity>> =
         reportDao.getUnsyncedReports()
@@ -300,10 +336,83 @@ class HeavyTrackRepository(
 
     suspend fun seedInitialDataIfEmpty(activeSupervisor: String) = withContext(Dispatchers.IO) {
         try {
+            seedOperatorsIntoUsersTable()
             fetchMasterData(activeSupervisor)
         } catch (_: Exception) {
-            // JANGAN pernah menimpa Room SQLite dengan 12 user/39 unit/107 aktivitas tiruan.
-            // Biarkan data lokal SQLite yang ada tetap tampil apa adanya.
+            try {
+                seedOperatorsIntoUsersTable()
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * AUTO-SEED 35 AKUN OPERATOR KE DATABASE TABEL USERS:
+     * Mengambil semua data dari master_operator (status = 'Aktif') serta daftar resmi 35 operator,
+     * dan memasukkannya ke tabel users (users_session) dengan:
+     * - username: NIK Operator (string murni, contoh: '85044295')
+     * - password: NIK Operator
+     * - nama: Nama Lengkap Operator
+     * - role: 'operator'
+     * - kasie_atasan: kasie_penanggung_jawab dari operator tersebut
+     * - status: 'Aktif'
+     */
+    suspend fun seedOperatorsIntoUsersTable() = withContext(Dispatchers.IO) {
+        val dbOperators = operatorDao.getAllActiveOperatorsList()
+        if (dbOperators.isNotEmpty()) {
+            com.example.data.model.SupervisorDirectory.updateFromOperatorEntities(dbOperators)
+        }
+        val activeSession = userDao.getActiveUser()
+        val seededOperatorUsers = mutableMapOf<String, com.example.data.local.entity.UserEntity>()
+
+        com.example.data.model.SupervisorDirectory.officialOperatorList.forEach { op ->
+            val cleanNik = op.nik.ifBlank { op.username }.trim()
+            if (cleanNik.isNotBlank()) {
+                val isCurrentActive = activeSession?.username?.equals(cleanNik, ignoreCase = true) == true
+                seededOperatorUsers[cleanNik.lowercase()] = com.example.data.local.entity.UserEntity(
+                    username = cleanNik,
+                    password = cleanNik,
+                    id = op.id,
+                    token = if (isCurrentActive) activeSession.token else "SEED-OP-$cleanNik",
+                    name = op.resolvedNamaLengkap,
+                    namaLengkap = op.resolvedNamaLengkap,
+                    nik = cleanNik,
+                    role = "operator",
+                    roleTitle = "Operator Alat Berat",
+                    kasieAtasan = op.kasieAtasan,
+                    wilayah = op.wilayah,
+                    status = "Aktif",
+                    isActiveSession = isCurrentActive,
+                    lastLoginAt = if (isCurrentActive) activeSession.lastLoginAt else System.currentTimeMillis()
+                )
+            }
+        }
+
+        dbOperators.forEachIndexed { idx, op ->
+            val cleanNik = op.badgeNumber.ifBlank { op.operatorId }.trim()
+            if (cleanNik.isNotBlank()) {
+                val isCurrentActive = activeSession?.username?.equals(cleanNik, ignoreCase = true) == true
+                val resolvedKasie = (op.kasiePenanggungJawab ?: "").ifBlank { op.supervisorAssigned }.ifBlank { "Agung" }
+                seededOperatorUsers[cleanNik.lowercase()] = com.example.data.local.entity.UserEntity(
+                    username = cleanNik,
+                    password = cleanNik,
+                    id = (101 + idx).toString(),
+                    token = if (isCurrentActive) activeSession.token else "SEED-OP-$cleanNik",
+                    name = op.name,
+                    namaLengkap = op.name,
+                    nik = cleanNik,
+                    role = "operator",
+                    roleTitle = "Operator Alat Berat",
+                    kasieAtasan = resolvedKasie,
+                    wilayah = (op.wilayah ?: "").ifBlank { "RC PG1" },
+                    status = "Aktif",
+                    isActiveSession = isCurrentActive,
+                    lastLoginAt = if (isCurrentActive) activeSession.lastLoginAt else System.currentTimeMillis()
+                )
+            }
+        }
+
+        if (seededOperatorUsers.isNotEmpty()) {
+            userDao.insertAll(seededOperatorUsers.values.toList())
         }
     }
 
@@ -350,7 +459,7 @@ class HeavyTrackRepository(
             activityDao.replaceAll(actEntities)
 
             // 3. Process Operators Aktif
-            val incomingOperators = (payload.operators ?: emptyList())
+            val incomingOperators = (payload.resolvedOperators)
                 .filter { it.resolvedStatus.equals("Aktif", ignoreCase = true) || it.resolvedStatus.equals("Active", ignoreCase = true) || it.resolvedStatus.isBlank() }
             val opEntities = incomingOperators.map {
                 OperatorEntity(
@@ -361,10 +470,12 @@ class HeavyTrackRepository(
                     skillLevel = it.resolvedSkillLevel,
                     status = it.resolvedStatus,
                     wilayah = it.resolvedWilayah,
+                    kasiePenanggungJawab = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
                     updatedAt = System.currentTimeMillis()
                 )
             }
             operatorDao.replaceAll(opEntities)
+            seedOperatorsIntoUsersTable()
 
             // 4. Process Lokasi
             val incomingLokasi = payload.resolvedLokasi
@@ -438,43 +549,64 @@ class HeavyTrackRepository(
         }
     }
 
-    suspend fun submitRencanaKerja(rencana: RencanaKerjaEntity): Result<RencanaKerjaEntity> = withContext(Dispatchers.IO) {
+    suspend fun submitBatchRencanaKerja(rencanaList: List<RencanaKerjaEntity>): Result<List<RencanaKerjaEntity>> = withContext(Dispatchers.IO) {
         try {
-            val insertedId = rencanaDao.insertRencana(rencana.copy(isSynced = false))
-            val savedRencana = rencana.copy(id = insertedId)
-
-            val apiReq = PostRencanaKerjaRequest(
-                id = insertedId.toString(),
-                status_unit = savedRencana.statusUnit,
-                kode_unit = savedRencana.kodeUnit,
-                operator = savedRencana.operator,
-                sap_code = savedRencana.sapCode,
-                nama_aktivitas = savedRencana.namaAktivitas,
-                satuan_aktivitas = savedRencana.satuanAktivitas,
-                kode_lokasi = savedRencana.kodeLokasi,
-                wilayah = savedRencana.wilayah,
-                shift_kerja = savedRencana.shiftKerja,
-                keterangan = savedRencana.keterangan,
-                nomor_spk = savedRencana.nomorSpk,
-                status_spk = savedRencana.statusSpk,
-                status_tahap = savedRencana.statusTahap,
-                is_realized = savedRencana.isRealized,
-                nama_pengawas = savedRencana.supervisorName
-            )
-
-            try {
-                val respMsg = apiClientManager.postRencanaKerja(apiReq)
-                rencanaDao.markAsSynced(insertedId)
-                addLog("POST /api/rencana-kerja", "POST", "200 OK", "Rencana Unit ${savedRencana.kodeUnit} [${savedRencana.statusUnit}]", true)
-                _lastSyncTimeMillis.value = System.currentTimeMillis()
-                Result.success(savedRencana.copy(isSynced = true))
-            } catch (netEx: Exception) {
-                addLog("POST /api/rencana-kerja", "POST", "OFFLINE/PENDING", "Unit ${savedRencana.kodeUnit} disimpan lokal", false)
-                Result.success(savedRencana.copy(isSynced = false))
+            reportDao.deleteInvalidEmptyReports()
+            hasilDao.deleteInvalidEmptyHasil()
+            val unsyncedList = rencanaList.map {
+                it.copy(
+                    id = 0L,
+                    isSynced = false,
+                    isRealized = false,
+                    statusTahap = "RENCANA",
+                    statusRealisasi = "Menunggu Realisasi"
+                )
             }
+            val insertedIds = rencanaDao.insertAll(unsyncedList)
+            val savedList = unsyncedList.mapIndexed { idx, ren ->
+                ren.copy(id = insertedIds.getOrNull(idx) ?: 0L)
+            }
+
+            val finalResultList = mutableListOf<RencanaKerjaEntity>()
+            for (savedRencana in savedList) {
+                val apiReq = PostRencanaKerjaRequest(
+                    id = savedRencana.id.toString(),
+                    status_unit = savedRencana.statusUnit,
+                    kode_unit = savedRencana.kodeUnit,
+                    operator = savedRencana.operator,
+                    sap_code = savedRencana.sapCode,
+                    nama_aktivitas = savedRencana.namaAktivitas,
+                    satuan_aktivitas = savedRencana.satuanAktivitas,
+                    kode_lokasi = savedRencana.kodeLokasi,
+                    wilayah = savedRencana.wilayah,
+                    shift_kerja = savedRencana.shiftKerja,
+                    keterangan = savedRencana.keterangan,
+                    nomor_spk = savedRencana.nomorSpk,
+                    status_spk = savedRencana.statusSpk,
+                    status_tahap = savedRencana.statusTahap,
+                    is_realized = savedRencana.isRealized,
+                    nama_pengawas = savedRencana.supervisorName,
+                    tanggal = savedRencana.tanggalFormat,
+                    tanggal_kerja = savedRencana.tanggalFormat
+                )
+                try {
+                    apiClientManager.postRencanaKerja(apiReq)
+                    rencanaDao.markAsSynced(savedRencana.id)
+                    finalResultList.add(savedRencana.copy(isSynced = true))
+                } catch (_: Exception) {
+                    finalResultList.add(savedRencana.copy(isSynced = false))
+                }
+            }
+            _lastSyncTimeMillis.value = System.currentTimeMillis()
+            addLog("POST /api/rencana-kerja/batch", "POST", "200 OK", "Simpan ${finalResultList.size} Rencana Kerja Unit ${finalResultList.firstOrNull()?.kodeUnit ?: ""}", true)
+            Result.success(finalResultList)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun submitRencanaKerja(rencana: RencanaKerjaEntity): Result<RencanaKerjaEntity> = withContext(Dispatchers.IO) {
+        submitBatchRencanaKerja(listOf(rencana)).map { it.first() }
     }
 
     suspend fun updateRencanaSpk(planId: Long, spk: String, status: String = "SPK_TERBIT") = withContext(Dispatchers.IO) {
@@ -535,9 +667,15 @@ class HeavyTrackRepository(
      */
     suspend fun fetchAndReplaceActiveRencana(supervisorName: String): Result<Pair<List<RencanaKerjaEntity>, String>> = withContext(Dispatchers.IO) {
         try {
+            reportDao.deleteInvalidEmptyReports()
+            hasilDao.deleteInvalidEmptyHasil()
+            rencanaDao.restoreUnrealizedPlansWithNoValidReport()
+
             // 1. Ambil data rencana kerja resmi terbaru dari server Web Admin (REST API /api/rencana-kerja)
             val (incomingRequests, msg) = apiClientManager.fetchActiveRencanaKerja(supervisorName)
             val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+
+            val existingLocalPlans = rencanaDao.getAllRencanaList()
 
             // 2. Petakan data rencana kerja terbaru dari server dengan verifikasi kepemilikan Kasie & Unit
             val cleanRequestedKasie = supervisorName.trim().removePrefix("@")
@@ -570,10 +708,38 @@ class HeavyTrackRepository(
                 }
 
                 val serverId = renReq.numericId
-                val targetId = if (serverId > 0) serverId else (index + 1).toLong()
                 val resolvedCreatedBy = renReq.created_by?.takeIf { it.isNotBlank() }
                     ?: renReq.createdBy?.takeIf { it.isNotBlank() }
                     ?: trueOwner
+                val resolvedDate = renReq.tanggal?.takeIf { it.isNotBlank() } ?: renReq.tanggal_kerja?.takeIf { it.isNotBlank() } ?: today
+                val resolvedOpName = renReq.resolvedOperator
+                // Cocokkan rencana lokal HANYA berdasarkan ID spesifik atau Nomor SPK unik (JANGAN berdasarkan kodeUnit + tanggal + shift agar multi-rencana tidak tertimpa!)
+                val matchedLocal = existingLocalPlans.find { loc ->
+                    (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-" && loc.nomorSpk.equals(spkNum, ignoreCase = true)) ||
+                    (serverId > 0 && loc.id == serverId && (spkNum.isBlank() || loc.nomorSpk.isBlank() || loc.nomorSpk.equals(spkNum, ignoreCase = true)))
+                }
+                val maxLocalId = (existingLocalPlans.maxOfOrNull { it.id } ?: 0L) + serverEntities.size + 100L
+                val targetId = when {
+                    matchedLocal != null && matchedLocal.id > 0 -> matchedLocal.id
+                    serverId > 0 && existingLocalPlans.none { it.id == serverId } && serverEntities.none { it.id == serverId } -> serverId
+                    else -> maxLocalId + index + 1L
+                }
+                val resolvedOpNik = matchedLocal?.operatorNik?.takeIf { it.isNotBlank() }
+                    ?: operatorDao.findActiveOperatorByNikOrName(resolvedOpName)?.badgeNumber?.removePrefix("NIK-")?.trim()
+                    ?: SupervisorDirectory.findOperatorByNameOrNik(resolvedOpName)?.nik
+                    ?: ""
+                val reportBySpk = if (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-") reportDao.getReportByNomorSpk(spkNum) else null
+                val hasilBySpk = if (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-") hasilDao.getHasilByNomorSpk(spkNum) else null
+                val hasValidReportInDb = reportBySpk != null && reportBySpk.hmAkhir > 0.0 &&
+                    (reportBySpk.hmDailyRunning > 0.0 || reportBySpk.hmAkhir > reportBySpk.hmAwal || reportBySpk.workOutput > 0.0)
+                val hasValidHasilInDb = hasilBySpk != null && hasilBySpk.hmAkhir > 0.0 &&
+                    (hasilBySpk.hmHarianBerjalan > 0.0 || hasilBySpk.hmAkhir > hasilBySpk.hmAwal || hasilBySpk.hasilKerja > 0.0)
+                val hasRealisasiInDb = hasValidReportInDb || hasValidHasilInDb
+                val isAlreadyRealized = hasRealisasiInDb || (matchedLocal?.isRealized == true && hasRealisasiInDb)
+                val parsedSubIdx = spkNum.split("-").takeIf { it.size >= 4 }?.lastOrNull()?.toIntOrNull()?.takeIf { it in 1..99 } ?: 1
+                val resolvedSubIndex = matchedLocal?.subIndex?.takeIf { it > 1 } ?: parsedSubIdx
+                val resolvedParentSpk = matchedLocal?.parentSpk?.takeIf { it.isNotBlank() }
+                    ?: (if (spkNum.split("-").size >= 4) spkNum.split("-").dropLast(1).joinToString("-") else spkNum)
 
                 val entity = RencanaKerjaEntity(
                     id = targetId,
@@ -583,7 +749,9 @@ class HeavyTrackRepository(
                     createdBy = resolvedCreatedBy,
                     statusUnit = renReq.status_unit ?: "OPERASI",
                     kodeUnit = kodeUnitVal,
-                    operator = renReq.resolvedOperator,
+                    operator = resolvedOpName,
+                    namaOperator = resolvedOpName,
+                    operatorNik = resolvedOpNik,
                     sapCode = renReq.resolvedSapCode,
                     namaAktivitas = renReq.resolvedAktivitas,
                     satuanAktivitas = renReq.resolvedSatuan,
@@ -592,26 +760,27 @@ class HeavyTrackRepository(
                     shiftKerja = renReq.resolvedShift,
                     keterangan = renReq.keterangan ?: renReq.keterangan_rencana ?: "",
                     nomorSpk = spkNum,
-                    statusSpk = spkStatus,
-                    statusTahap = renReq.status_tahap ?: "RENCANA",
-                    statusRealisasi = if (renReq.is_realized == true) "SUDAH" else "BELUM",
-                    isRealized = renReq.is_realized ?: false,
+                    statusSpk = if (isAlreadyRealized) (matchedLocal?.statusSpk?.ifBlank { "Terealisasi" } ?: "Terealisasi") else spkStatus,
+                    statusTahap = if (isAlreadyRealized) "REALISASI_SELESAI" else (renReq.status_tahap ?: "RENCANA"),
+                    statusRealisasi = if (isAlreadyRealized) (matchedLocal?.statusRealisasi?.ifBlank { "Terealisasi" } ?: "Terealisasi") else "Menunggu Realisasi",
+                    isRealized = isAlreadyRealized,
                     isSynced = true,
-                    createdAt = System.currentTimeMillis() - (index * 1000L),
-                    tanggalFormat = renReq.tanggal?.takeIf { it.isNotBlank() } ?: renReq.tanggal_kerja?.takeIf { it.isNotBlank() } ?: today
+                    createdAt = matchedLocal?.createdAt ?: (System.currentTimeMillis() - (index * 1000L)),
+                    tanggalFormat = resolvedDate,
+                    subIndex = resolvedSubIndex,
+                    parentSpk = resolvedParentSpk
                 )
                 serverEntities.add(entity)
             }
 
-            // 3. ATOMIC CLEAR AND REPLACE via Room DAO:
-            if (isRequestingAll) {
-                rencanaDao.replaceAll(serverEntities)
-            } else {
-                rencanaDao.replaceForSupervisor(cleanRequestedKasie, serverEntities)
+            // FULL MIRROR SYNC: Hapus rencana lokal lama, lalu isi data remote terkini
+            rencanaDao.deleteAll()
+            if (serverEntities.isNotEmpty()) {
+                rencanaDao.insertAll(serverEntities)
             }
 
             _lastSyncTimeMillis.value = System.currentTimeMillis()
-            addLog("GET /api/rencana-kerja", "GET", "200 OK", "${serverEntities.size} Rencana Kerja Aktif (Clear & Replace)", true)
+            addLog("GET /api/rencana-kerja", "GET", "200 OK", "${serverEntities.size} Rencana Kerja Aktif (Full Mirror Sync)", true)
             Result.success(Pair(serverEntities, msg))
         } catch (e: Exception) {
             addLog("GET /api/rencana-kerja", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)
@@ -623,35 +792,367 @@ class HeavyTrackRepository(
         rencanaDao.deleteAll()
     }
 
+    suspend fun resetLocalTransactionCache() = withContext(Dispatchers.IO) {
+        rencanaDao.deleteAll()
+        reportDao.deleteAll()
+        hasilDao.deleteAll()
+        aktivitasUnitDao.clearAll()
+        draftDao.clearAllDrafts()
+        CompanyServerSimulator.clearAllTransactions()
+        _lastSyncTimeMillis.value = System.currentTimeMillis()
+        addLog("LOCAL RESET", "DELETE", "0 DATA", "Database transaksi lokal berhasil di-reset ke 0.", true)
+    }
+
+    suspend fun syncRealisasiWithServer(kasieName: String = "") = withContext(Dispatchers.IO) {
+        fetchPendingRealisasiForKasie(kasieName)
+    }
+
+    suspend fun syncRencanaWithServer(supervisorName: String = "") = withContext(Dispatchers.IO) {
+        fetchAndReplaceActiveRencana(supervisorName)
+    }
+
+    suspend fun syncAllData(supervisorName: String = "") = withContext(Dispatchers.IO) {
+        syncRencanaWithServer(supervisorName)
+        syncRealisasiWithServer(supervisorName)
+    }
+
     suspend fun markRencanaRealized(planId: Long) = withContext(Dispatchers.IO) {
         rencanaDao.markAsRealized(planId)
         CompanyServerSimulator.markRencanaRealized(planId)
     }
 
+    suspend fun fetchPendingRealisasiForKasie(kasieName: String): Result<List<ActivityReportEntity>> = withContext(Dispatchers.IO) {
+        try {
+            // 1. Dorong terlebih dahulu antrean lokal yang belum terkirim (is_synced == false) ke server
+            try {
+                syncAllPendingOperationalData()
+            } catch (_: Exception) {}
+
+            // Simpan cadangan item lokal yang masih gagal terkirim (isSynced == false) agar tidak hilang
+            val unsyncedReportsBackup = reportDao.getUnsyncedReportsList().filter { !it.isSynced }
+            val unsyncedHasilBackup = hasilDao.getUnsyncedHasilList().filter { !it.isSynced }
+
+            val (incomingReports, _) = apiClientManager.fetchPendingRealisasiForKasie(kasieName)
+            // Filter ketat: Hanya terima data yang benar-benar sudah diisi angka realisasi oleh operator
+            val validReports = incomingReports.filter { req ->
+                val hmAwal = req.hm_awal ?: 0.0
+                val hmAkhir = req.hm_akhir ?: 0.0
+                val totalHm = req.hm_harian_berjalan ?: (if (hmAkhir > hmAwal) hmAkhir - hmAwal else 0.0)
+                val hasilKerja = req.hasil_kerja ?: 0.0
+                hmAkhir > 0.0 && (totalHm > 0.0 || hmAkhir > hmAwal || hasilKerja > 0.0)
+            }
+
+            // FULL MIRROR SYNC: Hapus data transaksi lokal lama, lalu isi dengan data remote terkini
+            // (Jika server dikosongkan / 0 laporan, lokal juga ikut bersih menjadi 0 laporan)
+            reportDao.deleteAll()
+            hasilDao.deleteAll()
+            aktivitasUnitDao.clearAll()
+
+            val savedEntities = mutableListOf<ActivityReportEntity>()
+            if (validReports.isNotEmpty()) {
+                for (req in validReports) {
+                    val entity = saveIncomingRealisasiInternal(req)
+                    if (entity != null) {
+                        savedEntities.add(entity)
+                    }
+                }
+            }
+
+            // Pulihkan antrean lokal yang belum terkirim ke server (jika masih offline)
+            for (unsyncedRep in unsyncedReportsBackup) {
+                val alreadyInServer = savedEntities.any {
+                    (unsyncedRep.nomorSpk.isNotBlank() && it.nomorSpk.equals(unsyncedRep.nomorSpk, ignoreCase = true)) ||
+                        (unsyncedRep.clientUuid.isNotBlank() && it.clientUuid.equals(unsyncedRep.clientUuid, ignoreCase = true))
+                }
+                if (!alreadyInServer) {
+                    reportDao.insertReport(unsyncedRep)
+                    savedEntities.add(unsyncedRep)
+                }
+            }
+            for (unsyncedHas in unsyncedHasilBackup) {
+                val alreadyInServer = savedEntities.any {
+                    (unsyncedHas.nomorSpk.isNotBlank() && it.nomorSpk.equals(unsyncedHas.nomorSpk, ignoreCase = true)) ||
+                        (unsyncedHas.clientTransactionId.isNotBlank() && it.clientUuid.equals(unsyncedHas.clientTransactionId, ignoreCase = true))
+                }
+                if (!alreadyInServer) {
+                    hasilDao.insertHasil(unsyncedHas)
+                }
+            }
+
+            rencanaDao.restoreUnrealizedPlansWithNoValidReport()
+            addLog("GET /api/realisasi?kasie=$kasieName", "GET", "200 OK", "Full Mirror Sync: ${savedEntities.size} realisasi", true)
+            Result.success(savedEntities)
+        } catch (e: Exception) {
+            addLog("GET /api/realisasi?kasie=$kasieName", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveIncomingRealisasi(req: PostActivityReportRequest): ActivityReportEntity? = withContext(Dispatchers.IO) {
+        saveIncomingRealisasiInternal(req)
+    }
+
+    suspend fun saveIncomingRealisasi(relData: RealtimeRealisasiData): ActivityReportEntity? = withContext(Dispatchers.IO) {
+        val txId = if (relData.id.isNotBlank()) relData.id else UUID.randomUUID().toString()
+        val req = PostActivityReportRequest(
+            id_rencana_kerja = relData.rencanaId,
+            kode_unit = relData.unitKode,
+            nama_operator = relData.operator,
+            operator_nik = relData.operatorNik,
+            nama_pengawas = relData.kasie,
+            supervisor_name = relData.kasie,
+            tanggal = relData.tanggal,
+            shift = relData.shift,
+            hm_awal = relData.hmAwal,
+            hm_akhir = relData.hmAkhir,
+            hm_harian_berjalan = relData.totalHm,
+            jumlah_liter_solar = relData.solar,
+            pemakaian_solar = relData.solar,
+            nomor_spk = relData.nomorSpk,
+            approval_status = relData.approvalStatus,
+            is_locked = relData.isLocked,
+            client_transaction_id = txId
+        )
+        saveIncomingRealisasiInternal(req)
+    }
+
+    private suspend fun saveIncomingRealisasiInternal(req: PostActivityReportRequest): ActivityReportEntity? {
+        val reqHmAwal = req.hm_awal ?: 0.0
+        val reqHmAkhir = req.hm_akhir ?: 0.0
+        val reqHmDaily = if ((req.hm_harian_berjalan ?: 0.0) > 0.0) req.hm_harian_berjalan!! else if (reqHmAkhir > reqHmAwal) reqHmAkhir - reqHmAwal else 0.0
+        val reqWorkOutput = req.hasil_kerja ?: 0.0
+
+        // DILARANG menyimpan data realisasi palsu/kosong (misal HM 0.0, Solar 25.0 L) atau menandai rencana sebagai selesai!
+        if (reqHmAkhir <= 0.0 || (reqHmDaily <= 0.0 && reqHmAkhir <= reqHmAwal && reqWorkOutput <= 0.0)) {
+            return null
+        }
+
+        val renId = req.id_rencana_kerja ?: 0L
+        val rawSpk = (req.nomor_spk ?: "").trim()
+        val hasValidSpk = rawSpk.isNotBlank() && rawSpk != "SPK Menyusul" && rawSpk != "-"
+        val clientUuid = req.client_uuid?.takeIf { it.isNotBlank() }
+            ?: req.client_transaction_id?.takeIf { it.isNotBlank() }
+            ?: if (hasValidSpk) "UUID-$rawSpk" else UUID.randomUUID().toString()
+
+        val matchedPlanById = if (renId > 0) rencanaDao.getRencanaById(renId) else null
+        val isPlanMatchValid = matchedPlanById != null &&
+            matchedPlanById.kodeUnit.equals(req.kode_unit ?: req.unit_code ?: "", ignoreCase = true) &&
+            (!hasValidSpk || matchedPlanById.nomorSpk.isBlank() || matchedPlanById.nomorSpk.equals(rawSpk, ignoreCase = true))
+
+        val spk = if (hasValidSpk) {
+            rawSpk
+        } else if (isPlanMatchValid && matchedPlanById != null) {
+            matchedPlanById.nomorSpk.takeIf { it.isNotBlank() && it != "SPK Menyusul" && it != "-" }
+                ?: "SPK-AUTO-$renId"
+        } else {
+            "SPK-AUTO-$clientUuid"
+        }
+
+        // Cari record yang sudah ada berdasarkan nomorSpk unik atau clientUuid (JANGAN mencocokkan renId buta jika SPK berbeda!)
+        val existingReport = (if (hasValidSpk) reportDao.getReportByNomorSpk(spk) else null)
+            ?: reportDao.getReportByUuid(clientUuid)
+        val targetReportId = existingReport?.id ?: 0L
+        val effectiveClientUuid = existingReport?.clientUuid ?: clientUuid
+        val effectiveRenId = if (isPlanMatchValid) renId else (existingReport?.idRencanaKerja ?: 0L)
+
+        val dateVal = req.tanggal ?: req.report_date ?: existingReport?.reportDate ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        val supervisor = req.nama_pengawas ?: req.supervisor_name ?: existingReport?.supervisorName ?: ""
+        val unit = req.kode_unit ?: req.unit_code ?: existingReport?.unitCode ?: ""
+        val opName = req.nama_operator?.takeIf { it.isNotBlank() } ?: existingReport?.operatorName ?: ""
+        val opNik = req.operator_nik?.takeIf { it.isNotBlank() } ?: existingReport?.operatorNik ?: ""
+        val hmAwal = reqHmAwal
+        val hmAkhir = reqHmAkhir
+        val hmDaily = reqHmDaily
+        val fuel = req.pemakaian_solar ?: req.jumlah_liter_solar ?: existingReport?.pemakaianSolar ?: 0.0
+        val isLocked = existingReport?.isLocked == true || req.is_locked == true || req.approval_status.equals("Disetujui Kasie", ignoreCase = true)
+        val approvalStatus = if (isLocked) "Disetujui Kasie" else (req.approval_status ?: existingReport?.approvalStatus ?: "Menunggu Approval")
+
+        val reportEntity = ActivityReportEntity(
+            id = targetReportId,
+            clientUuid = effectiveClientUuid,
+            reportDate = dateVal,
+            supervisorName = supervisor,
+            namaKasie = supervisor,
+            createdBy = req.role_penginput ?: existingReport?.createdBy ?: supervisor,
+            unitCode = unit,
+            unitType = req.jenis_unit?.takeIf { it.isNotBlank() } ?: existingReport?.unitType ?: "",
+            activityName = req.nama_aktivitas?.takeIf { it.isNotBlank() } ?: existingReport?.activityName ?: "",
+            sapCode = req.kode_sap?.takeIf { it.isNotBlank() } ?: existingReport?.sapCode ?: "ACT-SAP-101",
+            unitOfMeasure = req.satuan?.takeIf { it.isNotBlank() } ?: existingReport?.unitOfMeasure ?: "m3",
+            operatorName = opName,
+            operatorNik = opNik,
+            workLocation = req.lokasi_kerja?.takeIf { it.isNotBlank() } ?: existingReport?.workLocation ?: "",
+            wilayah = req.wilayah?.takeIf { it.isNotBlank() } ?: existingReport?.wilayah ?: "PG1",
+            shift = req.shift?.takeIf { it.isNotBlank() } ?: existingReport?.shift ?: "SIANG",
+            workDurationHours = req.durasi_jam_kerja ?: existingReport?.workDurationHours ?: 7.0,
+            hmAwal = hmAwal,
+            hmAkhir = hmAkhir,
+            hmDailyRunning = hmDaily,
+            workOutput = reqWorkOutput,
+            notes = req.keterangan?.takeIf { it.isNotBlank() } ?: existingReport?.notes ?: "",
+            unitStatus = req.status_unit?.takeIf { it.isNotBlank() } ?: existingReport?.unitStatus ?: "OPERASI",
+            isRefueled = req.is_isi_solar == true || fuel > 0.0,
+            fuelLiters = fuel,
+            pemakaianSolar = fuel,
+            approvalStatus = approvalStatus,
+            approvedBy = req.approved_by ?: existingReport?.approvedBy,
+            approvedAt = req.approved_at ?: existingReport?.approvedAt,
+            isLocked = isLocked,
+            nomorSpk = spk,
+            idRencanaKerja = effectiveRenId,
+            createdAt = existingReport?.createdAt ?: System.currentTimeMillis(),
+            isSynced = true
+        )
+
+        val insertedReportId = reportDao.insertReport(reportEntity)
+        val savedReport = reportEntity.copy(id = insertedReportId)
+
+        // Cari atau simpan juga ke hasil_input_aktivitas tanpa duplikasi
+        val existingHasil = (if (hasValidSpk) hasilDao.getHasilByNomorSpk(spk) else null)
+            ?: hasilDao.getHasilByTxId(effectiveClientUuid)
+        val targetHasilId = existingHasil?.id ?: 0L
+
+        val hasilEntity = HasilInputAktivitasEntity(
+            id = targetHasilId,
+            rencanaId = effectiveRenId,
+            nomorSpk = spk,
+            supervisorName = supervisor,
+            namaKasie = supervisor,
+            createdBy = opName,
+            kodeUnit = unit,
+            operator = opName,
+            operatorNik = opNik,
+            kodeLokasi = reportEntity.workLocation,
+            activityName = reportEntity.activityName,
+            sapCode = reportEntity.sapCode,
+            satuan = reportEntity.unitOfMeasure,
+            unitStatus = reportEntity.unitStatus,
+            shift = reportEntity.shift,
+            jamKerja = reportEntity.workDurationHours,
+            hmAwal = hmAwal,
+            hmAkhir = hmAkhir,
+            hmHarianBerjalan = hmDaily,
+            hasilKerja = reportEntity.workOutput,
+            keterangan = reportEntity.notes,
+            isIsiSolar = reportEntity.isRefueled,
+            jumlahLiterSolar = fuel,
+            pemakaianSolar = fuel,
+            statusKirim = "SYNCED",
+            isSynced = true,
+            approvalStatus = approvalStatus,
+            approvedBy = reportEntity.approvedBy,
+            approvedAt = reportEntity.approvedAt,
+            isLocked = isLocked,
+            tanggalFormat = dateVal,
+            createdAt = existingHasil?.createdAt ?: reportEntity.createdAt,
+            clientTransactionId = effectiveClientUuid
+        )
+        hasilDao.insertHasil(hasilEntity)
+
+        // WAJIB update HANYA berdasarkan Nomor SPK unik atau ID rencana yang terverifikasi cocok
+        if (hasValidSpk) {
+            rencanaDao.updateStatus(
+                nomorSpk = rawSpk,
+                id = 0L,
+                status = if (isLocked) "Terealisasi & Approved" else "Terealisasi"
+            )
+        } else if (isPlanMatchValid && effectiveRenId > 0) {
+            rencanaDao.markTaskAsCompleted(effectiveRenId)
+            if (isLocked) {
+                rencanaDao.updateStatusById(
+                    rencanaId = effectiveRenId,
+                    status = "Terealisasi & Approved",
+                    isRealized = true,
+                    statusTahap = "REALISASI_SELESAI"
+                )
+            }
+        }
+        return savedReport
+    }
+
     suspend fun submitHasilAktivitas(hasil: HasilInputAktivitasEntity): Result<HasilInputAktivitasEntity> = withContext(Dispatchers.IO) {
         try {
-            val insertedId = hasilDao.insertHasil(hasil.copy(isSynced = false))
-            val savedHasil = hasil.copy(id = insertedId)
+            val currentOpNik = hasil.operatorNik ?: ""
+            val resolvedOpNik = if (currentOpNik.isNotBlank() && !currentOpNik.equals(hasil.operator, ignoreCase = true)) {
+                currentOpNik
+            } else {
+                operatorDao.findActiveOperatorByNikOrName(hasil.operator)?.badgeNumber?.removePrefix("NIK-")?.trim()
+                    ?: SupervisorDirectory.findOperatorByNameOrNik(hasil.operator)?.nik
+                    ?: currentOpNik.ifBlank { hasil.operator }
+            }
+            val effectiveSpk = hasil.nomorSpk.trim().takeIf {
+                it.isNotBlank() && it != "SPK Menyusul" && it != "-" && it != "Belum Terbit (Menunggu Admin)"
+            } ?: (if (hasil.rencanaId > 0) {
+                rencanaDao.getRencanaById(hasil.rencanaId)?.nomorSpk?.trim()?.takeIf {
+                    it.isNotBlank() && it != "SPK Menyusul" && it != "-"
+                } ?: "SPK-AUTO-${hasil.rencanaId}"
+            } else {
+                "SPK-AUTO-${hasil.clientTransactionId.ifBlank { UUID.randomUUID().toString() }}"
+            })
+            val effectiveTxId = hasil.clientTransactionId.ifBlank { "TX-$effectiveSpk" }
+
+            // Cek apakah sudah ada record dengan nomor_spk atau rencana_id yang sama agar tidak duplikat
+            val existingHasil = hasilDao.getHasilByNomorSpk(effectiveSpk)
+                ?: (if (hasil.rencanaId > 0) hasilDao.getHasilByRencanaId(hasil.rencanaId) else null)
+                ?: hasilDao.getHasilByTxId(effectiveTxId)
+
+            val hasilWithNik = hasil.copy(
+                id = existingHasil?.id ?: hasil.id,
+                nomorSpk = effectiveSpk,
+                clientTransactionId = effectiveTxId,
+                operatorNik = resolvedOpNik,
+                isSynced = false
+            )
+            val insertedId = hasilDao.insertHasil(hasilWithNik)
+            val savedHasil = hasilWithNik.copy(id = insertedId)
 
             // Update unit HM in local DB
             unitDao.updateUnitHm(savedHasil.kodeUnit, savedHasil.hmAkhir)
 
-            // Mark Rencana Kerja as realized so it disappears from active dropdown immediately
+            // WAJIB update HANYA berdasarkan ID unik rencana yang dikerjakan (DILARANG KERAS update berdasarkan kodeUnit atau tanggal!)
             if (savedHasil.rencanaId > 0) {
-                rencanaDao.markAsRealized(savedHasil.rencanaId)
-                CompanyServerSimulator.markRencanaRealized(savedHasil.rencanaId)
+                rencanaDao.markTaskAsCompleted(savedHasil.rencanaId)
+                if (savedHasil.isLocked) {
+                    rencanaDao.updateStatusById(
+                        rencanaId = savedHasil.rencanaId,
+                        status = "Terealisasi & Approved",
+                        isRealized = true,
+                        statusTahap = "REALISASI_SELESAI"
+                    )
+                } else {
+                    rencanaDao.updateStatusById(
+                        rencanaId = savedHasil.rencanaId,
+                        status = "Terealisasi (Menunggu Approval)",
+                        isRealized = true,
+                        statusTahap = "REALISASI_SELESAI"
+                    )
+                }
+                CompanyServerSimulator.markRencanaRealized(savedHasil.rencanaId, effectiveSpk)
+            } else if (effectiveSpk.isNotBlank() && !effectiveSpk.startsWith("SPK-AUTO-")) {
+                rencanaDao.updateStatus(
+                    nomorSpk = effectiveSpk,
+                    id = 0L,
+                    status = if (savedHasil.isLocked) "Terealisasi & Approved" else "Terealisasi"
+                )
+                CompanyServerSimulator.markRencanaRealized(0L, effectiveSpk)
             }
 
             val kendalaPayloads = KendalaJsonConverter.fromJson(savedHasil.daftarKendalaJson).map { it.toCanonical() }
 
-            // Also mirror into ActivityReportEntity for historical compatibility and analytics
+            val existingReport = reportDao.getReportByNomorSpk(effectiveSpk)
+                ?: (if (savedHasil.rencanaId > 0) reportDao.getReportByRencanaId(savedHasil.rencanaId) else null)
+                ?: reportDao.getReportByUuid(effectiveTxId)
+
+            // Mirror ke ActivityReportEntity (1 record unik per nomorSpk)
             val reportMirror = ActivityReportEntity(
-                reportDate = savedHasil.tanggalFormat.ifBlank { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()) },
+                id = existingReport?.id ?: 0L,
+                clientUuid = effectiveTxId,
+                reportDate = savedHasil.tanggalFormat.ifBlank { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) },
                 supervisorName = savedHasil.supervisorName,
                 namaKasie = savedHasil.namaKasie.ifBlank { savedHasil.supervisorName },
                 createdBy = savedHasil.createdBy.ifBlank { savedHasil.supervisorName },
                 unitCode = savedHasil.kodeUnit,
-                unitType = "",
+                unitType = existingReport?.unitType ?: "",
                 activityName = savedHasil.activityName,
                 sapCode = savedHasil.sapCode,
                 unitOfMeasure = savedHasil.satuan,
@@ -680,13 +1181,19 @@ class HeavyTrackRepository(
                 photoDimensions = savedHasil.photoDimensions,
                 isHmAwalCorrected = savedHasil.isHmAwalCorrected,
                 alasanKoreksiHm = savedHasil.alasanKoreksiHm,
+                approvalStatus = savedHasil.approvalStatus,
+                approvedBy = savedHasil.approvedBy,
+                approvedAt = savedHasil.approvedAt,
+                isLocked = savedHasil.isLocked,
+                operatorNik = savedHasil.operatorNik,
+                nomorSpk = effectiveSpk,
+                idRencanaKerja = savedHasil.rencanaId,
                 isSynced = false
             )
             val mirrorReportId = reportDao.insertReport(reportMirror)
             val activeUser = userDao.getActiveUser()
-            val targetWilayah = reportMirror.wilayah.takeIf { it.isNotBlank() }
-                ?: activeUser?.wilayah
-                ?: "Geodesi PG1"
+            val rawWilayah = reportMirror.wilayah.takeIf { it.isNotBlank() } ?: activeUser?.wilayah ?: "PG1"
+            val targetWilayah = if (rawWilayah.equals("Geodesi PG1", ignoreCase = true) || rawWilayah.equals("Geodesi", ignoreCase = true)) "PG1" else rawWilayah
 
             aktivitasUnitDao.insert(
                 AktivitasUnitEntity(
@@ -718,12 +1225,15 @@ class HeavyTrackRepository(
                 savedHasil.nomorSpk != "Belum Terbit (Menunggu Admin)" &&
                 savedHasil.nomorSpk != "-") savedHasil.nomorSpk else null
 
+            val rolePenginputVal = if (savedHasil.isLocked) "kasie" else "operator"
+
             val apiReq = PostHasilAktivitasRequest(
                 id = insertedId,
                 rencana_id = savedHasil.rencanaId,
                 id_rencana_kerja = savedHasil.rencanaId,
                 nomor_spk = spkClean,
                 jam_kerja = savedHasil.jamKerja,
+                durasi_jam_kerja = savedHasil.jamKerja,
                 hm_awal = savedHasil.hmAwal,
                 hm_akhir = savedHasil.hmAkhir,
                 hm_harian_berjalan = savedHasil.hmHarianBerjalan,
@@ -741,12 +1251,31 @@ class HeavyTrackRepository(
                 hasil_kerja = savedHasil.hasilKerja,
                 keterangan = savedHasil.keterangan,
                 nama_pengawas = savedHasil.supervisorName,
+                kasie = savedHasil.namaKasie.ifBlank { savedHasil.supervisorName },
                 kode_unit = savedHasil.kodeUnit,
+                jenis_unit = reportMirror.unitType,
+                nama_operator = savedHasil.operator,
+                operator = savedHasil.operator,
+                lokasi_kerja = savedHasil.kodeLokasi,
+                kode_lokasi = savedHasil.kodeLokasi,
+                nama_aktivitas = savedHasil.activityName,
+                kode_sap = savedHasil.sapCode,
+                satuan = savedHasil.satuan,
+                status_unit = savedHasil.unitStatus,
                 foto_bukti = savedHasil.photoBase64,
                 is_hm_awal_corrected = savedHasil.isHmAwalCorrected,
                 alasan_koreksi_hm = savedHasil.alasanKoreksiHm,
                 client_transaction_id = savedHasil.clientTransactionId,
-                wilayah = targetWilayah
+                wilayah = targetWilayah,
+                approval_status = savedHasil.approvalStatus,
+                approved_by = savedHasil.approvedBy,
+                approved_at = savedHasil.approvedAt,
+                is_locked = savedHasil.isLocked,
+                operator_nik = savedHasil.operatorNik,
+                role_penginput = rolePenginputVal,
+                tanggal = savedHasil.tanggalFormat,
+                tanggal_kerja = savedHasil.tanggalFormat,
+                shift = savedHasil.shift
             )
 
             val apiActivityReq = PostActivityReportRequest.create(
@@ -788,29 +1317,50 @@ class HeavyTrackRepository(
                 clientTransactionId = savedHasil.clientTransactionId,
                 idRencanaKerja = savedHasil.rencanaId,
                 nomorSpk = spkClean,
-                wilayah = targetWilayah
+                wilayah = targetWilayah,
+                approvalStatus = savedHasil.approvalStatus,
+                approvedBy = savedHasil.approvedBy,
+                approvedAt = savedHasil.approvedAt,
+                isLocked = savedHasil.isLocked,
+                operatorNik = savedHasil.operatorNik,
+                rolePenginput = rolePenginputVal
             )
 
             try {
-                try { apiClientManager.postActivityReport(apiActivityReq) } catch (_: Exception) {}
-                val respMsg = apiClientManager.postHasilAktivitas(apiReq)
+                // 1. Kirim HTTP POST langsung ke backend Web Admin (/api/realisasi, /api/aktivitas-unit, /api/hasil-aktivitas)
+                apiClientManager.submitRealisasiToServer(apiActivityReq, apiReq)
                 val syncTimestamp = System.currentTimeMillis()
-                // Update langsung SQLite/Room lokal: is_synced = true dan status_sync = 'SYNCED'
+                // 2. Update langsung SQLite/Room lokal: is_synced = true dan status_sync = 'SYNCED'
                 hasilDao.markAsSynced(insertedId, syncTimestamp)
                 reportDao.markReportAsSynced(mirrorReportId, syncTimestamp)
-                reportDao.markReportAsSyncedByUnitAndHm(savedHasil.kodeUnit, savedHasil.hmAkhir, savedHasil.supervisorName, syncTimestamp)
                 draftDao.deleteDraftByRencanaId(savedHasil.rencanaId)
                 _lastSyncTimeMillis.value = syncTimestamp
                 val kendalaTag = if (kendalaPayloads.isNotEmpty()) " [Kendala: ${kendalaPayloads.size} item]" else ""
-                addLog("POST /api/aktivitas-unit", "POST", "200 OK", "Realisasi Unit ${savedHasil.kodeUnit} (HM ${savedHasil.hmAkhir})$kendalaTag", true)
+                addLog("POST /api/realisasi", "POST", "200 OK", "Realisasi Unit ${savedHasil.kodeUnit} (HM ${savedHasil.hmAkhir})$kendalaTag", true)
                 Result.success(savedHasil.copy(isSynced = true, statusKirim = "SYNCED", syncedAt = syncTimestamp))
             } catch (netEx: Exception) {
-                addLog("POST /api/aktivitas-unit", "POST", "OFFLINE/PENDING", "Realisasi Unit ${savedHasil.kodeUnit} disimpan lokal", false)
-                Result.success(savedHasil.copy(isSynced = false, statusKirim = "PENDING"))
+                android.util.Log.e("HTTP_REALISASI", "Exception saat kirim realisasi: ${netEx.message}", netEx)
+                addLog("POST /api/realisasi", "POST", "OFFLINE/PENDING", "Gagal kirim ke server (${netEx.message}). Realisasi Unit ${savedHasil.kodeUnit} disimpan lokal", false)
+                // Kembalikan Result.failure agar ViewModel menampilkan Toast gagal sinkron, sementara data tetap tersimpan lokal (is_synced = false)
+                Result.failure(netEx)
             }
         } catch (e: Exception) {
+            android.util.Log.e("HTTP_REALISASI", "Exception saat submitHasilAktivitas: ${e.message}", e)
             Result.failure(e)
         }
+    }
+
+    suspend fun submitRealisasiLangsung(
+        request: com.example.data.remote.RealisasiRequest,
+        context: android.content.Context
+    ): Result<Unit> {
+        val realisasiRepo = RealisasiRepository(
+            apiClientManager = apiClientManager,
+            realisasiDao = hasilDao,
+            rencanaKerjaDao = rencanaDao,
+            reportDao = reportDao
+        )
+        return realisasiRepo.submitRealisasiLangsung(request, context)
     }
 
     suspend fun submitReport(report: ActivityReportEntity): Result<ActivityReportEntity> = withContext(Dispatchers.IO) {
@@ -947,6 +1497,11 @@ class HeavyTrackRepository(
                         wilayah = report.wilayah
                     )
                     apiClientManager.postActivityReport(apiReq)
+                    if (report.isLocked || report.approvalStatus.contains("Disetujui", ignoreCase = true)) {
+                        try {
+                            apiClientManager.approveRealisasi(report.id, report.approvedBy ?: report.supervisorName)
+                        } catch (_: Exception) {}
+                    }
                     val now = System.currentTimeMillis()
                     reportDao.markReportAsSynced(report.id, now)
                     hasilDao.markHasilAsSyncedByUnitAndHm(report.unitCode, report.hmAkhir, report.supervisorName, now)
@@ -965,46 +1520,125 @@ class HeavyTrackRepository(
         }
     }
 
+    suspend fun refreshTugasOperatorFromServer(operatorIdentifier: String): Result<Pair<List<RencanaKerjaEntity>, String>> = withContext(Dispatchers.IO) {
+        try {
+            val (incomingRequests, msg) = apiClientManager.fetchActiveRencanaKerja(operatorIdentifier)
+            val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+            val existingLocalPlans = rencanaDao.getAllRencanaList()
+            val serverEntities = mutableListOf<RencanaKerjaEntity>()
+
+            for ((index, renReq) in incomingRequests.withIndex()) {
+                val kodeUnitVal = renReq.resolvedUnitKode.ifBlank { "UNIT-${index + 1}" }
+                val unitEntity = unitDao.getUnitByCode(kodeUnitVal)
+                val spkNum = renReq.nomor_spk?.trim() ?: ""
+                val spkStatus = when {
+                    !renReq.status_spk.isNullOrBlank() -> renReq.status_spk
+                    spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-" -> "SPK_TERBIT"
+                    else -> "MENUNGGU_SPK"
+                }
+                val serverId = renReq.numericId
+                val matchedLocal = existingLocalPlans.find { loc ->
+                    (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-" && loc.nomorSpk.equals(spkNum, ignoreCase = true)) ||
+                    (serverId > 0 && loc.id == serverId && (spkNum.isBlank() || loc.nomorSpk.isBlank() || loc.nomorSpk.equals(spkNum, ignoreCase = true)))
+                }
+                val maxLocalId = (existingLocalPlans.maxOfOrNull { it.id } ?: 0L) + serverEntities.size + 100L
+                val targetId = when {
+                    matchedLocal != null && matchedLocal.id > 0 -> matchedLocal.id
+                    serverId > 0 && existingLocalPlans.none { it.id == serverId } && serverEntities.none { it.id == serverId } -> serverId
+                    else -> maxLocalId + index + 1L
+                }
+                val resolvedOpName = renReq.resolvedOperator
+                val resolvedOpNik = matchedLocal?.operatorNik?.takeIf { it.isNotBlank() }
+                    ?: operatorDao.findActiveOperatorByNikOrName(resolvedOpName)?.badgeNumber?.removePrefix("NIK-")?.trim()
+                    ?: SupervisorDirectory.findOperatorByNameOrNik(resolvedOpName)?.nik
+                    ?: operatorIdentifier
+                val reportBySpk = if (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-") reportDao.getReportByNomorSpk(spkNum) else null
+                val hasilBySpk = if (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-") hasilDao.getHasilByNomorSpk(spkNum) else null
+                val hasValidReportInDb = reportBySpk != null && reportBySpk.hmAkhir > 0.0 &&
+                    (reportBySpk.hmDailyRunning > 0.0 || reportBySpk.hmAkhir > reportBySpk.hmAwal || reportBySpk.workOutput > 0.0)
+                val hasValidHasilInDb = hasilBySpk != null && hasilBySpk.hmAkhir > 0.0 &&
+                    (hasilBySpk.hmHarianBerjalan > 0.0 || hasilBySpk.hmAkhir > hasilBySpk.hmAwal || hasilBySpk.hasilKerja > 0.0)
+                val hasRealisasiInDb = hasValidReportInDb || hasValidHasilInDb
+                val isAlreadyRealized = hasRealisasiInDb || (matchedLocal?.isRealized == true && hasRealisasiInDb)
+                val parsedSubIdx = spkNum.split("-").takeIf { it.size >= 4 }?.lastOrNull()?.toIntOrNull()?.takeIf { it in 1..99 } ?: 1
+                val resolvedSubIndex = matchedLocal?.subIndex?.takeIf { it > 1 } ?: parsedSubIdx
+                val resolvedParentSpk = matchedLocal?.parentSpk?.takeIf { it.isNotBlank() }
+                    ?: (if (spkNum.split("-").size >= 4) spkNum.split("-").dropLast(1).joinToString("-") else spkNum)
+
+                val entity = RencanaKerjaEntity(
+                    id = targetId,
+                    supervisorName = renReq.resolvedPengawas.ifBlank { matchedLocal?.supervisorName ?: "Agung" },
+                    pengawas = renReq.resolvedPengawas.ifBlank { matchedLocal?.pengawas ?: "Agung" },
+                    kasie = renReq.resolvedPengawas.ifBlank { matchedLocal?.kasie ?: "Agung" },
+                    createdBy = renReq.created_by ?: renReq.resolvedPengawas,
+                    statusUnit = renReq.status_unit ?: "OPERASI",
+                    kodeUnit = kodeUnitVal,
+                    operator = resolvedOpName,
+                    namaOperator = resolvedOpName,
+                    operatorNik = resolvedOpNik,
+                    sapCode = renReq.resolvedSapCode,
+                    namaAktivitas = renReq.resolvedAktivitas,
+                    satuanAktivitas = renReq.resolvedSatuan,
+                    kodeLokasi = renReq.resolvedLokasi,
+                    wilayah = renReq.wilayah?.takeIf { it.isNotBlank() } ?: unitEntity?.wilayah ?: "Geodesi PG1",
+                    shiftKerja = renReq.resolvedShift,
+                    keterangan = renReq.keterangan ?: renReq.keterangan_rencana ?: "",
+                    nomorSpk = spkNum,
+                    statusSpk = if (isAlreadyRealized) "Terealisasi" else spkStatus,
+                    statusTahap = if (isAlreadyRealized) "REALISASI_SELESAI" else (renReq.status_tahap ?: "RENCANA"),
+                    statusRealisasi = if (isAlreadyRealized) "Terealisasi" else "Menunggu Realisasi",
+                    isRealized = isAlreadyRealized,
+                    isSynced = true,
+                    createdAt = matchedLocal?.createdAt ?: (System.currentTimeMillis() - (index * 1000L)),
+                    tanggalFormat = renReq.tanggal?.takeIf { it.isNotBlank() } ?: today,
+                    subIndex = resolvedSubIndex,
+                    parentSpk = resolvedParentSpk
+                )
+                serverEntities.add(entity)
+            }
+
+            // FULL MIRROR SYNC untuk tugas operator
+            rencanaDao.deletePlansForOperator(operatorIdentifier)
+            if (serverEntities.isNotEmpty()) {
+                rencanaDao.insertAll(serverEntities)
+            }
+            _lastSyncTimeMillis.value = System.currentTimeMillis()
+            addLog("GET /api/rencana-kerja", "GET", "200 OK", "${serverEntities.size} Tugas Operator Tersinkron (Full Mirror)", true)
+            Result.success(Pair(serverEntities, msg))
+        } catch (e: Exception) {
+            addLog("GET /api/rencana-kerja", "GET", "ERROR", e.localizedMessage ?: "Gagal", false)
+            Result.failure(e)
+        }
+    }
+
     suspend fun syncAllPendingOperationalData(): Result<Int> = withContext(Dispatchers.IO) {
         var totalSynced = 0
         try {
-            // 1. Sync pending rencana: Filter hanya record yang benar-benar is_synced == false
-            val pendingRencana = rencanaDao.getUnsyncedRencanaList().filter { !it.isSynced }
-            for (rencana in pendingRencana) {
-                try {
-                    val req = PostRencanaKerjaRequest(
-                        id = rencana.id.toString(),
-                        status_unit = rencana.statusUnit,
-                        kode_unit = rencana.kodeUnit,
-                        operator = rencana.operator,
-                        kode_lokasi = rencana.kodeLokasi,
-                        shift_kerja = rencana.shiftKerja,
-                        keterangan = rencana.keterangan,
-                        nomor_spk = rencana.nomorSpk,
-                        status_spk = rencana.statusSpk,
-                        nama_pengawas = rencana.supervisorName
-                    )
-                    apiClientManager.postRencanaKerja(req)
-                    rencanaDao.markAsSynced(rencana.id)
-                    totalSynced++
-                } catch (_: Exception) {}
-            }
-
-            // 2. Sync pending hasil aktivitas: Filter hanya record yang benar-benar is_synced == false atau status_kirim == 'PENDING'
+            // HANYA mengunggah data realisasi / hasil aktivitas dari HP ke Web Admin (SATU ARAH: Rencana Kerja hanya dari Server -> HP)
+            // 1. Sync pending hasil aktivitas: Filter hanya record yang benar-benar is_synced == false atau status_kirim == 'PENDING'
             val pendingHasil = hasilDao.getUnsyncedHasilList().filter { !it.isSynced || it.statusKirim == "PENDING" }
             for (hasil in pendingHasil) {
                 try {
                     val kendalaPayloads = KendalaJsonConverter.fromJson(hasil.daftarKendalaJson).map { it.toCanonical() }
+                    val spkClean = hasil.nomorSpk.takeIf {
+                        it.isNotBlank() && it != "SPK Menyusul" && it != "-" && it != "Belum Terbit (Menunggu Admin)"
+                    }
+                    val rolePenginputVal = if (hasil.isLocked) "kasie" else "operator"
                     val req = PostHasilAktivitasRequest(
                         id = hasil.id,
                         rencana_id = hasil.rencanaId,
-                        nomor_spk = hasil.nomorSpk,
+                        id_rencana_kerja = hasil.rencanaId,
+                        nomor_spk = spkClean,
                         jam_kerja = hasil.jamKerja,
+                        durasi_jam_kerja = hasil.jamKerja,
                         hm_awal = hasil.hmAwal,
                         hm_akhir = hasil.hmAkhir,
                         hm_harian_berjalan = hasil.hmHarianBerjalan,
                         is_isi_solar = hasil.isIsiSolar,
                         jumlah_liter_solar = hasil.jumlahLiterSolar,
+                        stik_solar_awal = hasil.stikSolarAwal,
+                        stik_solar_akhir = hasil.stikSolarAkhir,
+                        pemakaian_solar = hasil.pemakaianSolar,
                         kendala_id = hasil.kendalaId,
                         kendala_nama = hasil.kendalaNama,
                         catatan_kendala = hasil.catatanKendala,
@@ -1014,22 +1648,90 @@ class HeavyTrackRepository(
                         hasil_kerja = hasil.hasilKerja,
                         keterangan = hasil.keterangan,
                         nama_pengawas = hasil.supervisorName,
+                        kasie = hasil.namaKasie.ifBlank { hasil.supervisorName },
                         kode_unit = hasil.kodeUnit,
+                        nama_operator = hasil.operator,
+                        operator = hasil.operator,
+                        lokasi_kerja = hasil.kodeLokasi,
+                        kode_lokasi = hasil.kodeLokasi,
+                        nama_aktivitas = hasil.activityName,
+                        kode_sap = hasil.sapCode,
+                        satuan = hasil.satuan,
+                        status_unit = hasil.unitStatus,
                         foto_bukti = hasil.photoBase64,
                         is_hm_awal_corrected = hasil.isHmAwalCorrected,
                         alasan_koreksi_hm = hasil.alasanKoreksiHm,
-                        wilayah = hasil.wilayah
+                        client_transaction_id = hasil.clientTransactionId,
+                        wilayah = hasil.wilayah,
+                        approval_status = hasil.approvalStatus,
+                        approved_by = hasil.approvedBy,
+                        approved_at = hasil.approvedAt,
+                        is_locked = hasil.isLocked,
+                        operator_nik = hasil.operatorNik,
+                        role_penginput = rolePenginputVal,
+                        tanggal = hasil.tanggalFormat,
+                        tanggal_kerja = hasil.tanggalFormat,
+                        shift = hasil.shift
                     )
-                    apiClientManager.postHasilAktivitas(req)
+                    val reportReq = PostActivityReportRequest.create(
+                        clientUuid = hasil.clientTransactionId.ifBlank { "TX-${hasil.id}" },
+                        reportDate = hasil.tanggalFormat,
+                        supervisorName = hasil.supervisorName,
+                        unitCode = hasil.kodeUnit,
+                        unitType = "",
+                        activityName = hasil.activityName,
+                        sapCode = hasil.sapCode,
+                        unitOfMeasure = hasil.satuan,
+                        operatorName = hasil.operator,
+                        workLocation = hasil.kodeLokasi,
+                        shift = hasil.shift,
+                        workDurationHours = hasil.jamKerja,
+                        hmAwal = hasil.hmAwal,
+                        hmAkhir = hasil.hmAkhir,
+                        hmDailyRunning = hasil.hmHarianBerjalan,
+                        workOutput = hasil.hasilKerja,
+                        notes = hasil.keterangan,
+                        unitStatus = hasil.unitStatus,
+                        isRefueled = hasil.isIsiSolar,
+                        fuelLiters = hasil.jumlahLiterSolar,
+                        stikSolarAwal = hasil.stikSolarAwal,
+                        stikSolarAkhir = hasil.stikSolarAkhir,
+                        pemakaianSolar = hasil.pemakaianSolar,
+                        kendalaId = hasil.kendalaId,
+                        kendalaNama = hasil.kendalaNama,
+                        catatanKendala = hasil.catatanKendala,
+                        kendalaLapangan = if (kendalaPayloads.isNotEmpty()) kendalaPayloads else null,
+                        kendalaList = if (kendalaPayloads.isNotEmpty()) kendalaPayloads else null,
+                        daftarKendala = if (kendalaPayloads.isNotEmpty()) kendalaPayloads else null,
+                        photoBase64 = hasil.photoBase64,
+                        photoSizeKb = hasil.photoSizeKb,
+                        photoDimensions = hasil.photoDimensions,
+                        photoPath = hasil.photoPath,
+                        isHmAwalCorrected = hasil.isHmAwalCorrected,
+                        alasanKoreksiHm = hasil.alasanKoreksiHm,
+                        clientTransactionId = hasil.clientTransactionId,
+                        idRencanaKerja = hasil.rencanaId,
+                        nomorSpk = spkClean,
+                        wilayah = hasil.wilayah,
+                        approvalStatus = hasil.approvalStatus,
+                        approvedBy = hasil.approvedBy,
+                        approvedAt = hasil.approvedAt,
+                        isLocked = hasil.isLocked,
+                        operatorNik = hasil.operatorNik,
+                        rolePenginput = rolePenginputVal
+                    )
+                    apiClientManager.submitRealisasiToServer(reportReq, req)
                     val now = System.currentTimeMillis()
                     hasilDao.markAsSynced(hasil.id, now)
                     reportDao.markReportAsSyncedByUnitAndHm(hasil.kodeUnit, hasil.hmAkhir, hasil.supervisorName, now)
                     draftDao.deleteDraftByRencanaId(hasil.rencanaId)
                     totalSynced++
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    android.util.Log.e("HTTP_REALISASI", "Gagal sinkron ulang hasil ${hasil.id}: ${e.message}", e)
+                }
             }
 
-            // 3. Sync pending reports (ActivityReportEntity) yang belum tersinkron
+            // 2. Sync pending reports (ActivityReportEntity) yang belum tersinkron
             val reportsResult = syncAllPendingReports()
             totalSynced += reportsResult.getOrDefault(0)
 
@@ -1053,6 +1755,59 @@ class HeavyTrackRepository(
         reportDao.deleteReport(reportId)
     }
 
+    suspend fun approveRealisasi(reportId: Long, approvedBy: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val timestampStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+            reportDao.approveReport(reportId, approvedBy, timestampStr)
+            try {
+                reportDao.updateApprovalStatus(reportId, "Disetujui Kasie", true, approvedBy, timestampStr)
+            } catch (_: Exception) {}
+            try {
+                hasilDao.approveRealization(reportId, approvedBy, timestampStr)
+                hasilDao.updateApprovalStatus(reportId, "Disetujui Kasie", true, approvedBy, timestampStr)
+            } catch (_: Exception) {}
+            val targetReport = reportDao.getReportById(reportId)
+            if (targetReport != null) {
+                rencanaDao.updateStatus(
+                    nomorSpk = targetReport.nomorSpk ?: "",
+                    id = targetReport.idRencanaKerja,
+                    status = "Terealisasi & Approved"
+                )
+                if (!targetReport.nomorSpk.isNullOrBlank()) {
+                    try {
+                        rencanaDao.updateStatus(targetReport.nomorSpk, "Approved")
+                    } catch (_: Exception) {}
+                }
+            }
+            try {
+                val msg = apiClientManager.approveRealisasi(reportId, approvedBy)
+                val now = System.currentTimeMillis()
+                reportDao.markReportAsSynced(reportId, now)
+                addLog("PATCH /api/realisasi/$reportId/approve", "PATCH", "200 OK", "Disetujui oleh $approvedBy (Terkunci & Synced)", true)
+                _lastSyncTimeMillis.value = now
+                Result.success(msg)
+            } catch (netEx: Exception) {
+                reportDao.markReportAsUnsynced(reportId)
+                com.example.worker.OfflineSyncWorker.scheduleAutoSync(apiClientManager.context)
+                addLog("PATCH /api/realisasi/$reportId/approve", "PATCH", "OFFLINE/PENDING", "Disetujui oleh $approvedBy (Terkunci lokal, masuk antrean sync)", false)
+                Result.success("Disetujui Kasie ($approvedBy) & dikunci lokal. Masuk antrean sync offline.")
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun correctRealisasi(updatedReport: ActivityReportEntity): Result<ActivityReportEntity> = withContext(Dispatchers.IO) {
+        try {
+            reportDao.updateReport(updatedReport)
+            unitDao.updateUnitHm(updatedReport.unitCode, updatedReport.hmAkhir)
+            addLog("UPDATE /api/realisasi/${updatedReport.id}", "PUT", "200 OK", "Koreksi Kasie: Unit ${updatedReport.unitCode} (HM ${updatedReport.hmAkhir})", true)
+            Result.success(updatedReport)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun deleteRencana(rencanaId: Long) = withContext(Dispatchers.IO) {
         rencanaDao.deleteRencana(rencanaId)
     }
@@ -1060,6 +1815,7 @@ class HeavyTrackRepository(
     suspend fun deleteHasil(hasilId: Long) = withContext(Dispatchers.IO) {
         hasilDao.deleteHasil(hasilId)
     }
+
 
     suspend fun getDraftForRencana(rencanaId: Long): com.example.data.local.entity.DraftRealisasiEntity? = withContext(Dispatchers.IO) {
         draftDao.getDraftByRencanaId(rencanaId)

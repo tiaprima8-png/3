@@ -39,6 +39,12 @@ data class RencanaKerjaEntity(
     @ColumnInfo(name = "operator")
     val operator: String,
 
+    @ColumnInfo(name = "nama_operator", defaultValue = "")
+    val namaOperator: String = operator,
+
+    @ColumnInfo(name = "operator_nik", defaultValue = "")
+    val operatorNik: String = "",
+
     @ColumnInfo(name = "sap_code", defaultValue = "")
     val sapCode: String = "",
 
@@ -51,8 +57,8 @@ data class RencanaKerjaEntity(
     @ColumnInfo(name = "kode_lokasi")
     val kodeLokasi: String,
 
-    @ColumnInfo(name = "wilayah", defaultValue = "Geodesi PG1")
-    val wilayah: String? = "Geodesi PG1",
+    @ColumnInfo(name = "wilayah", defaultValue = "PG1")
+    val wilayah: String? = "PG1",
 
     @ColumnInfo(name = "shift_kerja")
     val shiftKerja: String = "SIANG", // "SIANG", "MALAM"
@@ -82,7 +88,13 @@ data class RencanaKerjaEntity(
     val createdAt: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "tanggal_format")
-    val tanggalFormat: String = ""
+    val tanggalFormat: String = "",
+
+    @ColumnInfo(name = "sub_index", defaultValue = "1")
+    val subIndex: Int = 1,
+
+    @ColumnInfo(name = "parent_spk", defaultValue = "")
+    val parentSpk: String = ""
 ) {
     val isSpkTerbit: Boolean
         get() {
@@ -101,4 +113,10 @@ data class RencanaKerjaEntity(
                     statusSpk.equals("SELESAI", ignoreCase = true)
             return isValidSpkString && (isStatusTerbit || cleanSpk.startsWith("SPK", ignoreCase = true) || cleanSpk.length >= 1)
         }
+
+    val kategori: String
+        get() = statusUnit
+
+    val satuan: String
+        get() = satuanAktivitas
 }

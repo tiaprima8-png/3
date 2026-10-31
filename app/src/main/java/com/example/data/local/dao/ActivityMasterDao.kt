@@ -19,9 +19,13 @@ interface ActivityMasterDao {
         WHERE (
               LOWER(TRIM(jenis_unit)) = LOWER(TRIM(:modelTipe))
               OR LOWER(TRIM(jenis_unit)) = LOWER(TRIM(:jenisUnit))
+              OR LOWER(TRIM(jenis_unit)) LIKE '%' || LOWER(TRIM(:jenisUnit)) || '%'
+              OR LOWER(TRIM(:jenisUnit)) LIKE '%' || LOWER(TRIM(jenis_unit)) || '%'
+              OR LOWER(TRIM(jenis_unit)) LIKE '%' || LOWER(TRIM(:modelTipe)) || '%'
+              OR LOWER(TRIM(:modelTipe)) LIKE '%' || LOWER(TRIM(jenis_unit)) || '%'
               OR LOWER(TRIM(jenis_unit)) = 'semua'
               OR LOWER(TRIM(jenis_unit)) = 'all'
-              OR :jenisUnit IS NULL OR :jenisUnit = '' OR :jenisUnit = 'SEMUA' OR :jenisUnit = 'ALL'
+              OR :jenisUnit IS NULL OR :jenisUnit = '' OR UPPER(TRIM(:jenisUnit)) = 'SEMUA' OR UPPER(TRIM(:jenisUnit)) = 'ALL'
           )
           AND (
               :kategoriFilter IS NULL 
@@ -30,6 +34,9 @@ interface ActivityMasterDao {
               OR UPPER(TRIM(:kategoriFilter)) = 'ALL'
               OR UPPER(TRIM(kategori_status)) = UPPER(TRIM(:kategoriFilter))
               OR UPPER(TRIM(category)) = UPPER(TRIM(:kategoriFilter))
+              OR (UPPER(TRIM(:kategoriFilter)) = 'OPERASI' AND (UPPER(TRIM(category)) IN ('PRODUKSI', 'SUPPORT', 'HAULING', 'INFRASTRUKTUR') OR UPPER(TRIM(kategori_status)) IN ('PRODUKSI', 'SUPPORT', 'HAULING', 'INFRASTRUKTUR') OR UPPER(TRIM(kategori_status)) LIKE '%OPERASI%'))
+              OR (UPPER(TRIM(:kategoriFilter)) = 'STANDBY' AND (UPPER(TRIM(kategori_status)) LIKE '%STANDBY%' OR UPPER(TRIM(category)) LIKE '%STANDBY%'))
+              OR (UPPER(TRIM(:kategoriFilter)) = 'BREAKDOWN' AND (UPPER(TRIM(kategori_status)) LIKE '%BREAKDOWN%' OR UPPER(TRIM(category)) LIKE '%BREAKDOWN%'))
           )
           AND (
               :searchQuery IS NULL 
@@ -38,10 +45,10 @@ interface ActivityMasterDao {
               OR LOWER(sapCode) LIKE '%' || LOWER(:searchQuery) || '%'
           )
         ORDER BY 
-          CASE UPPER(TRIM(kategori_status))
-            WHEN 'OPERASI' THEN 1
-            WHEN 'STANDBY' THEN 2
-            WHEN 'BREAKDOWN' THEN 3
+          CASE 
+            WHEN UPPER(TRIM(kategori_status)) LIKE '%OPERASI%' OR UPPER(TRIM(category)) IN ('PRODUKSI', 'SUPPORT', 'HAULING', 'INFRASTRUKTUR') THEN 1
+            WHEN UPPER(TRIM(kategori_status)) LIKE '%STANDBY%' THEN 2
+            WHEN UPPER(TRIM(kategori_status)) LIKE '%BREAKDOWN%' THEN 3
             ELSE 4
           END,
           activityName ASC
@@ -57,6 +64,8 @@ interface ActivityMasterDao {
         SELECT * FROM master_activities 
         WHERE (
               LOWER(TRIM(jenis_unit)) = LOWER(TRIM(:modelTipe))
+              OR LOWER(TRIM(jenis_unit)) LIKE '%' || LOWER(TRIM(:modelTipe)) || '%'
+              OR LOWER(TRIM(:modelTipe)) LIKE '%' || LOWER(TRIM(jenis_unit)) || '%'
               OR LOWER(TRIM(jenis_unit)) = 'semua'
               OR LOWER(TRIM(jenis_unit)) = 'all'
               OR :modelTipe IS NULL OR :modelTipe = ''
@@ -68,6 +77,9 @@ interface ActivityMasterDao {
               OR UPPER(TRIM(:kategoriFilter)) = 'ALL'
               OR UPPER(TRIM(kategori_status)) = UPPER(TRIM(:kategoriFilter))
               OR UPPER(TRIM(category)) = UPPER(TRIM(:kategoriFilter))
+              OR (UPPER(TRIM(:kategoriFilter)) = 'OPERASI' AND (UPPER(TRIM(category)) IN ('PRODUKSI', 'SUPPORT', 'HAULING', 'INFRASTRUKTUR') OR UPPER(TRIM(kategori_status)) IN ('PRODUKSI', 'SUPPORT', 'HAULING', 'INFRASTRUKTUR') OR UPPER(TRIM(kategori_status)) LIKE '%OPERASI%'))
+              OR (UPPER(TRIM(:kategoriFilter)) = 'STANDBY' AND (UPPER(TRIM(kategori_status)) LIKE '%STANDBY%' OR UPPER(TRIM(category)) LIKE '%STANDBY%'))
+              OR (UPPER(TRIM(:kategoriFilter)) = 'BREAKDOWN' AND (UPPER(TRIM(kategori_status)) LIKE '%BREAKDOWN%' OR UPPER(TRIM(category)) LIKE '%BREAKDOWN%'))
           )
           AND (
               :searchQuery IS NULL 
@@ -76,10 +88,10 @@ interface ActivityMasterDao {
               OR LOWER(sapCode) LIKE '%' || LOWER(:searchQuery) || '%'
           )
         ORDER BY 
-          CASE UPPER(TRIM(kategori_status))
-            WHEN 'OPERASI' THEN 1
-            WHEN 'STANDBY' THEN 2
-            WHEN 'BREAKDOWN' THEN 3
+          CASE 
+            WHEN UPPER(TRIM(kategori_status)) LIKE '%OPERASI%' OR UPPER(TRIM(category)) IN ('PRODUKSI', 'SUPPORT', 'HAULING', 'INFRASTRUKTUR') THEN 1
+            WHEN UPPER(TRIM(kategori_status)) LIKE '%STANDBY%' THEN 2
+            WHEN UPPER(TRIM(kategori_status)) LIKE '%BREAKDOWN%' THEN 3
             ELSE 4
           END,
           activityName ASC
@@ -92,9 +104,11 @@ interface ActivityMasterDao {
 
     @Query("""
         SELECT * FROM master_activities 
-        WHERE :jenisUnit IS NULL OR :jenisUnit = '' OR :jenisUnit = 'ALL' OR jenis_unit = 'ALL' 
-           OR UPPER(jenis_unit) = UPPER(:jenisUnit) 
-           OR UPPER(jenis_unit) LIKE '%' || UPPER(:jenisUnit) || '%'
+        WHERE :jenisUnit IS NULL OR :jenisUnit = '' OR UPPER(TRIM(:jenisUnit)) = 'ALL' OR UPPER(TRIM(:jenisUnit)) = 'SEMUA' 
+           OR LOWER(TRIM(jenis_unit)) = 'ALL' OR LOWER(TRIM(jenis_unit)) = 'SEMUA' 
+           OR LOWER(TRIM(jenis_unit)) = LOWER(TRIM(:jenisUnit)) 
+           OR LOWER(TRIM(jenis_unit)) LIKE '%' || LOWER(TRIM(:jenisUnit)) || '%'
+           OR LOWER(TRIM(:jenisUnit)) LIKE '%' || LOWER(TRIM(jenis_unit)) || '%'
         ORDER BY activityName ASC
     """)
     fun getActivitiesByJenisUnit(jenisUnit: String?): Flow<List<ActivityMasterEntity>>

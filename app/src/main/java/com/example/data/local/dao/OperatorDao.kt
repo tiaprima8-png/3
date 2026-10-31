@@ -43,6 +43,23 @@ interface OperatorDao {
     @Query("SELECT * FROM operators ORDER BY name ASC")
     fun getAllOperators(): Flow<List<OperatorEntity>>
 
+    @Query("SELECT * FROM operators WHERE LOWER(TRIM(status)) = 'aktif' OR LOWER(TRIM(status)) = 'active' ORDER BY name ASC")
+    suspend fun getAllActiveOperatorsList(): List<OperatorEntity>
+
+    @Query("""
+        SELECT * FROM operators
+        WHERE (LOWER(TRIM(status)) = 'aktif' OR LOWER(TRIM(status)) = 'active' OR status != 'Nonaktif')
+          AND (
+              LOWER(TRIM(badgeNumber)) = LOWER(TRIM(:nikOrName))
+              OR LOWER(TRIM(operatorId)) = LOWER(TRIM(:nikOrName))
+              OR LOWER(TRIM(REPLACE(badgeNumber, 'NIK-', ''))) = LOWER(TRIM(:nikOrName))
+              OR LOWER(TRIM(REPLACE(operatorId, 'OPR-', ''))) = LOWER(TRIM(:nikOrName))
+              OR LOWER(TRIM(name)) = LOWER(TRIM(:nikOrName))
+          )
+        LIMIT 1
+    """)
+    suspend fun findActiveOperatorByNikOrName(nikOrName: String): OperatorEntity?
+
     @Query("SELECT * FROM operators WHERE supervisorAssigned = :supervisor ORDER BY name ASC")
     fun getOperatorsForSupervisor(supervisor: String): Flow<List<OperatorEntity>>
 

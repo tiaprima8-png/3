@@ -71,13 +71,15 @@ import com.example.ui.theme.Slate900
 fun DistributionDialog(
     onDismiss: () -> Unit,
     currentApkUrl: String,
-    appVersionName: String = "1.4",
+    appVersionName: String = "1.7",
+    apkFileSize: String = "18.6 MB",
     onSaveApkLocally: () -> Unit,
     onShareWhatsApp: () -> Unit,
     onShareGeneral: () -> Unit,
     onInstallLocalApk: () -> Unit,
     onOpenInBrowser: (String) -> Unit,
-    onUpdateApkUrl: (String) -> Unit
+    onUpdateApkUrl: (String) -> Unit,
+    onCopyLink: ((String) -> Unit)? = null
 ) {
     var urlInput by remember { mutableStateOf(currentApkUrl) }
     var isEditingUrl by remember { mutableStateOf(false) }
@@ -183,7 +185,7 @@ fun DistributionDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Berkas: RKCE_Installer_v${appVersionName}.apk",
+                                text = "Berkas: RKCE_Installer_v${appVersionName}.apk ($apkFileSize)",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 12.sp,
                                 color = Emerald900
@@ -203,7 +205,7 @@ fun DistributionDialog(
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Unduh langsung installer APK v$appVersionName untuk instalasi atau pembaruan mandiri di HP pengawas lapangan tanpa melalui Play Store.",
+                            text = "Installer APK v$appVersionName mencakup Validasi Antrean Strict FIFO Backlog, Lock Card Tugas Lampau, Pewarisan Tanggal Kerja & Shift, Approval Realisasi, dan Sinkronisasi Cepat.",
                             fontSize = 11.5.sp,
                             color = Emerald800,
                             lineHeight = 16.sp
@@ -323,16 +325,28 @@ fun DistributionDialog(
                         fontWeight = FontWeight.Bold,
                         color = Slate700
                     )
-                    Text(
-                        text = if (isEditingUrl) "Batal Ubah" else "Ubah URL",
-                        fontSize = 11.sp,
-                        color = Emerald700,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { isEditingUrl = !isEditingUrl }
-                            .padding(4.dp)
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Salin Tautan",
+                            fontSize = 11.sp,
+                            color = Emerald700,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { onCopyLink?.invoke(currentApkUrl.ifEmpty { "https://1-portalce.ai.studio/download-apk" }) }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                        Text(
+                            text = if (isEditingUrl) "Batal" else "Ubah URL",
+                            fontSize = 11.sp,
+                            color = Slate600,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { isEditingUrl = !isEditingUrl }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

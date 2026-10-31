@@ -30,9 +30,8 @@ class OfflineSyncWorker(
         val repository = HeavyTrackRepository(database, apiClientManager)
 
         val pendingHasil = database.hasilInputAktivitasDao().getUnsyncedHasilList()
-        val pendingRencana = database.rencanaKerjaDao().getUnsyncedRencanaList()
 
-        if (pendingHasil.isEmpty() && pendingRencana.isEmpty()) {
+        if (pendingHasil.isEmpty()) {
             return Result.success()
         }
 

@@ -37,7 +37,7 @@ class ExampleUnitTest {
 
     @Test
     fun test_search_multi_criteria_activity_sap() {
-        val act = ActivityMasterEntity("ACT-SAP-101", "Galian Tanah Lunak", "m3")
+        val act = ActivityMasterEntity(sapCode = "ACT-SAP-101", activityName = "Galian Tanah Lunak", unitOfMeasure = "m3")
         assertTrue(act.activityName.contains("gali", ignoreCase = true))
         assertTrue(act.sapCode.contains("101", ignoreCase = true))
     }
@@ -50,7 +50,7 @@ class ExampleUnitTest {
 
         val spv2 = SupervisorDirectory.authenticate("Zainudin", "123")
         assertNotNull(spv2)
-        assertEquals("KASIE-ZAINUDIN", spv2?.nik)
+        assertEquals("zainudin", spv2?.nik)
     }
 
     @Test
@@ -982,8 +982,8 @@ class ExampleUnitTest {
         assertEquals("SUCCESS", masterOpResp.status)
         val allOperators = masterOpResp.data!!
 
-        // Total master operators in company is 45
-        assertEquals(45, allOperators.size)
+        // Total master operators in company is 35
+        assertEquals(35, allOperators.size)
 
         // Jahidi's Kasie parameters
         val kasieName = "Jahidi"
@@ -1250,11 +1250,11 @@ class ExampleUnitTest {
     @Test
     fun test_activity_filtering_all_categories_and_units() {
         val sampleActivities = listOf(
-            ActivityMasterEntity("ACT-01", "Grading Mainroad", "m", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Motor Grader"),
-            ActivityMasterEntity("ACT-02", "Standby Hujan", "jam", category = "STANDBY", kategoriStatus = "STANDBY", jenisUnit = "ALL"),
-            ActivityMasterEntity("ACT-03", "Breakdown Engine", "jam", category = "BREAKDOWN", kategoriStatus = "BREAKDOWN", jenisUnit = "ALL"),
-            ActivityMasterEntity("ACT-04", "Pengangkutan Material", "rit", category = "HAULING", kategoriStatus = "OPERASI", jenisUnit = "Dump Truck"),
-            ActivityMasterEntity("ACT-05", "Galian Tanah Lunak", "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Standar")
+            ActivityMasterEntity(sapCode = "ACT-01", activityName = "Grading Mainroad", unitOfMeasure = "m", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Motor Grader"),
+            ActivityMasterEntity(sapCode = "ACT-02", activityName = "Standby Hujan", unitOfMeasure = "jam", category = "STANDBY", kategoriStatus = "STANDBY", jenisUnit = "ALL"),
+            ActivityMasterEntity(sapCode = "ACT-03", activityName = "Breakdown Engine", unitOfMeasure = "jam", category = "BREAKDOWN", kategoriStatus = "BREAKDOWN", jenisUnit = "ALL"),
+            ActivityMasterEntity(sapCode = "ACT-04", activityName = "Pengangkutan Material", unitOfMeasure = "rit", category = "HAULING", kategoriStatus = "OPERASI", jenisUnit = "Dump Truck"),
+            ActivityMasterEntity(sapCode = "ACT-05", activityName = "Galian Tanah Lunak", unitOfMeasure = "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Standar")
         )
 
         // Motor Grader filtering: includes Motor Grader (OPERASI) + ALL (STANDBY, BREAKDOWN)
@@ -1286,24 +1286,24 @@ class ExampleUnitTest {
 
         // 75 Operasi Excavator Standar
         for (i in 1..75) {
-            list.add(ActivityMasterEntity("ACT-EXS-$i", "Galian Standar $i", "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Standar"))
+            list.add(ActivityMasterEntity(sapCode = "ACT-EXS-$i", activityName = "Galian Standar $i", unitOfMeasure = "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Standar"))
         }
         // 20 Operasi Excavator Mini
         for (i in 1..20) {
-            list.add(ActivityMasterEntity("ACT-EXM-$i", "Parit Mini $i", "m3", category = "INFRASTRUKTUR", kategoriStatus = "OPERASI", jenisUnit = "Excavator Mini"))
+            list.add(ActivityMasterEntity(sapCode = "ACT-EXM-$i", activityName = "Parit Mini $i", unitOfMeasure = "m3", category = "INFRASTRUKTUR", kategoriStatus = "OPERASI", jenisUnit = "Excavator Mini"))
         }
         // 20 Operasi Excavator Long Arm
         for (i in 1..20) {
-            list.add(ActivityMasterEntity("ACT-EXL-$i", "Slope Long Arm $i", "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Long Arm"))
+            list.add(ActivityMasterEntity(sapCode = "ACT-EXL-$i", activityName = "Slope Long Arm $i", unitOfMeasure = "m3", category = "PRODUKSI", kategoriStatus = "OPERASI", jenisUnit = "Excavator Long Arm"))
         }
         // 8 Standby & 2 Breakdown for Excavator Standar
         val standbyNames = listOf("Tunggu Operator", "Off Time", "Tunggu Mekanik", "Tunggu Sparepart", "Tunggu Solar", "Tunggu Cuaca", "Tunggu Trailer", "Tunggu Lokasi")
         standbyNames.forEachIndexed { idx, s ->
-            list.add(ActivityMasterEntity("ACT-STB-$idx", s, "H", category = "STANDBY", kategoriStatus = "STANDBY", jenisUnit = "Excavator Standar"))
+            list.add(ActivityMasterEntity(sapCode = "ACT-STB-$idx", activityName = s, unitOfMeasure = "H", category = "STANDBY", kategoriStatus = "STANDBY", jenisUnit = "Excavator Standar"))
         }
         val bdNames = listOf("Perbaikan Unit", "Perawatan Unit")
         bdNames.forEachIndexed { idx, b ->
-            list.add(ActivityMasterEntity("ACT-BDN-$idx", b, "H", category = "BREAKDOWN", kategoriStatus = "BREAKDOWN", jenisUnit = "Excavator Standar"))
+            list.add(ActivityMasterEntity(sapCode = "ACT-BDN-$idx", activityName = b, unitOfMeasure = "H", category = "BREAKDOWN", kategoriStatus = "BREAKDOWN", jenisUnit = "Excavator Standar"))
         }
 
         // Test ViewModel strict filtering logic for "Excavator Standar"
@@ -1329,6 +1329,139 @@ class ExampleUnitTest {
 
         assertFalse(hasMini)
         assertFalse(hasLongArm)
+    }
+
+    @Test
+    fun test_multi_plan_spk_unique_and_estafet_handover() {
+        val baseSpk = "SPK-20261030-5566"
+        val plan1 = com.example.data.local.entity.RencanaKerjaEntity(
+            id = 101L,
+            supervisorName = "Agung",
+            kodeUnit = "HEH0019",
+            operator = "Ahmad Fauzi",
+            kodeLokasi = "001A",
+            nomorSpk = "$baseSpk-1",
+            subIndex = 1,
+            parentSpk = baseSpk,
+            tanggalFormat = "2026-10-30",
+            shiftKerja = "SIANG",
+            isRealized = false
+        )
+        val plan2 = com.example.data.local.entity.RencanaKerjaEntity(
+            id = 102L,
+            supervisorName = "Agung",
+            kodeUnit = "HEH0019",
+            operator = "Ahmad Fauzi",
+            kodeLokasi = "001B",
+            nomorSpk = "$baseSpk-2",
+            subIndex = 2,
+            parentSpk = baseSpk,
+            tanggalFormat = "2026-10-30",
+            shiftKerja = "SIANG",
+            isRealized = false
+        )
+        val plan3 = com.example.data.local.entity.RencanaKerjaEntity(
+            id = 103L,
+            supervisorName = "Agung",
+            kodeUnit = "HEH0019",
+            operator = "Ahmad Fauzi",
+            kodeLokasi = "001C",
+            nomorSpk = "$baseSpk-3",
+            subIndex = 3,
+            parentSpk = baseSpk,
+            tanggalFormat = "2026-10-30",
+            shiftKerja = "SIANG",
+            isRealized = false
+        )
+
+        // 1. Verify SPK suffixes are distinct
+        assertEquals("SPK-20261030-5566-1", plan1.nomorSpk)
+        assertEquals("SPK-20261030-5566-2", plan2.nomorSpk)
+        assertEquals("SPK-20261030-5566-3", plan3.nomorSpk)
+        assertEquals(1, plan1.subIndex)
+        assertEquals(2, plan2.subIndex)
+        assertEquals(3, plan3.subIndex)
+
+        // 2. Dalam shift yang sama: Sub-rencana (#1, #2, #3) TIDAK SALING MENGUNCI
+        assertFalse(com.example.ui.viewmodel.isPriorTask(currentTask = plan2, otherTask = plan1))
+        assertFalse(com.example.ui.viewmodel.isPriorTask(currentTask = plan3, otherTask = plan2))
+        assertFalse(com.example.ui.viewmodel.isPriorTask(currentTask = plan1, otherTask = plan2))
+
+        // 3. Simulating realization of Plan #1 only: Plan #2 and #3 remain unrealized and ready
+        val updatedPlan1 = plan1.copy(isRealized = true, statusRealisasi = "SUDAH", statusTahap = "REALISASI_SELESAI")
+        assertTrue(updatedPlan1.isRealized)
+        assertFalse(plan2.isRealized)
+        assertFalse(plan3.isRealized)
+        assertEquals("BELUM", plan2.statusRealisasi)
+        assertEquals("BELUM", plan3.statusRealisasi)
+
+        // 4. In pending queue: neither plan2 nor plan3 are locked by each other within the same shift
+        val pendingQueue = listOf(plan1, plan2, plan3)
+        val blockingForPlan1 = pendingQueue.firstOrNull { other ->
+            other.kodeUnit.equals(plan1.kodeUnit, ignoreCase = true) &&
+            other.id != plan1.id &&
+            com.example.ui.viewmodel.isPriorTask(currentTask = plan1, otherTask = other)
+        }
+        val blockingForPlan2 = pendingQueue.firstOrNull { other ->
+            other.kodeUnit.equals(plan2.kodeUnit, ignoreCase = true) &&
+            other.id != plan2.id &&
+            com.example.ui.viewmodel.isPriorTask(currentTask = plan2, otherTask = other)
+        }
+        val blockingForPlan3 = pendingQueue.firstOrNull { other ->
+            other.kodeUnit.equals(plan3.kodeUnit, ignoreCase = true) &&
+            other.id != plan3.id &&
+            com.example.ui.viewmodel.isPriorTask(currentTask = plan3, otherTask = other)
+        }
+        assertNull(blockingForPlan1)
+        assertNull(blockingForPlan2)
+        assertNull(blockingForPlan3)
+    }
+
+    @Test
+    fun test_strict_fifo_shift_and_date_rules() {
+        // Shift weights
+        assertEquals(1, com.example.ui.viewmodel.getShiftWeight("SIANG"))
+        assertEquals(2, com.example.ui.viewmodel.getShiftWeight("MALAM"))
+        assertEquals(1, com.example.ui.viewmodel.getShiftWeight(""))
+
+        val backlogPlan = com.example.data.local.entity.RencanaKerjaEntity(
+            id = 201L,
+            supervisorName = "Agung",
+            kodeUnit = "HEH0019",
+            operator = "Ahmad Fauzi",
+            kodeLokasi = "001A",
+            tanggalFormat = "2026-10-29",
+            shiftKerja = "SIANG"
+        )
+        val todaySiangPlan = com.example.data.local.entity.RencanaKerjaEntity(
+            id = 202L,
+            supervisorName = "Agung",
+            kodeUnit = "HEH0019",
+            operator = "Ahmad Fauzi",
+            kodeLokasi = "001A",
+            tanggalFormat = "2026-10-30",
+            shiftKerja = "SIANG"
+        )
+        val todayMalamPlan = com.example.data.local.entity.RencanaKerjaEntity(
+            id = 203L,
+            supervisorName = "Agung",
+            kodeUnit = "HEH0019",
+            operator = "Ahmad Fauzi",
+            kodeLokasi = "001A",
+            tanggalFormat = "2026-10-30",
+            shiftKerja = "MALAM"
+        )
+
+        // Rule 1: Antar Tanggal: Tanggal lebih lampau wajib selesai terlebih dahulu
+        assertTrue(com.example.ui.viewmodel.isPriorTask(currentTask = todaySiangPlan, otherTask = backlogPlan))
+        assertFalse(com.example.ui.viewmodel.isPriorTask(currentTask = backlogPlan, otherTask = todaySiangPlan))
+
+        // Rule 2: Antar Shift pada hari yang sama: Shift SIANG mendahului Shift MALAM
+        assertTrue(com.example.ui.viewmodel.isPriorTask(currentTask = todayMalamPlan, otherTask = todaySiangPlan))
+        assertFalse(com.example.ui.viewmodel.isPriorTask(currentTask = todaySiangPlan, otherTask = todayMalamPlan))
+
+        // Same task does not lock itself
+        assertFalse(com.example.ui.viewmodel.isPriorTask(currentTask = todaySiangPlan, otherTask = todaySiangPlan))
     }
 }
 

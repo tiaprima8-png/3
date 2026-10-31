@@ -12,7 +12,8 @@ import java.util.UUID
         Index(value = ["unitCode"]),
         Index(value = ["supervisorName"]),
         Index(value = ["isSynced"]),
-        Index(value = ["reportDate"])
+        Index(value = ["reportDate"]),
+        Index(value = ["nomorSpk"], unique = true)
     ]
 )
 data class ActivityReportEntity(
@@ -29,7 +30,7 @@ data class ActivityReportEntity(
     val unitOfMeasure: String,           // e.g. "m3"
     val operatorName: String,            // Selected Operator e.g. "Ahmad Fauzi"
     val workLocation: String,            // e.g. "001A / Mainroad"
-    val wilayah: String = "Geodesi PG1",         // 8 Wilayah Kerja baru
+    val wilayah: String = "PG1",         // 8 Wilayah Kerja baru
     val shift: String,                   // "SIANG" or "MALAM"
     val workDurationHours: Double = 7.0, // Default 7.00 hours
     val hmAwal: Double,                  // Read-only from last HM
@@ -59,9 +60,12 @@ data class ActivityReportEntity(
     val approvedAt: String? = null,
     val isLocked: Boolean = false,
     val operatorNik: String? = null,
+    val nomorSpk: String = "SPK-AUTO-$clientUuid",
+    val idRencanaKerja: Long = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val syncedAt: Long? = null
 )
 
 typealias RealisasiEntity = ActivityReportEntity
+typealias MasterRealisasiEntity = ActivityReportEntity
 

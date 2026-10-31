@@ -42,28 +42,83 @@ interface ActivityReportDao {
                    OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
             )
         )
+        AND hmAkhir > 0
+        AND (hmDailyRunning > 0 OR hmAkhir > hmAwal OR workOutput > 0)
         ORDER BY createdAt DESC, id DESC
     """)
     fun getRealisasiForKasie(namaKasie: String, username: String): Flow<List<ActivityReportEntity>>
 
     @Query("""
         SELECT * FROM activity_reports 
-        WHERE LOWER(TRIM(operatorNik)) = LOWER(TRIM(:operatorIdentifier))
+        WHERE (
+            LOWER(TRIM(namaKasie)) = LOWER(TRIM(:kasieNama))
+            OR LOWER(TRIM(supervisorName)) = LOWER(TRIM(:kasieNama))
+            OR LOWER(TRIM(supervisorName)) = LOWER(TRIM(REPLACE(:kasieNama, '@', '')))
+            OR LOWER(TRIM(namaKasie)) = LOWER(TRIM(REPLACE(:kasieNama, '@', '')))
+        )
+        AND (
+            UPPER(TRIM(approvalStatus)) = 'MENUNGGU APPROVAL'
+            OR UPPER(TRIM(approvalStatus)) = 'MENUNGGU VERIFIKASI'
+            OR UPPER(TRIM(approvalStatus)) = 'PENDING'
+        )
+        AND isLocked = 0
+        AND hmAkhir > 0
+        AND (hmDailyRunning > 0 OR hmAkhir > hmAwal OR workOutput > 0)
+        ORDER BY createdAt DESC, id DESC
+    """)
+    fun getPendingVerificationForKasie(kasieNama: String): Flow<List<ActivityReportEntity>>
+
+    @Query("DELETE FROM activity_reports WHERE hmAkhir <= 0 OR (hmDailyRunning <= 0 AND hmAkhir <= hmAwal AND workOutput <= 0)")
+    suspend fun deleteInvalidEmptyReports(): Int
+
+    @Query("""
+        SELECT * FROM activity_reports 
+        WHERE LOWER(TRIM(COALESCE(operatorNik, ''))) = LOWER(TRIM(:operatorIdentifier))
            OR LOWER(TRIM(operatorName)) = LOWER(TRIM(:operatorIdentifier))
+           OR (TRIM(:operatorIdentifier) != '' AND LOWER(TRIM(operatorName)) LIKE '%' || LOWER(TRIM(:operatorIdentifier)) || '%')
            OR LOWER(TRIM(createdBy)) = LOWER(TRIM(REPLACE(:operatorIdentifier, '@', '')))
         ORDER BY createdAt DESC, id DESC
     """)
     fun getRealisasiForOperator(operatorIdentifier: String): Flow<List<ActivityReportEntity>>
 
     @Query("""
+        SELECT * FROM activity_reports 
+        WHERE LOWER(TRIM(operatorName)) = LOWER(TRIM(:namaOperator))
+           OR LOWER(TRIM(COALESCE(operatorNik, ''))) = LOWER(TRIM(:nikOperator))
+           OR LOWER(TRIM(operatorName)) = LOWER(TRIM(:nikOperator))
+           OR (TRIM(:namaOperator) != '' AND LOWER(TRIM(operatorName)) LIKE '%' || LOWER(TRIM(:namaOperator)) || '%')
+           OR LOWER(TRIM(createdBy)) = LOWER(TRIM(REPLACE(:nikOperator, '@', '')))
+        ORDER BY createdAt DESC, id DESC
+    """)
+    fun getRiwayatForOperator(namaOperator: String, nikOperator: String): Flow<List<ActivityReportEntity>>
+
+    @Query("""
         UPDATE activity_reports 
-        SET approval_status = 'Disetujui Kasie',
-            approved_by = :approvedBy,
-            approved_at = :approvedAt,
-            is_locked = 1
+        SET approvalStatus = 'Disetujui Kasie',
+            approvedBy = :approvedBy,
+            approvedAt = :approvedAt,
+            isLocked = 1
         WHERE id = :id
     """)
     suspend fun approveReport(id: Long, approvedBy: String, approvedAt: String = System.currentTimeMillis().toString())
+
+    @Query("""
+        UPDATE activity_reports 
+        SET approvalStatus = :status,
+            isLocked = :isLocked,
+            approvedBy = COALESCE(:approvedBy, approvedBy),
+            approvedAt = COALESCE(:approvedAt, approvedAt)
+        WHERE id = :id
+    """)
+    suspend fun updateApprovalStatus(
+        id: Long,
+        status: String = "Disetujui Kasie",
+        isLocked: Boolean = true,
+        approvedBy: String? = null,
+        approvedAt: String? = null
+    )
+
+
 
 
     @Query("""
@@ -96,8 +151,26 @@ interface ActivityReportDao {
     @Query("SELECT COUNT(*) FROM activity_reports WHERE isSynced = 0")
     fun getUnsyncedCount(): Flow<Int>
 
+    @Query("SELECT * FROM activity_reports ORDER BY id DESC")
+    fun getAllRealisasiFlow(): Flow<List<ActivityReportEntity>>
+
+    @Query("SELECT COALESCE(SUM(hmDailyRunning), 0.0) FROM activity_reports")
+    fun getTotalHmBerjalanFlow(): Flow<Double>
+
+    @Query("SELECT COUNT(DISTINCT nomorSpk) FROM activity_reports")
+    fun getTotalLaporanCountFlow(): Flow<Int>
+
     @Query("SELECT * FROM activity_reports WHERE clientUuid = :uuid LIMIT 1")
     suspend fun getReportByUuid(uuid: String): ActivityReportEntity?
+
+    @Query("SELECT * FROM activity_reports WHERE nomorSpk = :nomorSpk AND nomorSpk != '' AND nomorSpk != '-' AND nomorSpk != 'SPK Menyusul' LIMIT 1")
+    suspend fun getReportByNomorSpk(nomorSpk: String): ActivityReportEntity?
+
+    @Query("SELECT * FROM activity_reports WHERE idRencanaKerja = :rencanaId AND idRencanaKerja > 0 LIMIT 1")
+    suspend fun getReportByRencanaId(rencanaId: Long): ActivityReportEntity?
+
+    @Query("SELECT * FROM activity_reports WHERE id = :id LIMIT 1")
+    suspend fun getReportById(id: Long): ActivityReportEntity?
 
     @Query("SELECT * FROM activity_reports WHERE supervisorName = :supervisor AND unitCode = :unitCode AND hmAkhir = :hmAkhir LIMIT 1")
     suspend fun findExistingReport(supervisor: String, unitCode: String, hmAkhir: Double): ActivityReportEntity?
@@ -111,8 +184,14 @@ interface ActivityReportDao {
     @Update
     suspend fun updateReport(report: ActivityReportEntity)
 
+    @Query("UPDATE activity_reports SET reportDate = SUBSTR(reportDate, 7, 4) || '-' || SUBSTR(reportDate, 4, 2) || '-' || SUBSTR(reportDate, 1, 2) WHERE reportDate LIKE '__/__/____'")
+    suspend fun normalizeDatesInDatabase(): Int
+
     @Query("UPDATE activity_reports SET isSynced = 1, syncedAt = :timestamp WHERE id = :reportId")
     suspend fun markReportAsSynced(reportId: Long, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE activity_reports SET isSynced = 0 WHERE id = :reportId")
+    suspend fun markReportAsUnsynced(reportId: Long)
 
     @Query("UPDATE activity_reports SET isSynced = 1, syncedAt = :timestamp WHERE unitCode = :unitCode AND hmAkhir = :hmAkhir AND supervisorName = :supervisor")
     suspend fun markReportAsSyncedByUnitAndHm(unitCode: String, hmAkhir: Double, supervisor: String, timestamp: Long = System.currentTimeMillis())

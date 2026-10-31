@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.heavytrack.dzcdeh"
     minSdk = 24
     targetSdk = 36
-    versionCode = 5
-    versionName = "1.4"
+    versionCode = 8
+    versionName = "1.7"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

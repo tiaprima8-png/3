@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -33,8 +34,11 @@ import com.example.data.remote.UnitPayload
 import com.example.data.repository.HeavyTrackRepository
 import com.example.data.repository.SyncLogItem
 import com.example.data.remote.RealtimeSocketManager
+import com.example.data.remote.RealtimeRealisasiData
+import com.example.data.remote.PostActivityReportRequest
 import com.example.util.ImageCompressor
 import com.example.util.NotificationHelper
+import com.example.ui.screens.formatTanggalIndonesia
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -88,6 +92,72 @@ data class FormUiState(
     val isSubmitting: Boolean = false,
     val formError: String? = null
 )
+
+fun normalizeDateToIso(dateStr: String): String {
+    val clean = dateStr.trim()
+    if (clean.isBlank()) return "0000-00-00"
+    if (clean.contains("/")) {
+        val parts = clean.split("/")
+        if (parts.size == 3) {
+            val d = parts[0].padStart(2, '0')
+            val m = parts[1].padStart(2, '0')
+            val y = parts[2]
+            return "$y-$m-$d"
+        }
+    }
+    return clean
+}
+
+// Bobot Shift: SIANG = 1, MALAM = 2
+fun getShiftWeight(shift: String?): Int {
+    return if (shift?.equals("MALAM", ignoreCase = true) == true) 2 else 1
+}
+
+/**
+ * Cek apakah tugas lain (otherTask) mendahului tugas saat ini (currentTask) untuk unit yang sama.
+ * Aturan Strict FIFO:
+ * 1. Antar Tanggal: Tanggal lebih lampau wajib selesai terlebih dahulu.
+ * 2. Antar Shift pada hari yang sama: Shift SIANG wajib selesai sebelum Shift MALAM bisa dibuka.
+ * 3. Dalam Shift yang sama: Sub-rencana (#1, #2, #3) TIDAK BOLEH saling mengunci (bebas diinput mana saja).
+ */
+fun isPriorTask(currentTask: RencanaKerjaEntity, otherTask: RencanaKerjaEntity): Boolean {
+    if (currentTask.id == otherTask.id && currentTask.id > 0) return false
+    val currentDate = normalizeDateToIso(currentTask.tanggalFormat)
+    val otherDate = normalizeDateToIso(otherTask.tanggalFormat)
+
+    // 1. Antar Tanggal: jika tanggal tugas lain lebih lampau, maka tugas lain mendahului
+    if (otherDate < currentDate) return true
+
+    // 2. Pada Tanggal yang Sama:
+    if (otherDate == currentDate) {
+        val currentShiftWeight = getShiftWeight(currentTask.shiftKerja)
+        val otherShiftWeight = getShiftWeight(otherTask.shiftKerja)
+
+        // Shift SIANG mendahului Shift MALAM
+        if (otherShiftWeight < currentShiftWeight) {
+            return true
+        }
+
+        // 3. Dalam shift yang sama: TIDAK ADA yang mendahului (bebas dipilih / tidak saling mengunci)
+        return false
+    }
+
+    return false
+}
+
+fun isTaskOlder(task1: RencanaKerjaEntity, task2: RencanaKerjaEntity): Boolean {
+    // task1 mendahului task2
+    return isPriorTask(currentTask = task2, otherTask = task1)
+}
+
+fun sortRencanaChrono(list: List<RencanaKerjaEntity>): List<RencanaKerjaEntity> {
+    return list.sortedWith(
+        compareBy<RencanaKerjaEntity> { normalizeDateToIso(it.tanggalFormat) }
+            .thenBy { getShiftWeight(it.shiftKerja) }
+            .thenBy { it.subIndex }
+            .thenBy { it.id }
+    )
+}
 
 sealed interface UiMessage {
     data class Success(val message: String) : UiMessage
@@ -161,9 +231,18 @@ class HeavyTrackViewModel(
         .map { it?.isSuperAdmin == true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val isOperatorSession: StateFlow<Boolean> = _currentSupervisorSession
+        .map { it?.isOperator == true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val isKasieSession: StateFlow<Boolean> = _currentSupervisorSession
+        .map { it != null && it.isKasie && !it.isOperator }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val userRole: StateFlow<String> = _currentSupervisorSession
         .map { it?.role ?: "KASIE" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "KASIE")
+
 
     // Base URL configuration for Web Admin (Internalized)
     val apiBaseUrl: String = INTERNAL_WEB_ADMIN_URL
@@ -277,7 +356,7 @@ class HeavyTrackViewModel(
     val kendalaList: StateFlow<List<KendalaEntity>> = repository.getAllKendala()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Reports list (historical) - strictly isolated per Kasie
+    // Reports list (historical) - strictly isolated per Kasie or per Operator
     val reports: StateFlow<List<ActivityReportEntity>> = combine(
         _currentSupervisorSession,
         _activeSupervisor,
@@ -287,13 +366,28 @@ class HeavyTrackViewModel(
     }.flatMapLatest { (session, supervisor, kasieUnits) ->
         if (session?.isManager == true || session?.isSuperAdmin == true) {
             repository.getAllReports()
+        } else if (session?.isOperator == true) {
+            val opName = session.resolvedNamaLengkap
+            val opUser = session.username
+            val opNik = session.nik
+            combine(
+                repository.getRealisasiForOperator(opName),
+                repository.getRealisasiForOperator(opUser),
+                repository.getRealisasiForOperator(opNik)
+            ) { byName, byUser, byNik ->
+                (byName + byUser + byNik).distinctBy { it.id }.sortedByDescending { it.createdAt }
+            }
         } else {
             val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
             val username = session?.username?.ifBlank { kasieName } ?: kasieName
             val ownedUnitCodes = kasieUnits.map { it.unitCode.uppercase() }.toSet()
             repository.getRealisasiForKasie(kasieName, username).map { list ->
                 if (ownedUnitCodes.isEmpty()) list
-                else list.filter { ownedUnitCodes.contains(it.unitCode.uppercase()) }
+                else list.filter { 
+                    it.namaKasie.equals(kasieName, ignoreCase = true) ||
+                    it.supervisorName.equals(kasieName, ignoreCase = true) ||
+                    ownedUnitCodes.contains(it.unitCode.uppercase())
+                }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -305,7 +399,7 @@ class HeavyTrackViewModel(
     val allRencanaGlobal: StateFlow<List<RencanaKerjaEntity>> = repository.getAllRencana()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Hasil Realisasi list - strictly isolated per Kasie
+    // Hasil Realisasi list - strictly isolated per Kasie or per Operator
     val hasilAktivitasList: StateFlow<List<HasilInputAktivitasEntity>> = combine(
         _currentSupervisorSession,
         _activeSupervisor,
@@ -315,18 +409,33 @@ class HeavyTrackViewModel(
     }.flatMapLatest { (session, supervisor, kasieUnits) ->
         if (session?.isManager == true || session?.isSuperAdmin == true) {
             repository.getAllHasil()
+        } else if (session?.isOperator == true) {
+            val opName = session.resolvedNamaLengkap
+            val opUser = session.username
+            val opNik = session.nik
+            combine(
+                repository.getHasilForOperator(opName),
+                repository.getHasilForOperator(opUser),
+                repository.getHasilForOperator(opNik)
+            ) { byName, byUser, byNik ->
+                (byName + byUser + byNik).distinctBy { it.id }.sortedByDescending { it.createdAt }
+            }
         } else {
             val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
             val username = session?.username?.ifBlank { kasieName } ?: kasieName
             val ownedUnitCodes = kasieUnits.map { it.unitCode.uppercase() }.toSet()
             repository.getHasilForKasie(kasieName, username).map { list ->
                 if (ownedUnitCodes.isEmpty()) list
-                else list.filter { ownedUnitCodes.contains(it.kodeUnit.uppercase()) }
+                else list.filter { 
+                    it.namaKasie.equals(kasieName, ignoreCase = true) ||
+                    it.supervisorName.equals(kasieName, ignoreCase = true) ||
+                    ownedUnitCodes.contains(it.kodeUnit.uppercase())
+                }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Active Rencana Kerja (shift today / active and NOT yet realized) - strictly isolated per Kasie & owned units
+    // Active Rencana Kerja (shift today / active and NOT yet realized) - strictly isolated per Kasie or Operator
     val activeRencanaList: StateFlow<List<RencanaKerjaEntity>> = combine(
         _currentSupervisorSession,
         _activeSupervisor,
@@ -335,14 +444,32 @@ class HeavyTrackViewModel(
         Triple(session, supervisor, kasieUnits)
     }.flatMapLatest { (session, supervisor, kasieUnits) ->
         if (session?.isManager == true || session?.isSuperAdmin == true) {
-            repository.getActiveRencanaForSupervisor("Semua")
+            repository.getActiveRencanaForSupervisor("Semua").map { list ->
+                sortRencanaChrono(list)
+            }
+        } else if (session?.isOperator == true) {
+            val opName = session.resolvedNamaLengkap
+            val opUser = session.username
+            val opNik = session.nik
+            combine(
+                repository.getRencanaForOperator(opName),
+                repository.getRencanaForOperator(opUser),
+                repository.getRencanaForOperator(opNik)
+            ) { byName, byUser, byNik ->
+                sortRencanaChrono((byName + byUser + byNik).distinctBy { it.id })
+            }
         } else {
             val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
             val username = session?.username?.ifBlank { kasieName } ?: kasieName
             val ownedUnitCodes = kasieUnits.map { it.unitCode.uppercase() }.toSet()
             repository.getRencanaKerjaForKasie(kasieName, username).map { list ->
-                if (ownedUnitCodes.isEmpty()) list
-                else list.filter { ownedUnitCodes.contains(it.kodeUnit.uppercase()) }
+                val filtered = if (ownedUnitCodes.isEmpty()) list
+                else list.filter { 
+                    it.kasie.equals(kasieName, ignoreCase = true) ||
+                    it.supervisorName.equals(kasieName, ignoreCase = true) ||
+                    ownedUnitCodes.contains(it.kodeUnit.uppercase())
+                }
+                sortRencanaChrono(filtered)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -356,6 +483,15 @@ class HeavyTrackViewModel(
     }.flatMapLatest { (session, supervisor, kasieUnits) ->
         if (session?.isManager == true || session?.isSuperAdmin == true) {
             repository.getAllRencana()
+        } else if (session?.isOperator == true) {
+            val opName = session.resolvedNamaLengkap
+            val opUser = session.username
+            combine(
+                repository.getAllRencanaForOperator(opName),
+                repository.getAllRencanaForOperator(opUser)
+            ) { byName, byUser ->
+                (byName + byUser).distinctBy { it.id }.sortedByDescending { it.createdAt }
+            }
         } else {
             val kasieName = session?.namaLengkap?.ifBlank { session.name } ?: supervisor
             val username = session?.username?.ifBlank { kasieName } ?: kasieName
@@ -367,67 +503,92 @@ class HeavyTrackViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+
     val allDrafts: StateFlow<List<com.example.data.local.entity.DraftRealisasiEntity>> = repository.getAllDrafts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Selector Unit: Status informatif 3 Kasus (Kasus A: Backlog Kemarin, Kasus B: Belum Ada Rencana Hari Ini, Kasus C: Sudah Ada Rencana Hari Ini / Tambah Susulan)
     val availableUnitsForRencana: StateFlow<List<UnitPlanStatus>> = combine(
         units,
-        allRencanaList
-    ) { unitList, rencanaList ->
+        allRencanaList,
+        hasilAktivitasList,
+        reports
+    ) { unitList, rencanaList, hasilList, reportList ->
         val nowMs = System.currentTimeMillis()
         val oneDayMs = 24 * 60 * 60 * 1000L
-        val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(nowMs))
-        val yesterdayStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(nowMs - oneDayMs))
-        val twoDaysAgoStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(nowMs - 2 * oneDayMs))
+        val sdfIso = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val todayIso = sdfIso.format(Date(nowMs))
+        val yesterdayIso = sdfIso.format(Date(nowMs - oneDayMs))
+        val twoDaysAgoIso = sdfIso.format(Date(nowMs - 2 * oneDayMs))
+
+        val todayDisplay = formatTanggalIndonesia(todayIso)
+        val yesterdayDisplay = formatTanggalIndonesia(yesterdayIso)
+        val twoDaysAgoDisplay = formatTanggalIndonesia(twoDaysAgoIso)
 
         unitList.map { u ->
-            // Rencana kerja unit untuk H-2, H-1 (Kemarin), & Hari Ini
-            val plansTwoDaysAgo = rencanaList.filter {
-                it.kodeUnit.equals(u.unitCode, ignoreCase = true) &&
-                it.tanggalFormat == twoDaysAgoStr
-            }
-            val plansYesterday = rencanaList.filter {
-                it.kodeUnit.equals(u.unitCode, ignoreCase = true) &&
-                it.tanggalFormat == yesterdayStr
-            }
+            val code = u.unitCode.trim()
+
+            val completedDatesFromHasil = hasilList
+                .filter { it.kodeUnit.equals(code, ignoreCase = true) }
+                .map { normalizeDateToIso(it.tanggalFormat) }
+            val completedDatesFromReports = reportList
+                .filter { it.unitCode.equals(code, ignoreCase = true) }
+                .map { normalizeDateToIso(it.reportDate) }
+            val completedDatesFromRencana = rencanaList
+                .filter { r ->
+                    r.kodeUnit.equals(code, ignoreCase = true) &&
+                    (r.isRealized ||
+                     r.statusRealisasi.equals("SUDAH", ignoreCase = true) ||
+                     r.statusRealisasi.equals("TEREALISASI", ignoreCase = true) ||
+                     r.statusRealisasi.contains("APPROVED", ignoreCase = true) ||
+                     r.statusTahap.equals("REALISASI_SELESAI", ignoreCase = true))
+                }
+                .map { normalizeDateToIso(it.tanggalFormat) }
+
+            val completedDates = (completedDatesFromHasil + completedDatesFromReports + completedDatesFromRencana)
+                .filter { it.isNotBlank() }
+                .toSet()
+
             val plansToday = rencanaList.filter {
-                it.kodeUnit.equals(u.unitCode, ignoreCase = true) &&
-                it.tanggalFormat == todayStr
+                it.kodeUnit.equals(code, ignoreCase = true) &&
+                normalizeDateToIso(it.tanggalFormat) == todayIso
             }
 
+            val isTwoDaysAgoDone = completedDates.contains(twoDaysAgoIso)
+            val isYesterdayDone = completedDates.contains(yesterdayIso)
+
             when {
-                plansTwoDaysAgo.isEmpty() -> {
+                !isTwoDaysAgoDone -> {
                     // Kasus A1 (Backlog H-2): Wajib diisi terlebih dahulu
                     UnitPlanStatus(
                         unit = u,
-                        targetDate = twoDaysAgoStr,
+                        targetDate = twoDaysAgoIso,
                         isBacklog = true,
                         isSusulan = false,
                         existingPlanCount = plansToday.size,
-                        labelText = "${u.unitCode} [H-2 ($twoDaysAgoStr): Belum Diisi]"
+                        labelText = "${u.unitCode} [H-2 ($twoDaysAgoDisplay): Belum Diisi]"
                     )
                 }
-                plansYesterday.isEmpty() -> {
+                !isYesterdayDone -> {
                     // Kasus A2 (Backlog H-1 Kemarin): Wajib diisi
                     UnitPlanStatus(
                         unit = u,
-                        targetDate = yesterdayStr,
+                        targetDate = yesterdayIso,
                         isBacklog = true,
                         isSusulan = false,
                         existingPlanCount = plansToday.size,
-                        labelText = "${u.unitCode} [H-1 ($yesterdayStr): Belum Diisi]"
+                        labelText = "${u.unitCode} [H-1 ($yesterdayDisplay): Belum Diisi]"
                     )
                 }
                 plansToday.isEmpty() -> {
-                    // Kasus B (Belum Ada Rencana Hari Ini)
+                    // Kasus B (Belum Ada Rencana Hari Ini - Tertib & Siap Hari Ini)
                     UnitPlanStatus(
                         unit = u,
-                        targetDate = todayStr,
+                        targetDate = todayIso,
                         isBacklog = false,
                         isSusulan = false,
                         existingPlanCount = 0,
-                        labelText = "${u.unitCode} [Hari Ini ($todayStr): Belum Ada Rencana]"
+                        labelText = "${u.unitCode} [Tertib • Siap Hari Ini]"
                     )
                 }
                 else -> {
@@ -435,7 +596,7 @@ class HeavyTrackViewModel(
                     val count = plansToday.size
                     UnitPlanStatus(
                         unit = u,
-                        targetDate = todayStr,
+                        targetDate = todayIso,
                         isBacklog = false,
                         isSusulan = true,
                         existingPlanCount = count,
@@ -446,7 +607,7 @@ class HeavyTrackViewModel(
         }.sortedWith(
             compareBy<UnitPlanStatus> {
                 when {
-                    it.isBacklog && it.targetDate == twoDaysAgoStr -> 0 // Prioritas 1: Backlog H-2 (Paling lama)
+                    it.isBacklog && it.targetDate == twoDaysAgoIso -> 0 // Prioritas 1: Backlog H-2
                     it.isBacklog -> 1 // Prioritas 2: Backlog H-1
                     !it.isSusulan -> 2 // Prioritas 3: Hari ini baru
                     else -> 3 // Prioritas 4: Hari ini susulan
@@ -654,12 +815,14 @@ class HeavyTrackViewModel(
                         roleTitle = savedSession.roleTitle,
                         role = savedSession.role,
                         wilayah = savedSession.wilayah ?: if (savedSession.isExecutive) "Semua Wilayah" else "Geodesi PG1",
+                        kasieAtasan = savedSession.kasieAtasan ?: "",
                         token = savedSession.token,
                         status = savedSession.status
                     )
                     _currentSupervisorSession.value = spv
-                    _activeSupervisor.value = spv.name
+                    _activeSupervisor.value = if (spv.isOperator && spv.kasieAtasan.isNotBlank()) spv.kasieAtasan else spv.name
                     _isLoggedIn.value = true
+
                 } else {
                     _currentSupervisorSession.value = null
                     _activeSupervisor.value = ""
@@ -717,6 +880,20 @@ class HeavyTrackViewModel(
             }
         }
 
+        // 3c. Listener event realisasi operator baru (Socket.IO & Native WS)
+        viewModelScope.launch {
+            realtimeSocketManager.realisasiCreatedEvents.collect { event ->
+                handleIncomingRealisasi(event)
+            }
+        }
+
+        // 3d. Listener event realisasi operator dari backend simulator
+        viewModelScope.launch {
+            CompanyServerSimulator.realisasiCreatedEventFlow.collect { event ->
+                handleIncomingRealisasi(event)
+            }
+        }
+
         // 4. Polling background berkala untuk memastikan data SPK tetap mutakhir jika WebSocket reconnecting
         viewModelScope.launch {
             while (true) {
@@ -760,22 +937,21 @@ class HeavyTrackViewModel(
 
             val effectiveStatus = if (statusSpk.isBlank() || statusSpk.equals("MENUNGGU_SPK", ignoreCase = true)) "SPK_TERBIT" else statusSpk
 
-            // 1. Update ke SQLite lokal / Room untuk Unit dan ID
+            // 1. Update ke SQLite lokal / Room untuk ID (dan fallback unit hanya jika rencanaId <= 0)
             withContext(Dispatchers.IO) {
-                if (cleanUnit.isNotBlank()) {
-                    repository.updateSpkForActiveUnit(cleanUnit, cleanSpk, effectiveStatus)
-                    repository.updateSpkStatus(cleanUnit, cleanSpk, effectiveStatus)
-                }
                 if (rencanaId > 0) {
                     repository.updateRencanaSpk(rencanaId, cleanSpk, effectiveStatus)
+                } else if (cleanUnit.isNotBlank()) {
+                    repository.updateSpkForActiveUnit(cleanUnit, cleanSpk, effectiveStatus)
+                    repository.updateSpkStatus(cleanUnit, cleanSpk, effectiveStatus)
                 }
             }
 
             // 2. Perbarui state form input nomor SPK jika rencana yang sedang dipilih cocok
             val cur = _realisasiFormState.value.selectedRencana
             val isCurrentMatch = cur != null && (
-                (cleanUnit.isNotBlank() && cur.kodeUnit.equals(cleanUnit, ignoreCase = true)) ||
-                (rencanaId > 0 && cur.id == rencanaId)
+                (rencanaId > 0 && cur.id == rencanaId) ||
+                (rencanaId <= 0 && cleanUnit.isNotBlank() && cur.kodeUnit.equals(cleanUnit, ignoreCase = true))
             )
 
             if (isCurrentMatch && cur != null) {
@@ -850,6 +1026,59 @@ class HeavyTrackViewModel(
         }
     }
 
+    fun handleIncomingRealisasi(relData: RealtimeRealisasiData) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (relData.hmAkhir <= 0.0 || (relData.totalHm <= 0.0 && relData.hmAkhir <= relData.hmAwal)) {
+                return@launch
+            }
+            val session = _currentSupervisorSession.value
+            val kasieName = session?.resolvedNamaLengkap?.ifBlank { _activeSupervisor.value } ?: _activeSupervisor.value
+            val matchesKasie = kasieName.isBlank() ||
+                    relData.kasie.isBlank() ||
+                    relData.kasie.equals(kasieName, ignoreCase = true) ||
+                    relData.kasie.contains(kasieName, ignoreCase = true) ||
+                    kasieName.contains(relData.kasie, ignoreCase = true)
+
+            if (matchesKasie) {
+                val saved = repository.saveIncomingRealisasi(relData)
+                if (saved != null) {
+                    withContext(Dispatchers.Main) {
+                        _uiEvents.emit(UiMessage.Info("Realisasi baru diterima dari Operator ${relData.operator} (${relData.unitKode})"))
+                    }
+                }
+            }
+        }
+    }
+
+    fun handleIncomingRealisasi(req: PostActivityReportRequest) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val hmAwal = req.hm_awal ?: 0.0
+            val hmAkhir = req.hm_akhir ?: 0.0
+            val totalHm = req.hm_harian_berjalan ?: (if (hmAkhir > hmAwal) hmAkhir - hmAwal else 0.0)
+            val hasilKerja = req.hasil_kerja ?: 0.0
+            if (hmAkhir <= 0.0 || (totalHm <= 0.0 && hmAkhir <= hmAwal && hasilKerja <= 0.0)) {
+                return@launch
+            }
+            val session = _currentSupervisorSession.value
+            val kasieName = session?.resolvedNamaLengkap?.ifBlank { _activeSupervisor.value } ?: _activeSupervisor.value
+            val reqKasie = req.nama_pengawas ?: req.supervisor_name ?: ""
+            val matchesKasie = kasieName.isBlank() ||
+                    reqKasie.isBlank() ||
+                    reqKasie.equals(kasieName, ignoreCase = true) ||
+                    reqKasie.contains(kasieName, ignoreCase = true) ||
+                    kasieName.contains(reqKasie, ignoreCase = true)
+
+            if (matchesKasie) {
+                val saved = repository.saveIncomingRealisasi(req)
+                if (saved != null) {
+                    withContext(Dispatchers.Main) {
+                        _uiEvents.emit(UiMessage.Info("Realisasi baru diterima dari Operator ${req.nama_operator ?: ""} (${req.kode_unit ?: ""})"))
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         realtimeSocketManager.disconnect()
@@ -857,6 +1086,10 @@ class HeavyTrackViewModel(
 
     fun syncActivePlansFromServer(onDone: ((List<RencanaKerjaEntity>) -> Unit)? = null) {
         viewModelScope.launch(Dispatchers.IO) {
+            val kasieName = _currentSupervisorSession.value?.resolvedNamaLengkap?.ifBlank { _activeSupervisor.value } ?: _activeSupervisor.value
+            if (isKasieSession.value && kasieName.isNotBlank()) {
+                repository.fetchPendingRealisasiForKasie(kasieName)
+            }
             val pullResult = repository.fetchAndReplaceActiveRencana(_activeSupervisor.value)
             pullResult.onSuccess { (newPlans, _) ->
                 withContext(Dispatchers.Main) {
@@ -897,7 +1130,11 @@ class HeavyTrackViewModel(
     // ==========================================
     fun login(supervisor: Supervisor) {
         _currentSupervisorSession.value = supervisor
-        _activeSupervisor.value = supervisor.name
+        _activeSupervisor.value = if (supervisor.isOperator && supervisor.kasieAtasan.isNotBlank()) {
+            supervisor.kasieAtasan
+        } else {
+            supervisor.name
+        }
         _isLoggedIn.value = true
         _rencanaFormState.value = _rencanaFormState.value.copy(
             shiftKerja = supervisor.defaultShift
@@ -906,16 +1143,19 @@ class HeavyTrackViewModel(
         clearSelectedRencanaForRealisasi()
 
         // Simpan sesi dan role pengguna ke Room SQLite & DataStore Preferences
+        val cleanUsername = supervisor.username.ifBlank { supervisor.nik.ifBlank { supervisor.name } }
         val userEntity = UserEntity(
-            username = supervisor.username.ifBlank { supervisor.nik.ifBlank { supervisor.name } },
+            username = cleanUsername,
+            password = supervisor.passwordPin.ifBlank { cleanUsername },
             id = supervisor.userId,
             token = supervisor.token,
             name = supervisor.name,
             namaLengkap = supervisor.resolvedNamaLengkap,
-            nik = supervisor.nik,
-            role = supervisor.role, // "KASIE" | "MANAGER" | "SUPER ADMIN"
+            nik = supervisor.nik.ifBlank { cleanUsername },
+            role = if (supervisor.isOperator) "operator" else if (supervisor.isKasie) "kasie" else supervisor.role,
             roleTitle = supervisor.roleTitle,
             wilayah = supervisor.wilayah,
+            kasieAtasan = supervisor.kasieAtasan,
             status = supervisor.status,
             defaultShift = supervisor.defaultShift,
             assignedSector = supervisor.assignedSector,
@@ -936,6 +1176,10 @@ class HeavyTrackViewModel(
                 supervisor.isManager -> {
                     _uiEvents.emit(UiMessage.Success("Selamat datang, Manager ${supervisor.resolvedNamaLengkap}"))
                 }
+                supervisor.isOperator -> {
+                    val kasieLabel = supervisor.kasieAtasan.ifBlank { "Kasie Lapangan" }
+                    _uiEvents.emit(UiMessage.Success("Selamat bertugas, Operator ${supervisor.resolvedNamaLengkap} • Kasie: $kasieLabel"))
+                }
                 else -> {
                     _uiEvents.emit(UiMessage.Success("Selamat bertugas, Kasie ${supervisor.resolvedNamaLengkap} • ${supervisor.wilayah}"))
                 }
@@ -943,6 +1187,10 @@ class HeavyTrackViewModel(
             // Mekanisme Sinkronisasi Bersih: Kosongkan tabel rencana kerja lama saat login
             repository.clearAllRencanaKerja()
             fetchBootstrapData(showOverlay = true)
+            if (supervisor.isOperator) {
+                val opIdentifier = supervisor.nik.ifBlank { supervisor.username.ifBlank { supervisor.resolvedNamaLengkap } }
+                repository.refreshTugasOperatorFromServer(opIdentifier)
+            }
             syncPendingReports()
         }
     }
@@ -952,9 +1200,9 @@ class HeavyTrackViewModel(
         when (result) {
             is com.example.data.remote.LoginResult.Success -> {
                 val userDto = result.user
-                if (!userDto.isKasie) {
+                if (userDto.isExecutive) {
                     return com.example.data.remote.LoginResult.Error(
-                        "Akses Ditolak: Akun Super Admin & Manager hanya dapat digunakan pada Website Portal Admin (https://1-portalce.ai.studio/). Aplikasi mobile RKCE ini khusus untuk Kasie Lapangan."
+                        "Akses Ditolak: Akun Super Admin & Manager hanya dapat digunakan pada Website Portal Admin (https://1-portalce.ai.studio/). Aplikasi mobile RKCE ini khusus untuk Kasie & Operator Lapangan."
                     )
                 }
                 if (!userDto.isAktif) {
@@ -963,19 +1211,21 @@ class HeavyTrackViewModel(
                     )
                 }
 
+                val isOp = userDto.isOperator
                 val supervisor = Supervisor(
                     id = userDto.numericOrStringId,
                     name = userDto.resolvedNamaLengkap,
                     namaLengkap = userDto.resolvedNamaLengkap,
-                    username = userDto.username ?: username,
-                    nik = userDto.username ?: username,
-                    passwordPin = pin,
+                    username = userDto.username ?: username.trim(),
+                    nik = userDto.username ?: username.trim(),
+                    passwordPin = pin.trim(),
                     defaultShift = "SIANG",
-                    assignedSector = "Sektor Operasional Lapangan (${userDto.wilayah ?: "Geodesi PG1"})",
+                    assignedSector = if (isOp) "Operator Alat Berat (${userDto.wilayah ?: "Geodesi PG1"})" else "Sektor Operasional Lapangan (${userDto.wilayah ?: "Geodesi PG1"})",
                     phone = "+62 812-0000-0000",
-                    roleTitle = "Kasie Lapangan",
-                    role = "KASIE",
+                    roleTitle = if (isOp) "Operator Alat Berat" else "Kasie Lapangan",
+                    role = if (isOp) "operator" else "kasie",
                     wilayah = userDto.wilayah ?: "Geodesi PG1",
+                    kasieAtasan = userDto.resolvedKasieAtasan,
                     token = result.token,
                     status = userDto.status ?: "Aktif"
                 )
@@ -998,12 +1248,13 @@ class HeavyTrackViewModel(
         val trimmedUser = username.trim().removePrefix("@").trim()
         val trimmedPin = pin.trim()
         val (matched, _) = SupervisorDirectory.authenticateKasie(trimmedUser, trimmedPin)
-        if (matched != null && matched.isKasie && matched.isAktif) {
+        if (matched != null && (matched.isKasie || matched.isOperator) && matched.isAktif) {
             login(matched)
             return true
         }
         return false
     }
+
 
     fun syncMasterUsers(silent: Boolean = false) {
         viewModelScope.launch {
@@ -1050,6 +1301,7 @@ class HeavyTrackViewModel(
         viewModelScope.launch {
             try {
                 repository.clearUserSession()
+                repository.clearAllRencanaKerja()
             } catch (_: Exception) {}
             _uiEvents.emit(UiMessage.Info("Anda telah keluar dari sesi aplikasi"))
             // Tarik ulang user terbaru saat kembali ke halaman login
@@ -1090,6 +1342,10 @@ class HeavyTrackViewModel(
             val currentSupervisor = _activeSupervisor.value
 
             val result = repository.fetchBootstrapData(currentSupervisor, todayStr)
+            val session = _currentSupervisorSession.value
+            val kasieName = session?.resolvedNamaLengkap?.ifBlank { currentSupervisor } ?: currentSupervisor
+            repository.fetchAndReplaceActiveRencana(currentSupervisor)
+            repository.fetchPendingRealisasiForKasie(kasieName)
             _isSyncingMaster.value = false
             if (showOverlay) {
                 _isBootstrapping.value = false
@@ -1117,12 +1373,44 @@ class HeavyTrackViewModel(
             }
 
             val result = repository.fetchBootstrapData(currentSupervisor, nowMs)
+            val session = _currentSupervisorSession.value
+            val kasieName = session?.resolvedNamaLengkap?.ifBlank { currentSupervisor } ?: currentSupervisor
+            repository.fetchAndReplaceActiveRencana(currentSupervisor)
+            repository.fetchPendingRealisasiForKasie(kasieName)
             _isSyncingMaster.value = false
 
             result.onSuccess { summary ->
                 _uiEvents.emit(UiMessage.Success("Data aplikasi berhasil disinkronkan."))
             }.onFailure { err ->
                 _uiEvents.emit(UiMessage.Error("Gagal terhubung ke Web Admin. Periksa koneksi internet."))
+            }
+        }
+    }
+
+    /**
+     * RESET PAKSA CACHE TRANSAKSI LOKAL KE 0
+     * Membersihkan seluruh tabel rencana_kerja dan realisasi lokal agar cerminannya bersih 0.
+     */
+    fun resetLocalTransactionData(context: Context? = null) {
+        viewModelScope.launch {
+            _isSyncingMaster.value = true
+            try {
+                repository.resetLocalTransactionCache()
+                clearSelectedRencanaForRealisasi()
+                _rencanaFormState.value = RencanaFormUiState()
+                _isSyncingMaster.value = false
+
+                context?.let { ctx ->
+                    Toast.makeText(
+                        ctx,
+                        "Database transaksi lokal berhasil di-reset ke 0.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                _uiEvents.emit(UiMessage.Success("Database transaksi lokal berhasil di-reset ke 0."))
+            } catch (err: Exception) {
+                _isSyncingMaster.value = false
+                _uiEvents.emit(UiMessage.Error("Gagal mereset data lokal: ${err.localizedMessage ?: err.message}"))
             }
         }
     }
@@ -1244,10 +1532,13 @@ class HeavyTrackViewModel(
         }
     }
 
-    fun syncPendingReports() {
+    fun syncPendingReports(context: Context? = null) {
         viewModelScope.launch {
             val pendingCount = repository.getUnsyncedCountValue()
             if (pendingCount <= 0) {
+                context?.let {
+                    android.widget.Toast.makeText(it, "Semua laporan sudah tersinkron ke Web Admin.", android.widget.Toast.LENGTH_SHORT).show()
+                }
                 _uiEvents.emit(UiMessage.Info("Semua laporan sudah tersinkron ke Web Admin."))
                 return@launch
             }
@@ -1256,11 +1547,20 @@ class HeavyTrackViewModel(
             _isSyncingPending.value = false
             result.onSuccess { count ->
                 if (count > 0) {
+                    context?.let {
+                        android.widget.Toast.makeText(it, "Berhasil menyinkronkan $count laporan tertunda ke Web Admin!", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                     _uiEvents.emit(UiMessage.Success("Berhasil menyinkronkan $count entri operasional ke Web Admin!"))
                 } else {
-                    _uiEvents.emit(UiMessage.Info("Semua data operasional telah sinkron."))
+                    context?.let {
+                        android.widget.Toast.makeText(it, "Gagal menyinkronkan laporan tertunda ke server. Periksa koneksi.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    _uiEvents.emit(UiMessage.Error("Gagal menyinkronkan laporan tertunda ke server. Periksa koneksi internet."))
                 }
             }.onFailure { err ->
+                context?.let {
+                    android.widget.Toast.makeText(it, "Gagal sinkron ke server: ${err.message}. Data tersimpan lokal.", android.widget.Toast.LENGTH_LONG).show()
+                }
                 _uiEvents.emit(UiMessage.Error("Gagal sinkron antrean: ${err.message}"))
             }
         }
@@ -1287,15 +1587,65 @@ class HeavyTrackViewModel(
         _rencanaFormState.value = _rencanaFormState.value.copy(statusUnit = status)
     }
 
+    fun getCompletedDatesForUnit(kodeUnit: String): Set<String> {
+        val cleanCode = kodeUnit.trim()
+        val fromHasil = hasilAktivitasList.value
+            .filter { it.kodeUnit.equals(cleanCode, ignoreCase = true) }
+            .map { normalizeDateToIso(it.tanggalFormat) }
+        val fromReports = reports.value
+            .filter { it.unitCode.equals(cleanCode, ignoreCase = true) }
+            .map { normalizeDateToIso(it.reportDate) }
+        val fromRencana = allRencanaList.value
+            .filter { r ->
+                r.kodeUnit.equals(cleanCode, ignoreCase = true) &&
+                (r.isRealized ||
+                 r.statusRealisasi.equals("SUDAH", ignoreCase = true) ||
+                 r.statusRealisasi.equals("TEREALISASI", ignoreCase = true) ||
+                 r.statusRealisasi.contains("APPROVED", ignoreCase = true) ||
+                 r.statusTahap.equals("REALISASI_SELESAI", ignoreCase = true))
+            }
+            .map { normalizeDateToIso(it.tanggalFormat) }
+
+        return (fromHasil + fromReports + fromRencana)
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    fun checkUnitBacklogDate(kodeUnit: String): String? {
+        val nowMs = System.currentTimeMillis()
+        val oneDayMs = 24 * 60 * 60 * 1000L
+        val sdfIso = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val yesterdayIso = sdfIso.format(Date(nowMs - oneDayMs)) // e.g. "2026-10-29"
+        val twoDaysAgoIso = sdfIso.format(Date(nowMs - 2 * oneDayMs)) // e.g. "2026-10-28"
+
+        val completedDates = getCompletedDatesForUnit(kodeUnit)
+
+        val isTwoDaysAgoDone = completedDates.contains(twoDaysAgoIso)
+        if (!isTwoDaysAgoDone) {
+            return twoDaysAgoIso
+        }
+
+        val isYesterdayDone = completedDates.contains(yesterdayIso)
+        if (!isYesterdayDone) {
+            return yesterdayIso
+        }
+
+        return null
+    }
+
     fun selectRencanaUnitStatus(status: UnitPlanStatus) {
         val current = _rencanaFormState.value
         val isDifferentUnit = current.selectedUnit?.unitCode != status.unit.unitCode
+        val backlogDate = checkUnitBacklogDate(status.unit.unitCode) ?: status.targetDate.takeIf { status.isBacklog }
+        val isBacklogActive = backlogDate != null || status.isBacklog
+        val effectiveDate = backlogDate ?: status.targetDate
+
         _rencanaFormState.value = current.copy(
             selectedUnitStatus = status,
             selectedUnit = status.unit,
-            targetDate = status.targetDate,
-            isBacklog = status.isBacklog,
-            isSusulan = status.isSusulan,
+            targetDate = effectiveDate,
+            isBacklog = isBacklogActive,
+            isSusulan = if (isBacklogActive) false else status.isSusulan,
             // Jika memilih unit baru atau unit Kasus C (susulan), persiapkan form input bersih
             selectedOperator = if (isDifferentUnit) null else current.selectedOperator,
             selectedActivity = if (isDifferentUnit) null else current.selectedActivity,
@@ -1306,18 +1656,21 @@ class HeavyTrackViewModel(
     }
 
     fun selectRencanaUnit(unit: UnitEntity) {
-        // Backward compatibility
         val current = _rencanaFormState.value
         val isDifferentUnit = current.selectedUnit?.unitCode != unit.unitCode
         val matchedStatus = availableUnitsForRencana.value.find { it.unit.unitCode.equals(unit.unitCode, ignoreCase = true) }
+        val backlogDate = checkUnitBacklogDate(unit.unitCode) ?: matchedStatus?.targetDate?.takeIf { matchedStatus.isBacklog }
+
         if (matchedStatus != null) {
             selectRencanaUnitStatus(matchedStatus)
         } else {
             val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+            val effectiveDate = backlogDate ?: todayStr
+            val isBacklogActive = backlogDate != null
             _rencanaFormState.value = current.copy(
                 selectedUnit = unit,
-                targetDate = todayStr,
-                isBacklog = false,
+                targetDate = effectiveDate,
+                isBacklog = isBacklogActive,
                 isSusulan = false,
                 selectedActivity = if (isDifferentUnit) null else current.selectedActivity,
                 selectedOperator = if (isDifferentUnit) null else current.selectedOperator,
@@ -1469,6 +1822,10 @@ class HeavyTrackViewModel(
         )
     }
 
+    fun kirimRencanaKerjaSekaligus() {
+        submitRencanaKerja()
+    }
+
     fun submitRencanaKerja() {
         val state = _rencanaFormState.value
         val unit = state.selectedUnit
@@ -1503,66 +1860,95 @@ class HeavyTrackViewModel(
             }
         }
 
-        val targetDate = if (state.targetDate.isNotBlank()) {
+        val rawTargetDate = if (state.targetDate.isNotBlank()) {
             state.targetDate
         } else {
-            SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+            SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
         }
+        val normalizedTargetDate = normalizeDateToIso(rawTargetDate)
 
         viewModelScope.launch {
             _rencanaFormState.value = _rencanaFormState.value.copy(isSubmitting = true)
 
-            // 1. Rencana Utama
-            val primaryRencana = RencanaKerjaEntity(
-                supervisorName = _activeSupervisor.value,
-                statusUnit = state.statusUnit,
-                kodeUnit = unit.unitCode,
-                operator = op.name,
-                sapCode = act.sapCode,
-                namaAktivitas = act.activityName,
-                satuanAktivitas = act.unitOfMeasure,
-                kodeLokasi = lok.kodeLokasi,
-                shiftKerja = state.shiftKerja,
-                keterangan = state.keterangan,
-                nomorSpk = "",
-                statusSpk = "MENUNGGU_SPK",
-                statusTahap = "RENCANA",
-                isRealized = false,
-                createdAt = System.currentTimeMillis(),
-                tanggalFormat = targetDate
+            val isoClean = normalizedTargetDate.replace("-", "")
+            val randCode = ((System.currentTimeMillis() % 9000) + 1000).toInt()
+            val baseSpk = "SPK-$isoClean-$randCode"
+
+            data class SubPlanInput(
+                val shift: String,
+                val opName: String,
+                val opNik: String,
+                val sapCode: String,
+                val actName: String,
+                val satuan: String,
+                val kodeLokasi: String,
+                val keterangan: String
             )
 
-            val primaryResult = repository.submitRencanaKerja(primaryRencana)
+            val primaryInput = SubPlanInput(
+                shift = state.shiftKerja.ifBlank { "SIANG" }.trim().uppercase(),
+                opName = op.name,
+                opNik = op.badgeNumber.ifBlank { op.operatorId },
+                sapCode = act.sapCode,
+                actName = act.activityName,
+                satuan = act.unitOfMeasure.ifBlank { "m3" },
+                kodeLokasi = lok.kodeLokasi,
+                keterangan = state.keterangan
+            )
 
-            // 2. Simpan Sub-Rencana Tambahan
-            var subSuccessCount = 0
-            state.subPlans.forEach { sub ->
-                val subRencana = RencanaKerjaEntity(
+            val subInputs = state.subPlans.map { sub ->
+                val subOpName = sub.selectedOperator?.name ?: op.name
+                val subOpNik = sub.selectedOperator?.badgeNumber?.ifBlank { sub.selectedOperator.operatorId } ?: op.badgeNumber
+                SubPlanInput(
+                    shift = sub.shiftKerja.ifBlank { "SIANG" }.trim().uppercase(),
+                    opName = subOpName,
+                    opNik = subOpNik,
+                    sapCode = sub.selectedActivity?.sapCode ?: "",
+                    actName = sub.selectedActivity?.activityName ?: "",
+                    satuan = sub.selectedActivity?.unitOfMeasure ?: "m3",
+                    kodeLokasi = sub.selectedLokasi?.kodeLokasi ?: lok.kodeLokasi,
+                    keterangan = sub.keterangan
+                )
+            }
+
+            val allRencanaInputList = listOf(primaryInput) + subInputs
+            val nowMs = System.currentTimeMillis()
+
+            val rencanaEntities = allRencanaInputList.mapIndexed { index, input ->
+                RencanaKerjaEntity(
+                    // Jangan set ID agar autoGenerate Room membuat ID unik (1, 2, 3, ...)
+                    nomorSpk = "$baseSpk-${index + 1}",
+                    tanggalFormat = normalizedTargetDate,
+                    shiftKerja = input.shift.uppercase(), // Mengambil shift spesifik dari kartu tersebut (SIANG atau MALAM)
+                    kodeUnit = unit.unitCode,
+                    wilayah = unit.wilayah ?: "PG1",
+                    kasie = _activeSupervisor.value,
                     supervisorName = _activeSupervisor.value,
                     statusUnit = state.statusUnit,
-                    kodeUnit = unit.unitCode,
-                    operator = sub.selectedOperator?.name ?: op.name,
-                    sapCode = sub.selectedActivity?.sapCode ?: "",
-                    namaAktivitas = sub.selectedActivity?.activityName ?: "",
-                    satuanAktivitas = sub.selectedActivity?.unitOfMeasure ?: "m3",
-                    kodeLokasi = sub.selectedLokasi?.kodeLokasi ?: lok.kodeLokasi,
-                    shiftKerja = sub.shiftKerja,
-                    keterangan = sub.keterangan,
-                    nomorSpk = "",
-                    statusSpk = "MENUNGGU_SPK",
+                    operator = input.opName,
+                    namaOperator = input.opName,
+                    operatorNik = input.opNik,
+                    sapCode = input.sapCode,
+                    namaAktivitas = input.actName,
+                    satuanAktivitas = input.satuan,
+                    kodeLokasi = input.kodeLokasi,
+                    keterangan = input.keterangan,
+                    statusSpk = "TERBIT_SPK",
                     statusTahap = "RENCANA",
+                    statusRealisasi = "Menunggu Realisasi",
                     isRealized = false,
-                    createdAt = System.currentTimeMillis() + 1,
-                    tanggalFormat = targetDate
+                    createdAt = nowMs + index,
+                    subIndex = index + 1,
+                    parentSpk = baseSpk
                 )
-                repository.submitRencanaKerja(subRencana)
-                subSuccessCount++
             }
+
+            val batchResult = repository.submitBatchRencanaKerja(rencanaEntities)
 
             _rencanaFormState.value = _rencanaFormState.value.copy(isSubmitting = false)
 
-            primaryResult.onSuccess { saved ->
-                val totalPlans = 1 + subSuccessCount
+            batchResult.onSuccess { savedList ->
+                val totalPlans = savedList.size
                 val planNotice = when {
                     state.isBacklog -> " [Backlog Tertinggal Terselesaikan]"
                     state.isSusulan -> " [Rencana Kerja Susulan Ditambahkan]"
@@ -1570,7 +1956,7 @@ class HeavyTrackViewModel(
                 }
                 val planType = if (state.isSusulan) "Rencana Kerja Susulan" else "Rencana Kerja"
                 _uiEvents.emit(
-                    UiMessage.Success("Berhasil membuat $totalPlans $planType untuk Unit ${saved.kodeUnit} ($targetDate)$planNotice")
+                    UiMessage.Success("Berhasil membuat $totalPlans $planType untuk Unit ${unit.unitCode} ($normalizedTargetDate)$planNotice")
                 )
                 // Reset form rencana
                 _rencanaFormState.value = RencanaFormUiState(
@@ -1590,13 +1976,21 @@ class HeavyTrackViewModel(
     fun selectRencanaForRealisasi(rencana: RencanaKerjaEntity) {
         val unitEntity = units.value.find { it.unitCode.equals(rencana.kodeUnit, ignoreCase = true) }
 
-        // 2. KESINAMBUNGAN HM PADA MULTI-RENCANA DALAM 1 UNIT (SEQUENTIAL HM)
+        // 2. KESINAMBUNGAN HM PADA MULTI-RENCANA DALAM 1 UNIT (SEQUENTIAL HM / ESTAFET)
         // Cek riwayat realisasi in-memory pada unit yang sama di shift/sesi ini
         val memoryLatestHasil = hasilAktivitasList.value
             .filter { it.kodeUnit.equals(rencana.kodeUnit, ignoreCase = true) }
             .maxByOrNull { it.createdAt }
-        val isSeqMem = memoryLatestHasil != null && memoryLatestHasil.hmAkhir > 0.0
-        val sequentialAwalMem = if (isSeqMem) memoryLatestHasil!!.hmAkhir else null
+        val latestReport = reports.value
+            .filter { it.unitCode.equals(rencana.kodeUnit, ignoreCase = true) }
+            .maxByOrNull { it.createdAt }
+        val latestReportHm = latestReport?.hmAkhir?.takeIf { it > 0.0 }
+        val isSeqMem = (memoryLatestHasil != null && memoryLatestHasil.hmAkhir > 0.0) || latestReportHm != null
+        val sequentialAwalMem = when {
+            memoryLatestHasil != null && memoryLatestHasil.hmAkhir > 0.0 -> memoryLatestHasil.hmAkhir
+            latestReportHm != null -> latestReportHm
+            else -> null
+        }
         val hmAwalVal = sequentialAwalMem ?: unitEntity?.lastHm ?: 0.0
         val sequentialTextMem = if (isSeqMem) "HM Akhir Rencana Sebelumnya: ${String.format(Locale.US, "%.1f", hmAwalVal)}" else ""
 
@@ -1766,16 +2160,15 @@ class HeavyTrackViewModel(
                 try {
                     val (serverPlans, _) = repository.apiClientManager.fetchActiveRencanaKerja(_activeSupervisor.value)
                     val matchedServer = serverPlans.find {
-                        it.resolvedUnitKode.equals(rencana.kodeUnit, ignoreCase = true) ||
-                        (it.numericId > 0 && it.numericId == rencana.id)
+                        (it.numericId > 0 && it.numericId == rencana.id) ||
+                        (rencana.nomorSpk.isNotBlank() && it.nomor_spk?.equals(rencana.nomorSpk, ignoreCase = true) == true)
                     }
                     val serverSpk = matchedServer?.nomor_spk?.trim() ?: ""
                     if (serverSpk.isNotBlank() && !serverSpk.equals("null", ignoreCase = true) && serverSpk != "-" && serverSpk != "SPK Menyusul") {
-                        repository.updateSpkForActiveUnit(rencana.kodeUnit, serverSpk, "SPK_TERBIT")
                         if (rencana.id > 0) repository.updateRencanaSpk(rencana.id, serverSpk, "SPK_TERBIT")
                         withContext(Dispatchers.Main) {
                             val cur = _realisasiFormState.value.selectedRencana
-                            if (cur?.id == rencana.id || cur?.kodeUnit?.equals(rencana.kodeUnit, ignoreCase = true) == true) {
+                            if (cur?.id == rencana.id) {
                                 _realisasiFormState.value = _realisasiFormState.value.copy(
                                     nomorSpk = serverSpk,
                                     statusSpk = "SPK_TERBIT",
@@ -1881,7 +2274,10 @@ class HeavyTrackViewModel(
                 val pullResult = repository.fetchAndReplaceActiveRencana(_activeSupervisor.value)
                 pullResult.onSuccess { (newPlans, _) ->
                     val matching = if (cur != null) {
-                        newPlans.find { it.id == cur.id || it.kodeUnit.equals(cur.kodeUnit, ignoreCase = true) }
+                        newPlans.find {
+                            it.id == cur.id ||
+                            (cur.nomorSpk.isNotBlank() && it.nomorSpk.equals(cur.nomorSpk, ignoreCase = true))
+                        }
                     } else {
                         newPlans.find { it.isSpkTerbit } ?: newPlans.firstOrNull()
                     }
@@ -1893,7 +2289,6 @@ class HeavyTrackViewModel(
                             selectedRencana = matching.copy(nomorSpk = matching.nomorSpk, statusSpk = "SPK_TERBIT")
                         )
                         withContext(Dispatchers.IO) {
-                            repository.updateSpkForActiveUnit(matching.kodeUnit, matching.nomorSpk, "SPK_TERBIT")
                             if (matching.id > 0) repository.updateRencanaSpk(matching.id, matching.nomorSpk, "SPK_TERBIT")
                         }
                         _uiEvents.emit(UiMessage.Success("SPK Resmi Diterima dari Web Admin: ${matching.nomorSpk} untuk unit ${matching.kodeUnit}"))
@@ -1946,10 +2341,9 @@ class HeavyTrackViewModel(
             statusSpk = newStatus,
             selectedRencana = cur?.copy(nomorSpk = spk, statusSpk = newStatus)
         )
-        if (cur != null) {
+        if (cur != null && cur.id > 0) {
             viewModelScope.launch(Dispatchers.IO) {
                 repository.updateRencanaSpk(cur.id, spk, newStatus)
-                repository.updateSpkForActiveUnit(cur.kodeUnit, spk, newStatus)
             }
         }
     }
@@ -2096,8 +2490,15 @@ class HeavyTrackViewModel(
     }
 
     fun setRealisasiHasilKerja(hasil: String) {
-        _realisasiFormState.value = _realisasiFormState.value.copy(hasilKerjaInput = hasil)
+        _realisasiFormState.value = _realisasiFormState.value.copy(
+            hasilKerjaInput = hasil,
+            isHasilKerjaError = false
+        )
         autoSaveDraftCurrentRealisasi()
+    }
+
+    fun setRealisasiHasilKerjaError(isError: Boolean) {
+        _realisasiFormState.value = _realisasiFormState.value.copy(isHasilKerjaError = isError)
     }
 
     fun setRealisasiKeterangan(ket: String) {
@@ -2212,7 +2613,33 @@ class HeavyTrackViewModel(
         }
     }
 
-    fun submitRealisasiKerja() {
+    fun onSubmitButtonClicked(request: com.example.data.remote.RealisasiRequest, context: Context) {
+        viewModelScope.launch {
+            _realisasiFormState.value = _realisasiFormState.value.copy(isSubmitting = true)
+            val result = repository.submitRealisasiLangsung(request, context)
+            _realisasiFormState.value = _realisasiFormState.value.copy(isSubmitting = false)
+
+            result.onSuccess {
+                android.widget.Toast.makeText(context, "Realisasi berhasil terkirim ke Web Admin!", android.widget.Toast.LENGTH_SHORT).show()
+                _uiEvents.emit(UiMessage.Success("Realisasi berhasil terkirim ke Web Admin!"))
+                _realisasiFormState.value = RealisasiFormUiState(
+                    clientTransactionId = "TX-" + java.util.UUID.randomUUID().toString()
+                )
+            }.onFailure { err ->
+                android.widget.Toast.makeText(
+                    context,
+                    "Gagal sinkron ke server: ${err.message}. Data tersimpan lokal.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                _uiEvents.emit(UiMessage.Error("Gagal sinkron ke server: ${err.message}. Data tersimpan lokal."))
+                _realisasiFormState.value = RealisasiFormUiState(
+                    clientTransactionId = "TX-" + java.util.UUID.randomUUID().toString()
+                )
+            }
+        }
+    }
+
+    fun submitRealisasiKerja(context: Context? = null) {
         val state = _realisasiFormState.value
         // Kunci tombol kirim setelah 1x klik (loading state & anti-duplikasi)
         if (state.isSubmitting) return
@@ -2307,21 +2734,29 @@ class HeavyTrackViewModel(
         val resolvedStatusUnit = state.selectedActivity?.kategoriStatus?.ifBlank { "OPERASI" }
             ?: rencana.statusUnit.ifBlank { "OPERASI" }
 
-        val workOutput = if (resolvedStatusUnit == "OPERASI") {
-            state.hasilKerjaInput.toDoubleOrNull() ?: 0.0
-        } else {
-            0.0
-        }
-
         // Fleksibilitas Kondisi Lapangan: Gunakan Aktivitas & Lokasi aktual jika diedit oleh pengawas
         val actName = state.selectedActivity?.activityName
             ?: rencana.namaAktivitas.ifBlank { "Aktivitas Operasi Lapangan" }
         val sapCode = state.selectedActivity?.sapCode
             ?: rencana.sapCode.ifBlank { "ACT-OPR-01" }
-        val satuan = state.selectedActivity?.unitOfMeasure
+        val satuan = state.selectedActivity?.unitOfMeasure?.ifBlank { rencana.satuanAktivitas.ifBlank { "m3" } }
             ?: rencana.satuanAktivitas.ifBlank { "m3" }
         val lokasiAktual = state.selectedLokasi?.kodeLokasi
             ?: rencana.kodeLokasi
+
+        val isOperasi = resolvedStatusUnit.equals("OPERASI", ignoreCase = true)
+        val workOutput = safeParseDouble(state.hasilKerjaInput)
+
+        // VALIDASI ATURAN OPERASI: Jika kategori = "OPERASI" dan Total HM > 0, Hasil Kerja WAJIB DIISI (> 0)
+        if (isOperasi && runningHm > 0.0 && workOutput <= 0.0) {
+            _realisasiFormState.value = _realisasiFormState.value.copy(isHasilKerjaError = true)
+            viewModelScope.launch {
+                _uiEvents.emit(
+                    UiMessage.Error("Hasil kerja ($satuan) wajib diisi untuk aktivitas Operasi!")
+                )
+            }
+            return
+        }
 
         val stikAwal = state.parsedStikAwal ?: 0.0
         val stikAkhir = state.parsedStikAkhir ?: 0.0
@@ -2368,11 +2803,28 @@ class HeavyTrackViewModel(
 
         viewModelScope.launch {
             val txId = state.clientTransactionId.ifBlank { "TX-" + java.util.UUID.randomUUID().toString() }
+            val session = _currentSupervisorSession.value
+            val isOp = session?.isOperator == true
+            val resolvedKasie = if (isOp) {
+                session?.kasieAtasan?.ifBlank { rencana.kasie.ifBlank { rencana.supervisorName } } ?: rencana.supervisorName
+            } else {
+                _activeSupervisor.value.ifBlank { rencana.supervisorName }
+            }
+            val resolvedCreatedBy = session?.username?.ifBlank { session.resolvedNamaLengkap } ?: resolvedKasie
+            val resolvedOperatorNik = if (isOp) {
+                session?.nik?.ifBlank { session.username } ?: rencana.operatorNik
+            } else {
+                rencana.operatorNik.ifBlank { rencana.operator }
+            }
 
+            val effectiveSpk = state.nomorSpk.ifBlank { rencana.nomorSpk }.ifBlank { "SPK-AUTO-${rencana.id}" }
+            val isDirectKasieSubmit = !isOp
             val hasilEntity = HasilInputAktivitasEntity(
                 rencanaId = rencana.id,
-                nomorSpk = state.nomorSpk,
-                supervisorName = _activeSupervisor.value,
+                nomorSpk = effectiveSpk,
+                supervisorName = resolvedKasie,
+                namaKasie = resolvedKasie,
+                createdBy = resolvedCreatedBy,
                 kodeUnit = rencana.kodeUnit,
                 operator = rencana.operator,
                 kodeLokasi = lokasiAktual,
@@ -2401,22 +2853,31 @@ class HeavyTrackViewModel(
                 photoSizeKb = state.photoSizeKb,
                 photoDimensions = state.photoDimensions,
                 createdAt = System.currentTimeMillis(),
-                tanggalFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()),
+                tanggalFormat = normalizeDateToIso(rencana.tanggalFormat.ifBlank { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }),
                 isHmAwalCorrected = state.isHmAwalCorrected,
                 alasanKoreksiHm = if (state.isHmAwalCorrected) state.alasanKoreksiHm.trim().ifBlank { "Koreksi manual HM Awal" } else null,
+                approvalStatus = "Menunggu Approval",
+                approvedBy = null,
+                approvedAt = null,
+                isLocked = false,
+                operatorNik = resolvedOperatorNik,
                 clientTransactionId = txId,
                 statusKirim = "PENDING"
             )
 
             val result = repository.submitHasilAktivitas(hasilEntity)
+
             _realisasiFormState.value = _realisasiFormState.value.copy(isSubmitting = false)
 
             result.onSuccess { saved ->
+                context?.let {
+                    android.widget.Toast.makeText(it, "Realisasi berhasil terkirim ke Web Admin!", android.widget.Toast.LENGTH_SHORT).show()
+                }
                 val fuelTag = if (saved.isIsiSolar) " [Solar: ${saved.jumlahLiterSolar}L]" else ""
                 val spkTag = if (saved.nomorSpk.isNotBlank()) " (SPK: ${saved.nomorSpk})" else ""
                 val kendalaTag = if (!saved.kendalaNama.isNullOrBlank()) " [Kendala: ${saved.kendalaNama}]" else ""
                 _uiEvents.emit(
-                    UiMessage.Success("Realisasi Unit ${saved.kodeUnit}$spkTag$fuelTag$kendalaTag berhasil dikirim & disimpan!")
+                    UiMessage.Success("Realisasi Unit ${saved.kodeUnit}$spkTag$fuelTag$kendalaTag berhasil terkirim ke Web Admin!")
                 )
 
                 // Bersihkan draft lokal jika berhasil dikirim ke server (status SYNCED)
@@ -2429,7 +2890,19 @@ class HeavyTrackViewModel(
                     clientTransactionId = "TX-" + java.util.UUID.randomUUID().toString()
                 )
             }.onFailure { err ->
-                _uiEvents.emit(UiMessage.Error("Gagal menyimpan realisasi: ${err.message}"))
+                context?.let {
+                    android.widget.Toast.makeText(
+                        it,
+                        "Gagal sinkron ke server: ${err.message}. Data tersimpan lokal.",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+                _uiEvents.emit(UiMessage.Error("Gagal sinkron ke server: ${err.message}. Data tersimpan lokal."))
+
+                // Reset realisasi form agar kembali ke daftar tugas dan menampilkan item di Riwayat sebagai Tertunda Sync
+                _realisasiFormState.value = RealisasiFormUiState(
+                    clientTransactionId = "TX-" + java.util.UUID.randomUUID().toString()
+                )
             }
         }
     }
@@ -2475,9 +2948,40 @@ class HeavyTrackViewModel(
                 @Suppress("DEPRECATION")
                 context.packageManager.getPackageInfo(context.packageName, 0)
             }
-            pInfo.versionName ?: "1.4"
+            pInfo.versionName ?: "1.6"
         } catch (_: Exception) {
-            "1.4"
+            "1.6"
+        }
+    }
+
+    fun getApkFileSizeFormatted(context: Context): String {
+        return try {
+            val sourcePath = context.applicationInfo.sourceDir
+            if (!sourcePath.isNullOrEmpty()) {
+                val f = File(sourcePath)
+                if (f.exists() && f.length() > 0) {
+                    val mb = f.length().toDouble() / (1024 * 1024)
+                    return String.format(Locale.getDefault(), "%.1f MB", mb)
+                }
+            }
+            "18.4 MB"
+        } catch (_: Exception) {
+            "18.4 MB"
+        }
+    }
+
+    fun copyApkUrlToClipboard(context: Context, url: String) {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("URL Installer RKCE", url)
+            clipboard.setPrimaryClip(clip)
+            viewModelScope.launch {
+                _uiEvents.emit(UiMessage.Success("Tautan unduh APK pembaruan berhasil disalin ke papan klip!"))
+            }
+        } catch (e: Exception) {
+            viewModelScope.launch {
+                _uiEvents.emit(UiMessage.Error("Gagal menyalin tautan: ${e.message}"))
+            }
         }
     }
 
@@ -2494,13 +2998,13 @@ class HeavyTrackViewModel(
             val cacheShareDir = File(context.cacheDir, "apk_share").apply { mkdirs() }
             val targetApk = File(cacheShareDir, targetFileName)
 
-            // Bersihkan berkas usang jika versi/timestamp berubah
-            if (!targetApk.exists() || targetApk.length() != sourceApk.length() || targetApk.lastModified() < sourceApk.lastModified()) {
-                cacheShareDir.listFiles()?.forEach { file ->
-                    if (file.name.endsWith(".apk")) {
-                        file.delete()
-                    }
+            // Bersihkan berkas usang dan salin ulang dari APK terbaru
+            cacheShareDir.listFiles()?.forEach { file ->
+                if (file.name.endsWith(".apk") && file.name != targetFileName) {
+                    file.delete()
                 }
+            }
+            if (!targetApk.exists() || targetApk.length() != sourceApk.length() || targetApk.lastModified() < sourceApk.lastModified()) {
                 sourceApk.copyTo(targetApk, overwrite = true)
             }
             targetApk
@@ -2587,7 +3091,14 @@ class HeavyTrackViewModel(
                 val shareCaption = """
 *Aplikasi RKCE (Rencana Kerja Civil Engineering) - Pembaruan v$vName*
 
-Halo Rekan Pengawas, berkas installer APK pembaruan aplikasi resmi terlampir ($fileName). Anda dapat langsung memasang atau memperbarui aplikasi ini di HP Android Anda.
+Halo Rekan Pengawas & Operator, berkas installer APK pembaruan aplikasi resmi terlampir ($fileName). Anda dapat langsung memasang atau memperbarui aplikasi ini di HP Android Anda.
+
+*FITUR PEMBARUAN TERBARU (v$vName):*
+- Validasi Antrean Strict FIFO (Tombol realisasi terkunci jika ada tugas backlog)
+- Penguncian & Pewarisan Otomatis Tanggal Kerja & Shift Rencana ke Realisasi
+- Dukungan penuh Login Kasie & 35 Akun NIK Operator (contoh: NIK 85044295)
+- Fitur Approval & Penguncian Permanen Laporan Realisasi oleh Kasie
+- Sinkronisasi instan Top Bar (🔄) & akses penuh 3.614 data lokasi kerja
 
 *PANDUAN PEMBARUAN & AGAR BISA DIINSTAL DI HP LAIN:*
 1. Buka atau klik berkas *$fileName* yang terlampir.
@@ -2695,13 +3206,29 @@ Halo Rekan Pengawas, berkas installer APK pembaruan aplikasi resmi terlampir ($f
         }
     }
 
-    fun refreshAnalyticsData() {
+    fun refreshAnalyticsData(context: Context? = null) {
         viewModelScope.launch {
             _isSyncingMaster.value = true
-            fetchMasterData()
-            syncPendingReports()
+            val currentSupervisor = _activeSupervisor.value
+            val session = _currentSupervisorSession.value
+            val kasieName = session?.resolvedNamaLengkap?.ifBlank { currentSupervisor } ?: currentSupervisor
+            val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+            // 1. Kirim ulang item lokal yang is_synced == false ke server Web Admin terlebih dahulu
+            val syncedPendingCount = repository.syncAllPendingOperationalData().getOrDefault(0)
+            // 2. Tarik data terbaru dari server
+            repository.fetchBootstrapData(currentSupervisor, todayStr)
+            repository.fetchAndReplaceActiveRencana(currentSupervisor)
+            repository.fetchPendingRealisasiForKasie(kasieName)
             _isSyncingMaster.value = false
-            _uiEvents.emit(UiMessage.Success("Data Analitik berhasil diperbarui secara real-time dari server Web Admin"))
+            val syncMsg = if (syncedPendingCount > 0) {
+                "Berhasil mengirim $syncedPendingCount laporan tertunda & menyinkronkan Riwayat dari Web Admin!"
+            } else {
+                "Data Analitik & Riwayat berhasil disinkronkan secara penuh dari server Web Admin"
+            }
+            context?.let {
+                android.widget.Toast.makeText(it, syncMsg, android.widget.Toast.LENGTH_SHORT).show()
+            }
+            _uiEvents.emit(UiMessage.Success(syncMsg))
         }
     }
 
@@ -2774,7 +3301,13 @@ Halo Rekan Pengawas, berkas installer APK pembaruan aplikasi resmi terlampir ($f
             jenisFiltered.filter { it.unitCode.equals(unitFilter, ignoreCase = true) }
         }
 
-        val totalSolar = filtered.sumOf { if (it.isRefueled) it.fuelLiters else 0.0 }
+        val totalSolar = filtered.sumOf {
+            when {
+                it.pemakaianSolar > 0.0 -> it.pemakaianSolar
+                it.isRefueled -> it.fuelLiters
+                else -> 0.0
+            }
+        }
         val totalHm = filtered.sumOf { it.hmDailyRunning }
         val fuelRatio = if (totalHm > 0.0) totalSolar / totalHm else 0.0
 
@@ -2792,7 +3325,13 @@ Halo Rekan Pengawas, berkas installer APK pembaruan aplikasi resmi terlampir ($f
         val unitRows = unitsMap.map { (code, reps) ->
             val uTotalHours = reps.sumOf { it.workDurationHours }
             val uTotalHm = reps.sumOf { it.hmDailyRunning }
-            val uSolar = reps.sumOf { if (it.isRefueled) it.fuelLiters else 0.0 }
+            val uSolar = reps.sumOf {
+                when {
+                    it.pemakaianSolar > 0.0 -> it.pemakaianSolar
+                    it.isRefueled -> it.fuelLiters
+                    else -> 0.0
+                }
+            }
             val uRatio = if (uTotalHm > 0.0) uSolar / uTotalHm else 0.0
             val uTroubleCount = reps.count { it.unitStatus != "OPERASI" }
             val uOutput = reps.sumOf { it.workOutput }
@@ -2852,12 +3391,77 @@ Halo Rekan Pengawas, berkas installer APK pembaruan aplikasi resmi terlampir ($f
         )
     }
 
+    fun approveRealisasi(report: ActivityReportEntity, context: Context? = null) {
+        if (report.isLocked) {
+            viewModelScope.launch {
+                _uiEvents.emit(UiMessage.Info("Realisasi Unit ${report.unitCode} sudah disetujui dan terkunci permanen."))
+            }
+            return
+        }
+        val approver = _currentSupervisorSession.value?.resolvedNamaLengkap?.ifBlank { _activeSupervisor.value }
+            ?: _activeSupervisor.value.ifBlank { "Kasie Lapangan" }
+        viewModelScope.launch {
+            val res = repository.approveRealisasi(report.id, approver)
+            res.onSuccess {
+                context?.let { ctx ->
+                    android.widget.Toast.makeText(ctx, "Laporan berhasil disetujui dan dikunci resmi.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                _uiEvents.emit(
+                    UiMessage.Success("✔ Realisasi Unit ${report.unitCode} berhasil disetujui oleh $approver & dikunci permanen!")
+                )
+            }.onFailure { err ->
+                _uiEvents.emit(UiMessage.Error("Gagal menyetujui realisasi: ${err.message}"))
+            }
+        }
+    }
+
+    fun correctRealisasi(
+        report: ActivityReportEntity,
+        hmAwalBaru: Double,
+        hmAkhirBaru: Double,
+        solarBaru: Double,
+        hasilKerjaBaru: Double,
+        keteranganBaru: String
+    ) {
+        if (report.isLocked) {
+            viewModelScope.launch {
+                _uiEvents.emit(UiMessage.Error("Data sudah disetujui & terkunci permanen, tidak dapat dikoreksi."))
+            }
+            return
+        }
+        if (hmAkhirBaru <= hmAwalBaru) {
+            viewModelScope.launch {
+                _uiEvents.emit(UiMessage.Error("HM Akhir harus lebih besar dari HM Awal."))
+            }
+            return
+        }
+        val running = hmAkhirBaru - hmAwalBaru
+        val updated = report.copy(
+            hmAwal = hmAwalBaru,
+            hmAkhir = hmAkhirBaru,
+            hmDailyRunning = running,
+            fuelLiters = solarBaru,
+            pemakaianSolar = solarBaru,
+            isRefueled = solarBaru > 0.0,
+            workOutput = hasilKerjaBaru,
+            notes = keteranganBaru
+        )
+        viewModelScope.launch {
+            repository.correctRealisasi(updated).onSuccess {
+                _uiEvents.emit(UiMessage.Success("Koreksi data realisasi Unit ${report.unitCode} berhasil disimpan."))
+            }.onFailure { err ->
+                _uiEvents.emit(UiMessage.Error("Gagal menyimpan koreksi: ${err.message}"))
+            }
+        }
+    }
+
     fun deleteReport(id: Long) {
         viewModelScope.launch {
             repository.deleteReport(id)
             _uiEvents.emit(UiMessage.Info("Laporan dihapus dari riwayat"))
         }
     }
+
 
     fun cleanDumpTruckAndBulldozer() {
         // No-op: Dump Truck and other active units are preserved
@@ -2902,3 +3506,5 @@ class HeavyTrackViewModelFactory(
 
 typealias RencanaKerjaViewModel = HeavyTrackViewModel
 typealias RealisasiViewModel = HeavyTrackViewModel
+typealias RiwayatViewModel = HeavyTrackViewModel
+

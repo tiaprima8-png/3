@@ -11,7 +11,8 @@ import androidx.room.PrimaryKey
         Index(value = ["rencana_id"]),
         Index(value = ["kode_unit"]),
         Index(value = ["supervisor_name"]),
-        Index(value = ["created_at"])
+        Index(value = ["created_at"]),
+        Index(value = ["nomor_spk"], unique = true)
     ]
 )
 data class HasilInputAktivitasEntity(
@@ -22,7 +23,7 @@ data class HasilInputAktivitasEntity(
     val rencanaId: Long = 0,
 
     @ColumnInfo(name = "nomor_spk")
-    val nomorSpk: String = "",
+    val nomorSpk: String = "SPK-AUTO-${java.util.UUID.randomUUID()}",
 
     @ColumnInfo(name = "supervisor_name")
     val supervisorName: String = "",
@@ -138,8 +139,8 @@ data class HasilInputAktivitasEntity(
     @ColumnInfo(name = "status_kirim", defaultValue = "'PENDING'")
     val statusKirim: String = "PENDING",
 
-    @ColumnInfo(name = "wilayah", defaultValue = "Geodesi PG1")
-    val wilayah: String? = "Geodesi PG1",
+    @ColumnInfo(name = "wilayah", defaultValue = "PG1")
+    val wilayah: String? = "PG1",
 
     @ColumnInfo(name = "approval_status", defaultValue = "'Menunggu Approval'")
     val approvalStatus: String = "Menunggu Approval",

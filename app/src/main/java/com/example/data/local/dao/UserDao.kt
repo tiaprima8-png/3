@@ -24,6 +24,16 @@ interface UserDao {
     @Query("SELECT * FROM users_session WHERE username = :username LIMIT 1")
     suspend fun getUserByUsername(username: String): UserEntity?
 
+    @Query("""
+        SELECT * FROM users_session 
+        WHERE (LOWER(TRIM(username)) = LOWER(TRIM(:username)) 
+           OR TRIM(username) = TRIM(:username) 
+           OR LOWER(TRIM(nik)) = LOWER(TRIM(:username)))
+          AND (LOWER(TRIM(status)) = 'aktif' OR status = '1')
+        LIMIT 1
+    """)
+    suspend fun findActiveUserByUsername(username: String): UserEntity?
+
     @Query("UPDATE users_session SET wilayah = :wilayah WHERE username = :username")
     suspend fun updateWilayah(username: String, wilayah: String)
 

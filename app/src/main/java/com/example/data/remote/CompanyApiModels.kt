@@ -57,6 +57,12 @@ data class PostActivityReportRequest(
     @Json(name = "client_transaction_id") val client_transaction_id: String? = null,
     @Json(name = "id_rencana_kerja") val id_rencana_kerja: Long? = null,
     @Json(name = "nomor_spk") val nomor_spk: String? = null,
+    @Json(name = "approval_status") val approval_status: String? = "Menunggu Approval",
+    @Json(name = "approved_by") val approved_by: String? = null,
+    @Json(name = "approved_at") val approved_at: String? = null,
+    @Json(name = "is_locked") val is_locked: Boolean? = false,
+    @Json(name = "operator_nik") val operator_nik: String? = null,
+    @Json(name = "role_penginput") val role_penginput: String? = null,
 
     // Dual compatibility with standard camelCase/English keys
     @Json(name = "client_uuid") val client_uuid: String? = null,
@@ -116,7 +122,13 @@ data class PostActivityReportRequest(
             clientTransactionId: String? = null,
             idRencanaKerja: Long? = null,
             nomorSpk: String? = null,
-            wilayah: String? = null
+            wilayah: String? = null,
+            approvalStatus: String = "Menunggu Approval",
+            approvedBy: String? = null,
+            approvedAt: String? = null,
+            isLocked: Boolean = false,
+            operatorNik: String? = null,
+            rolePenginput: String? = null
         ): PostActivityReportRequest {
             val resolvedKendalaItems = (kendalaLapangan ?: kendalaList ?: daftarKendala)?.map { it.toCanonical() }
             return PostActivityReportRequest(
@@ -161,6 +173,12 @@ data class PostActivityReportRequest(
                 client_transaction_id = clientTransactionId,
                 id_rencana_kerja = idRencanaKerja,
                 nomor_spk = nomorSpk,
+                approval_status = approvalStatus,
+                approved_by = approvedBy,
+                approved_at = approvedAt,
+                is_locked = isLocked,
+                operator_nik = operatorNik,
+                role_penginput = rolePenginput,
 
                 // Fallbacks
                 client_uuid = clientUuid,
@@ -183,6 +201,7 @@ data class PostActivityReportRequest(
         }
     }
 }
+
 
 typealias AktivitasUnitRequest = PostActivityReportRequest
 
@@ -362,6 +381,7 @@ data class KendalaPayload(
 
 @JsonClass(generateAdapter = true)
 data class ApiResponse<T>(
+    val success: Boolean? = true,
     val status: String? = "success",
     val message: String? = "",
     val data: T? = null,
@@ -375,6 +395,9 @@ data class MasterDataPayload(
     val aktivitas: List<ActivityPayload>? = emptyList(),
     val activities: List<ActivityPayload>? = emptyList(),
     val operators: List<OperatorPayload>? = emptyList(),
+    val operator: List<OperatorPayload>? = emptyList(),
+    val master_operator: List<OperatorPayload>? = emptyList(),
+    val master_operators: List<OperatorPayload>? = emptyList(),
     val lokasi: List<LokasiPayload>? = emptyList(),
     val locations: List<LokasiPayload>? = emptyList(),
     val kendala: List<KendalaPayload>? = emptyList(),
@@ -385,6 +408,15 @@ data class MasterDataPayload(
         get() {
             if (!aktivitas.isNullOrEmpty()) return aktivitas
             if (!activities.isNullOrEmpty()) return activities
+            return emptyList()
+        }
+
+    val resolvedOperators: List<OperatorPayload>
+        get() {
+            if (!operators.isNullOrEmpty()) return operators
+            if (!operator.isNullOrEmpty()) return operator
+            if (!master_operator.isNullOrEmpty()) return master_operator
+            if (!master_operators.isNullOrEmpty()) return master_operators
             return emptyList()
         }
 
@@ -453,6 +485,9 @@ data class CentralizedBootstrapDataPayload(
     @Json(name = "users") val users: List<UserApiPayload>? = emptyList(),
     @Json(name = "units") val units: List<UnitPayload>? = emptyList(),
     @Json(name = "operators") val operators: List<OperatorPayload>? = emptyList(),
+    @Json(name = "operator") val operator: List<OperatorPayload>? = emptyList(),
+    @Json(name = "master_operator") val master_operator: List<OperatorPayload>? = emptyList(),
+    @Json(name = "master_operators") val master_operators: List<OperatorPayload>? = emptyList(),
     @Json(name = "aktivitas") val aktivitas: List<ActivityPayload>? = emptyList(),
     @Json(name = "activities") val activities: List<ActivityPayload>? = emptyList(),
     @Json(name = "kendala") val kendala: List<KendalaPayload>? = emptyList(),
@@ -462,6 +497,15 @@ data class CentralizedBootstrapDataPayload(
     @Json(name = "rencana_kerja") val rencana_kerja: List<PostRencanaKerjaRequest>? = emptyList(),
     @Json(name = "rencana_aktif") val rencana_aktif: List<PostRencanaKerjaRequest>? = emptyList()
 ) {
+    val resolvedOperators: List<OperatorPayload>
+        get() {
+            if (!operators.isNullOrEmpty()) return operators
+            if (!operator.isNullOrEmpty()) return operator
+            if (!master_operator.isNullOrEmpty()) return master_operator
+            if (!master_operators.isNullOrEmpty()) return master_operators
+            return emptyList()
+        }
+
     val resolvedAktivitas: List<ActivityPayload>
         get() = if (!aktivitas.isNullOrEmpty()) aktivitas else (activities ?: emptyList())
 
@@ -648,8 +692,12 @@ data class OperatorPayload(
     @Json(name = "nama_operator") val nama_operator: String? = null,
     @Json(name = "name") val name: String? = null,
     @Json(name = "nama") val nama: String? = null,
+    @Json(name = "nama_lengkap") val nama_lengkap: String? = null,
 
     @Json(name = "nik") val nik: String? = null,
+    @Json(name = "nik_operator") val nik_operator: String? = null,
+    @Json(name = "username") val username: String? = null,
+    @Json(name = "kode_operator") val kode_operator: String? = null,
     @Json(name = "badge_number") val badge_number: String? = null,
     @Json(name = "badgeNumber") val badgeNumber: String? = null,
 
@@ -658,6 +706,7 @@ data class OperatorPayload(
     @Json(name = "supervisorAssigned") val supervisorAssigned: String? = null,
     @Json(name = "kasie_penanggung_jawab") val kasie_penanggung_jawab: String? = null,
     @Json(name = "kasiePenanggungJawab") val kasiePenanggungJawab: String? = null,
+    @Json(name = "kasie_atasan") val kasie_atasan: String? = null,
     @Json(name = "kasie") val kasie: String? = null,
 
     @Json(name = "jabatan") val jabatan: String? = null,
@@ -682,12 +731,19 @@ data class OperatorPayload(
         nama_operator = name,
         name = name,
         nama = name,
+        nama_lengkap = name,
         nik = badgeNumber,
+        nik_operator = badgeNumber,
+        username = badgeNumber,
         badge_number = badgeNumber,
         badgeNumber = badgeNumber,
         nama_pengawas = supervisorAssigned,
         supervisor_assigned = supervisorAssigned,
         supervisorAssigned = supervisorAssigned,
+        kasie_penanggung_jawab = supervisorAssigned,
+        kasiePenanggungJawab = supervisorAssigned,
+        kasie_atasan = supervisorAssigned,
+        kasie = supervisorAssigned,
         jabatan = skillLevel,
         skill_level = skillLevel,
         skillLevel = skillLevel,
@@ -697,15 +753,19 @@ data class OperatorPayload(
         status = status
     )
 
-    val resolvedOperatorId: String get() = operator_id ?: operatorId ?: nik ?: "OPR-000"
-    val resolvedName: String get() = nama_operator ?: name ?: nama ?: "Operator"
-    val resolvedBadgeNumber: String get() = nik ?: badge_number ?: badgeNumber ?: "NIK-000"
-    val resolvedSupervisor: String get() = kasie_penanggung_jawab ?: kasiePenanggungJawab ?: kasie ?: nama_pengawas ?: supervisor_assigned ?: supervisorAssigned ?: ""
+    val resolvedOperatorId: String get() = (operator_id ?: operatorId ?: nik ?: nik_operator ?: username ?: kode_operator ?: "OPR-000").trim()
+    val resolvedName: String get() = (nama_operator ?: nama ?: nama_lengkap ?: name ?: "Operator").trim()
+    val resolvedBadgeNumber: String get() = (nik ?: nik_operator ?: username ?: kode_operator ?: badge_number ?: badgeNumber ?: operator_id ?: operatorId ?: "85044295").trim()
+    val resolvedSupervisor: String get() = (kasie_penanggung_jawab ?: kasiePenanggungJawab ?: kasie_atasan ?: kasie ?: nama_pengawas ?: supervisor_assigned ?: supervisorAssigned ?: "").trim()
     val resolvedSkillLevel: String get() = jabatan ?: skill_level ?: skillLevel ?: "Class A"
     val resolvedStatus: String get() = status ?: "AKTIF"
     val resolvedWilayah: String get() = wilayah?.takeIf { it.isNotBlank() } ?: when {
-        resolvedSupervisor.contains("Agus", ignoreCase = true) -> "Geodesi PG2"
-        resolvedSupervisor.contains("Rudi", ignoreCase = true) -> "RC PG1"
+        resolvedSupervisor.contains("Agus", ignoreCase = true) || resolvedSupervisor.contains("Zainudin", ignoreCase = true) -> "Geodesi PG2"
+        resolvedSupervisor.contains("Rudi", ignoreCase = true) || resolvedSupervisor.contains("Jahidi", ignoreCase = true) || resolvedSupervisor.contains("Hisar", ignoreCase = true) -> "RC PG1"
+        resolvedSupervisor.contains("Yono", ignoreCase = true) -> "RC PG2"
+        resolvedSupervisor.contains("Nyoman", ignoreCase = true) -> "RC PG3"
+        resolvedSupervisor.contains("Saipul", ignoreCase = true) -> "LEBUNG PG12"
+        resolvedSupervisor.contains("Galung", ignoreCase = true) -> "LEBUNG PG3"
         else -> "Geodesi PG1"
     }
 }
@@ -823,6 +883,7 @@ data class PostHasilAktivitasRequest(
     @Json(name = "id_rencana_kerja") val id_rencana_kerja: Long? = null,
     @Json(name = "nomor_spk") val nomor_spk: String? = null,
     @Json(name = "jam_kerja") val jam_kerja: Double? = 7.0,
+    @Json(name = "durasi_jam_kerja") val durasi_jam_kerja: Double? = 7.0,
     @Json(name = "hm_awal") val hm_awal: Double? = null,
     @Json(name = "hm_akhir") val hm_akhir: Double? = null,
     @Json(name = "hm_harian_berjalan") val hm_harian_berjalan: Double? = null,
@@ -840,14 +901,37 @@ data class PostHasilAktivitasRequest(
     @Json(name = "hasil_kerja") val hasil_kerja: Double? = 0.0,
     @Json(name = "keterangan") val keterangan: String? = null,
     @Json(name = "nama_pengawas") val nama_pengawas: String? = null,
+    @Json(name = "kasie") val kasie: String? = null,
     @Json(name = "kode_unit") val kode_unit: String? = null,
+    @Json(name = "jenis_unit") val jenis_unit: String? = null,
+    @Json(name = "nama_operator") val nama_operator: String? = null,
+    @Json(name = "operator") val operator: String? = null,
+    @Json(name = "lokasi_kerja") val lokasi_kerja: String? = null,
+    @Json(name = "kode_lokasi") val kode_lokasi: String? = null,
+    @Json(name = "nama_aktivitas") val nama_aktivitas: String? = null,
+    @Json(name = "kode_sap") val kode_sap: String? = null,
+    @Json(name = "satuan") val satuan: String? = null,
+    @Json(name = "status_unit") val status_unit: String? = null,
     @Json(name = "foto_bukti") val foto_bukti: String? = null,
     // Audit log koreksi HM Awal manual
     @Json(name = "is_hm_awal_corrected") val is_hm_awal_corrected: Boolean? = false,
     @Json(name = "alasan_koreksi_hm") val alasan_koreksi_hm: String? = null,
     @Json(name = "client_transaction_id") val client_transaction_id: String? = null,
-    @Json(name = "wilayah") val wilayah: String? = null
-)
+    @Json(name = "wilayah") val wilayah: String? = null,
+    @Json(name = "approval_status") val approval_status: String? = "Menunggu Approval",
+    @Json(name = "approved_by") val approved_by: String? = null,
+    @Json(name = "approved_at") val approved_at: String? = null,
+    @Json(name = "is_locked") val is_locked: Boolean? = false,
+    @Json(name = "operator_nik") val operator_nik: String? = null,
+    @Json(name = "role_penginput") val role_penginput: String? = null,
+    @Json(name = "tanggal") val tanggal: String? = null,
+    @Json(name = "tanggal_kerja") val tanggal_kerja: String? = null,
+    @Json(name = "shift") val shift: String? = null
+) {
+    val rencanaId: Long get() = rencana_id ?: id_rencana_kerja ?: 0L
+}
+
+typealias RealisasiRequest = PostHasilAktivitasRequest
 
 @JsonClass(generateAdapter = true)
 data class AuthLoginRequest(
@@ -864,6 +948,7 @@ data class LoginRequest(
 @JsonClass(generateAdapter = true)
 data class UserApiPayload(
     @Json(name = "id") val id: Any? = null,
+    @Json(name = "nama") val nama: String? = null,
     @Json(name = "nama_lengkap") val nama_lengkap: String? = null,
     @Json(name = "username") val username: String? = null,
     @Json(name = "password") val password: String? = null,
@@ -873,6 +958,9 @@ data class UserApiPayload(
     @Json(name = "hak_akses") val hak_akses: String? = null,
     @Json(name = "role") val role: String? = null,
     @Json(name = "wilayah") val wilayah: String? = null,
+    @Json(name = "kasie_atasan") val kasie_atasan: String? = null,
+    @Json(name = "kasie_penanggung_jawab") val kasie_penanggung_jawab: String? = null,
+    @Json(name = "kasie") val kasie: String? = null,
     @Json(name = "status_aktif") val status_aktif: Any? = 1,
     @Json(name = "status") val status: String? = null,
     @Json(name = "email") val email: String? = null
@@ -881,13 +969,18 @@ data class UserApiPayload(
         get() = id?.toString() ?: "1"
 
     val resolvedNamaLengkap: String
-        get() = nama_lengkap?.trim()?.ifBlank { null } ?: username?.trim()?.removePrefix("@") ?: "Pengguna"
+        get() = (nama_lengkap ?: nama)?.trim()?.ifBlank { null } ?: username?.trim()?.removePrefix("@") ?: "Pengguna"
 
     val resolvedUsername: String
         get() = (username ?: "").trim().removePrefix("@").trim()
 
     val resolvedPassword: String
-        get() = (password ?: password_pin ?: pin ?: kata_sandi ?: "").trim().ifBlank { "123" }
+        get() = (password ?: password_pin ?: pin ?: kata_sandi ?: "").trim().ifBlank {
+            if (isOperator) resolvedUsername else "123"
+        }
+
+    val resolvedKasieAtasan: String
+        get() = (kasie_atasan ?: kasie_penanggung_jawab ?: kasie ?: "").trim()
 
     val isAktif: Boolean
         get() {
@@ -943,6 +1036,7 @@ data class UserApiPayload(
             return when {
                 rRole.contains("SUPER_ADMIN") || rRole.contains("SUPERADMIN") || rRole == "SUPER ADMIN" || rHak.contains("SUPER ADMIN") || rHak.contains("SUPERADMIN") -> "SUPER ADMIN"
                 rRole.contains("MANAGER") || rHak.contains("MANAGER") -> "MANAGER"
+                rRole.contains("OPERATOR") || rHak.contains("OPERATOR") -> "OPERATOR"
                 rRole.contains("SUPERVISOR") || rRole.contains("KASIE") || rHak.contains("KASIE") || rHak.contains("PENGAWAS") -> "KASIE"
                 else -> "KASIE"
             }
@@ -950,6 +1044,9 @@ data class UserApiPayload(
 
     val isKasie: Boolean
         get() = resolvedRole == "KASIE"
+
+    val isOperator: Boolean
+        get() = resolvedRole == "OPERATOR"
 
     val isExecutive: Boolean
         get() = resolvedRole == "SUPER ADMIN" || resolvedRole == "MANAGER"
@@ -972,11 +1069,13 @@ data class UserApiPayload(
             roleTitle = when (roleStr) {
                 "SUPER ADMIN" -> "Super Admin"
                 "MANAGER" -> "Manager Operasional"
+                "OPERATOR" -> "Operator Alat Berat"
                 else -> "Kasie Lapangan"
             },
-            role = roleStr,
+            role = if (roleStr == "OPERATOR") "operator" else roleStr,
             wilayah = wilayah ?: if (isExec) "Semua Wilayah" else "Geodesi PG1",
-            token = "SYNC-$cleanUser",
+            kasieAtasan = resolvedKasieAtasan,
+            token = "token-auth-session",
             status = if (isAktif) "Aktif" else "Nonaktif"
         )
     }
@@ -985,18 +1084,24 @@ data class UserApiPayload(
 @JsonClass(generateAdapter = true)
 data class UserProfileDto(
     @Json(name = "id") val id: Any? = null,
+    @Json(name = "nama") val nama: String? = null,
     @Json(name = "nama_lengkap") val nama_lengkap: String? = null,
     @Json(name = "username") val username: String? = null,
-    @Json(name = "role") val role: String? = "KASIE", // KASIE | MANAGER | SUPER ADMIN
+    @Json(name = "role") val role: String? = "KASIE", // KASIE | operator | OPERATOR | MANAGER | SUPER ADMIN
     @Json(name = "hak_akses") val hak_akses: String? = null,
     @Json(name = "wilayah") val wilayah: String? = "Geodesi 1",
+    @Json(name = "kasie_atasan") val kasie_atasan: String? = null,
+    @Json(name = "kasie_penanggung_jawab") val kasie_penanggung_jawab: String? = null,
+    @Json(name = "kasie") val kasie: String? = null,
     @Json(name = "status") val status: String? = "Aktif",
     @Json(name = "status_aktif") val status_aktif: Any? = 1
 ) {
     val numericOrStringId: String
         get() = id?.toString() ?: "1"
     val resolvedNamaLengkap: String
-        get() = nama_lengkap?.ifBlank { null } ?: username ?: "Pengguna"
+        get() = (nama_lengkap ?: nama)?.ifBlank { null } ?: username ?: "Pengguna"
+    val resolvedKasieAtasan: String
+        get() = (kasie_atasan ?: kasie_penanggung_jawab ?: kasie ?: "").trim()
     val isAktif: Boolean
         get() {
             if (!status.isNullOrBlank()) {
@@ -1030,15 +1135,19 @@ data class UserProfileDto(
             return when {
                 rRole.contains("SUPER_ADMIN") || rRole.contains("SUPERADMIN") || rRole == "SUPER ADMIN" || rHak.contains("SUPER ADMIN") || rHak.contains("SUPERADMIN") -> "SUPER ADMIN"
                 rRole.contains("MANAGER") || rHak.contains("MANAGER") -> "MANAGER"
+                rRole.contains("OPERATOR") || rHak.contains("OPERATOR") -> "OPERATOR"
                 rRole.contains("SUPERVISOR") || rRole.contains("KASIE") || rHak.contains("KASIE") || rHak.contains("PENGAWAS") -> "KASIE"
                 else -> "KASIE"
             }
         }
     val isKasie: Boolean
         get() = resolvedRole == "KASIE"
+    val isOperator: Boolean
+        get() = resolvedRole == "OPERATOR"
     val isExecutive: Boolean
         get() = resolvedRole == "SUPER ADMIN" || resolvedRole == "MANAGER"
 }
+
 
 @JsonClass(generateAdapter = true)
 data class LoginResponseDto(

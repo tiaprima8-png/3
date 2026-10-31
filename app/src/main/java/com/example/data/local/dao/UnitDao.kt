@@ -11,6 +11,7 @@ import com.example.data.local.entity.UnitEntity
 import kotlinx.coroutines.flow.Flow
 
 typealias UnitAlatBeratDao = UnitDao
+typealias MasterUnitDao = UnitDao
 
 @Dao
 interface UnitDao {
@@ -126,6 +127,9 @@ interface UnitDao {
 
     @Query("DELETE FROM units")
     suspend fun deleteAll()
+
+    @Query("UPDATE units SET wilayah = 'PG1' WHERE wilayah = 'Geodesi PG1' OR wilayah = 'Geodesi'")
+    suspend fun normalizeGeodesiPg1(): Int
 
     @Transaction
     suspend fun replaceAll(listBaru: List<UnitEntity>) {

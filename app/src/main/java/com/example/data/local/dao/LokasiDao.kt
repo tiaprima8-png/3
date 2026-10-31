@@ -92,6 +92,9 @@ interface LokasiDao {
     @Query("DELETE FROM lokasi")
     suspend fun clearAll()
 
+    @Query("UPDATE lokasi SET wilayah = 'PG1' WHERE wilayah = 'Geodesi PG1' OR wilayah = 'Geodesi'")
+    suspend fun normalizeGeodesiPg1(): Int
+
     @Transaction
     suspend fun replaceAll(listBaru: List<LokasiEntity>) {
         deleteAll()

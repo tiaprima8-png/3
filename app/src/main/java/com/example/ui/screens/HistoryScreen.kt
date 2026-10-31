@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
@@ -37,8 +38,12 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -54,9 +59,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -138,6 +145,9 @@ fun HistoryScreen(
     onNavigateToForm: () -> Unit
 ) {
     val isManagerSession by viewModel.isManagerSession.collectAsState()
+    val isOperatorSession by viewModel.isOperatorSession.collectAsState()
+    val isKasieSession by viewModel.isKasieSession.collectAsState()
+    val currentSupervisor by viewModel.currentSupervisorSession.collectAsState()
     val myReports by viewModel.reports.collectAsState()
     val allReports by viewModel.allReports.collectAsState()
     val myRencanaList by viewModel.allRencanaList.collectAsState()
@@ -166,6 +176,10 @@ fun HistoryScreen(
 
     var selectedRecordForDetail by remember { mutableStateOf<CompletedOperationalRecord?>(null) }
     var photoPreviewReport by remember { mutableStateOf<ActivityReportEntity?>(null) }
+    var reportPendingApproval by remember { mutableStateOf<ActivityReportEntity?>(null) }
+    var reportPendingCorrection by remember { mutableStateOf<ActivityReportEntity?>(null) }
+    var showResetLocalDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val baseReports = if (isManagerSession && showAllDataScope) allReports else myReports
     val baseRencana = if (isManagerSession && showAllDataScope) allRencanaGlobal else myRencanaList
@@ -192,32 +206,43 @@ fun HistoryScreen(
                         ren.kodeLokasi.lowercase().contains(q) ||
                         ren.nomorSpk.lowercase().contains(q) ||
                         ren.supervisorName.lowercase().contains(q) ||
-                        ren.tanggalFormat.lowercase().contains(q)
+                        ren.tanggalFormat.lowercase().contains(q) ||
+                        (ren.wilayah?.lowercase()?.contains(q) == true)
             }
             matchWilayah && matchKode && matchJenis && matchQuery
         }
     }
 
-    // Rekapitulasi & pemaduan data komprehensif Rencana Awal + Realisasi Aktual
+    // Rekapitulasi & pemaduan data komprehensif Rencana Awal + Realisasi Aktual (Tanpa Duplikasi / Cartesian Product)
     val completedRecords = remember(baseReports, baseRencana, hasilAktivitasList) {
-        baseReports.map { rep ->
-            // Temukan rencana kerja terkait di SQLite
+        val uniqueReports = baseReports.distinctBy { rep ->
+            rep.nomorSpk.trim().takeIf { it.isNotBlank() }?.uppercase() ?: "ID-${rep.id}"
+        }
+        uniqueReports.map { rep ->
+            // Temukan rencana kerja terkait secara spesifik berdasarkan ID atau Nomor SPK terlebih dahulu
             val matchedRencana = baseRencana.find { ren ->
+                (rep.idRencanaKerja > 0 && ren.id == rep.idRencanaKerja) ||
+                    (rep.nomorSpk.isNotBlank() && ren.nomorSpk.equals(rep.nomorSpk, ignoreCase = true))
+            } ?: baseRencana.find { ren ->
                 ren.isRealized && ren.kodeUnit.equals(rep.unitCode, ignoreCase = true) &&
-                        (ren.tanggalFormat.isBlank() || ren.tanggalFormat == rep.reportDate)
+                    ren.shiftKerja.equals(rep.shift, ignoreCase = true) &&
+                    (ren.tanggalFormat.isBlank() || ren.tanggalFormat == rep.reportDate)
             } ?: baseRencana.find { ren ->
-                ren.kodeUnit.equals(rep.unitCode, ignoreCase = true) && ren.isRealized
-            } ?: baseRencana.find { ren ->
-                ren.kodeUnit.equals(rep.unitCode, ignoreCase = true)
+                ren.isRealized && ren.kodeUnit.equals(rep.unitCode, ignoreCase = true) &&
+                    (ren.tanggalFormat.isBlank() || ren.tanggalFormat == rep.reportDate)
             }
 
-            // Temukan entri hasil aktivitas terkait
+            // Temukan entri hasil aktivitas terkait berdasarkan Nomor SPK atau Rencana ID terlebih dahulu
             val matchedHasil = hasilAktivitasList.find { has ->
+                (rep.nomorSpk.isNotBlank() && has.nomorSpk.equals(rep.nomorSpk, ignoreCase = true)) ||
+                    (rep.idRencanaKerja > 0 && has.rencanaId == rep.idRencanaKerja)
+            } ?: hasilAktivitasList.find { has ->
                 has.kodeUnit.equals(rep.unitCode, ignoreCase = true) &&
-                        has.hmAkhir == rep.hmAkhir
+                    has.hmAkhir == rep.hmAkhir
             }
 
-            val rawSpk = matchedHasil?.nomorSpk?.takeIf { it.isNotBlank() }
+            val rawSpk = rep.nomorSpk.takeIf { it.isNotBlank() }
+                ?: matchedHasil?.nomorSpk?.takeIf { it.isNotBlank() }
                 ?: matchedRencana?.nomorSpk?.takeIf { it.isNotBlank() }
                 ?: ""
 
@@ -302,7 +327,9 @@ fun HistoryScreen(
                         rec.lokasiAktual.lowercase().contains(q) ||
                         rec.nomorSpk.lowercase().contains(q) ||
                         rec.supervisorName.lowercase().contains(q) ||
-                        rec.reportDate.lowercase().contains(q)
+                        rec.reportDate.lowercase().contains(q) ||
+                        (rec.report.wilayah?.lowercase()?.contains(q) == true) ||
+                        (rec.report.unitType?.lowercase()?.contains(q) == true)
             }
             matchWilayah && matchKode && matchJenis && matchesFilter && matchesQuery
         }
@@ -382,9 +409,9 @@ fun HistoryScreen(
                     Button(
                         onClick = {
                             if (unsyncedCount > 0) {
-                                viewModel.syncPendingReports()
+                                viewModel.syncPendingReports(context)
                             } else {
-                                viewModel.refreshAnalyticsData()
+                                viewModel.refreshAnalyticsData(context)
                             }
                         },
                         enabled = true,
@@ -411,6 +438,22 @@ fun HistoryScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(if (isManagerSession) "Tarik Pembaruan Lapangan (Live)" else "Semua Laporan Tersinkron Lengkap", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showResetLocalDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDC2626)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(38.dp)
+                            .testTag("history_reset_local_data_button")
+                    ) {
+                        Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Reset Data Lokal", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -466,15 +509,7 @@ fun HistoryScreen(
             }
         }
 
-        // PANEL FILTER EKSEKUTIF (Wilayah, Jenis Unit, Kode Unit)
-        if (isManagerSession) {
-            item {
-                ExecutiveFilterPanel(
-                    viewModel = viewModel,
-                    isManagerSession = true
-                )
-            }
-        }
+
 
         // ==========================================
         // 2. SEARCH & FILTER KONTROL CEPAT
@@ -597,7 +632,11 @@ fun HistoryScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "Kasie: ${activeSupervisor.ifBlank { "Saya" }}",
+                                        text = if (isOperatorSession) {
+                                            "Operator: ${currentSupervisor?.resolvedNamaLengkap?.ifBlank { activeSupervisor } ?: activeSupervisor}"
+                                        } else {
+                                            "Kasie: ${activeSupervisor.ifBlank { "Saya" }}"
+                                        },
                                         color = Emerald900,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp
@@ -637,8 +676,11 @@ fun HistoryScreen(
                 items(filteredRecords, key = { it.report.id }) { record ->
                     CompletedOperationCard(
                         record = record,
+                        isKasieSession = isKasieSession,
                         onClick = { selectedRecordForDetail = record },
-                        onPhotoClick = { photoPreviewReport = record.report }
+                        onPhotoClick = { photoPreviewReport = record.report },
+                        onApproveClick = { reportPendingApproval = record.report },
+                        onKoreksiClick = { reportPendingCorrection = record.report }
                     )
                 }
             }
@@ -672,9 +714,151 @@ fun HistoryScreen(
         ReportDetailDialog(
             report = rec.report,
             nomorSpk = rec.nomorSpk,
-            isReadOnly = isManagerSession,
+            isReadOnly = isManagerSession || isOperatorSession || rec.report.isLocked,
+            isKasieSession = isKasieSession,
             onDismiss = { selectedRecordForDetail = null },
-            onDelete = { id -> viewModel.deleteReport(id) }
+            onDelete = { id -> viewModel.deleteReport(id) },
+            onApprove = { rep -> viewModel.approveRealisasi(rep) },
+            onKoreksi = { rep -> reportPendingCorrection = rep }
+        )
+    }
+
+    // ==========================================
+    // DIALOG KONFIRMASI APPROVE REALISASI OLEH KASIE
+    // ==========================================
+    reportPendingApproval?.let { targetReport ->
+        AlertDialog(
+            onDismissRequest = { reportPendingApproval = null },
+            title = {
+                Text(
+                    text = "Setujui Realisasi Lapangan?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = Slate900
+                )
+            },
+            text = {
+                Text(
+                    text = "Pastikan angka HM dan solar telah sesuai. Setelah disetujui, data akan terkunci permanen dan tidak dapat diubah lagi.",
+                    fontSize = 13.sp,
+                    color = Slate700
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.approveRealisasi(targetReport)
+                        reportPendingApproval = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                    modifier = Modifier.testTag("btn_confirm_approve_realisasi")
+                ) {
+                    Text("Ya, Setujui & Kunci", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { reportPendingApproval = null }) {
+                    Text("Batal", color = Slate700)
+                }
+            }
+        )
+    }
+
+    // ==========================================
+    // DIALOG KOREKSI REALISASI SEBELUM DISETUJUI KASIE
+    // ==========================================
+    reportPendingCorrection?.let { targetReport ->
+        var hmAwalText by remember(targetReport.id) { mutableStateOf(String.format(Locale.US, "%.1f", targetReport.hmAwal)) }
+        var hmAkhirText by remember(targetReport.id) { mutableStateOf(String.format(Locale.US, "%.1f", targetReport.hmAkhir)) }
+        var solarText by remember(targetReport.id) { mutableStateOf(String.format(Locale.US, "%.1f", targetReport.pemakaianSolar)) }
+        var hasilText by remember(targetReport.id) { mutableStateOf(String.format(Locale.US, "%.1f", targetReport.workOutput)) }
+        var catatanText by remember(targetReport.id) { mutableStateOf(targetReport.notes) }
+
+        AlertDialog(
+            onDismissRequest = { reportPendingCorrection = null },
+            title = {
+                Text(
+                    text = "Koreksi Realisasi (${targetReport.unitCode})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Slate900
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = hmAwalText,
+                            onValueChange = { hmAwalText = it },
+                            label = { Text("HM Awal", fontSize = 11.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = hmAkhirText,
+                            onValueChange = { hmAkhirText = it },
+                            label = { Text("HM Akhir", fontSize = 11.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = solarText,
+                            onValueChange = { solarText = it },
+                            label = { Text("Solar (Liter)", fontSize = 11.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = hasilText,
+                            onValueChange = { hasilText = it },
+                            label = { Text("Hasil (${targetReport.unitOfMeasure})", fontSize = 11.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedTextField(
+                        value = catatanText,
+                        onValueChange = { catatanText = it },
+                        label = { Text("Catatan Koreksi Kasie", fontSize = 11.sp) },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val newHmAwal = hmAwalText.replace(',', '.').toDoubleOrNull() ?: targetReport.hmAwal
+                        val newHmAkhir = hmAkhirText.replace(',', '.').toDoubleOrNull() ?: targetReport.hmAkhir
+                        val newSolar = solarText.replace(',', '.').toDoubleOrNull() ?: targetReport.pemakaianSolar
+                        val newHasil = hasilText.replace(',', '.').toDoubleOrNull() ?: targetReport.workOutput
+                        viewModel.correctRealisasi(
+                            report = targetReport,
+                            hmAwalBaru = newHmAwal,
+                            hmAkhirBaru = newHmAkhir,
+                            solarBaru = newSolar,
+                            hasilKerjaBaru = newHasil,
+                            keteranganBaru = catatanText
+                        )
+                        reportPendingCorrection = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                    modifier = Modifier.testTag("btn_save_koreksi_realisasi")
+                ) {
+                    Text("Simpan Koreksi", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { reportPendingCorrection = null }) {
+                    Text("Batal", color = Slate700)
+                }
+            }
         )
     }
 
@@ -690,6 +874,47 @@ fun HistoryScreen(
             onDismiss = { photoPreviewReport = null }
         )
     }
+
+    if (showResetLocalDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetLocalDialog = false },
+            title = {
+                Text(
+                    text = "Reset Data Lokal",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Slate900
+                )
+            },
+            text = {
+                Text(
+                    text = "Apakah Anda ingin membersihkan seluruh cache transaksi lokal?",
+                    fontSize = 13.sp,
+                    color = Slate700
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetLocalDialog = false
+                        viewModel.resetLocalTransactionData(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFDC2626),
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.testTag("btn_history_confirm_reset_local")
+                ) {
+                    Text("YA", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetLocalDialog = false }) {
+                    Text("Batal", color = Slate700)
+                }
+            }
+        )
+    }
 }
 
 /**
@@ -699,8 +924,11 @@ fun HistoryScreen(
 @Composable
 fun CompletedOperationCard(
     record: CompletedOperationalRecord,
+    isKasieSession: Boolean = false,
     onClick: () -> Unit,
-    onPhotoClick: () -> Unit
+    onPhotoClick: () -> Unit,
+    onApproveClick: (() -> Unit)? = null,
+    onKoreksiClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Card(
@@ -1063,6 +1291,116 @@ fun CompletedOperationCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // ======================================================================
+            // STATUS VERIFIKASI & FITUR APPROVAL REALISASI (KASIE vs OPERATOR)
+            // ======================================================================
+            if (record.report.isLocked) {
+                // KONDISI 2: SUDAH DISETUJUI (isLocked == true)
+                // Sembunyikan tombol Edit/Koreksi, Hapus, dan Approve.
+                // Tampilkan badge hijau gembok: "✔ Disetujui oleh ${item.approvedBy} • Terkunci"
+                val approvedByLabel = record.report.approvedBy?.takeIf { it.isNotBlank() } ?: record.supervisorName
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Emerald50,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Emerald200),
+                    modifier = Modifier.fillMaxWidth().testTag("badge_locked_${record.report.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Terkunci",
+                            tint = Emerald700,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "✔ Disetujui oleh $approvedByLabel • Terkunci",
+                            color = Emerald900,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else {
+                // KONDISI 1: BELUM DISETUJUI (isLocked == false)
+                // Badge status Amber: "Menunggu Verifikasi Kasie"
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                        modifier = Modifier.fillMaxWidth().testTag("badge_pending_approval_${record.report.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = "Menunggu Verifikasi",
+                                tint = Color(0xFFB45309),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Menunggu Verifikasi Kasie",
+                                color = Color(0xFF92400E),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Tombol "Koreksi" dan tombol hijau "✔ Setujui Realisasi (Approve)" khusus untuk Kasie
+                    if (isKasieSession && (onApproveClick != null || onKoreksiClick != null)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (onKoreksiClick != null) {
+                                OutlinedButton(
+                                    onClick = onKoreksiClick,
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Slate700),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate300),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .testTag("btn_koreksi_card_${record.report.id}")
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Koreksi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            if (onApproveClick != null) {
+                                Button(
+                                    onClick = onApproveClick,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .weight(1.6f)
+                                        .height(38.dp)
+                                        .testTag("btn_approve_card_${record.report.id}")
+                                ) {
+                                    Text(
+                                        text = "✔ Setujui Realisasi (Approve)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Footer Petunjuk Aksi Klik & Tombol Bagikan Laporan Cepat
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1103,7 +1441,7 @@ fun CompletedOperationCard(
                 }
 
                 Text(
-                    text = "Ketuk untuk audit lengkap ➔",
+                    text = if (record.report.isLocked) "Rincian Terkunci (Read-Only) ➔" else "Ketuk untuk audit lengkap ➔",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Emerald700
@@ -1217,13 +1555,21 @@ fun ExecutiveRencanaCard(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Status Realisasi
+                    val isRealized = rencana.isRealized ||
+                            rencana.statusSpk.contains("Terealisasi", ignoreCase = true) ||
+                            rencana.statusSpk.contains("Approved", ignoreCase = true) ||
+                            rencana.statusRealisasi.contains("Terealisasi", ignoreCase = true) ||
+                            rencana.statusRealisasi.contains("Approved", ignoreCase = true) ||
+                            rencana.statusRealisasi.equals("SUDAH", ignoreCase = true) ||
+                            rencana.statusTahap.equals("REALISASI_SELESAI", ignoreCase = true)
+
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = if (rencana.isRealized) Emerald100 else Color(0xFFFEF3C7)
+                        color = if (isRealized) Emerald100 else Color(0xFFFEF3C7)
                     ) {
                         Text(
-                            text = if (rencana.isRealized) "Terealisasi" else "Rencana Aktif",
-                            color = if (rencana.isRealized) Emerald900 else Color(0xFF92400E),
+                            text = if (isRealized) "✔ Terealisasi & Selesai" else "Rencana Aktif",
+                            color = if (isRealized) Emerald900 else Color(0xFF92400E),
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)

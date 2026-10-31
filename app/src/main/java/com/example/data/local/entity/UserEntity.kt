@@ -13,6 +13,9 @@ data class UserEntity(
     @ColumnInfo(name = "user_id")
     val id: String = "1",
 
+    @ColumnInfo(name = "password")
+    val password: String = "",
+
     @ColumnInfo(name = "token")
     val token: String = "",
 
@@ -59,10 +62,10 @@ data class UserEntity(
 ) {
     val isManager: Boolean get() = role.equals("MANAGER", ignoreCase = true)
     val isSuperAdmin: Boolean get() = role.equals("SUPER ADMIN", ignoreCase = true) || role.equals("SUPERADMIN", ignoreCase = true)
-    val isOperator: Boolean get() = role.equals("OPERATOR", ignoreCase = true) || role.equals("operator", ignoreCase = true)
+    val isOperator: Boolean get() = com.example.data.local.isOperatorRole(role) || com.example.data.local.isOperatorRole(roleTitle)
     val isExecutive: Boolean get() = isManager || isSuperAdmin
     val isSupervisor: Boolean get() = !isExecutive && !isOperator
-    val isKasie: Boolean get() = role.equals("KASIE", ignoreCase = true) || (!isExecutive && !isOperator)
+    val isKasie: Boolean get() = com.example.data.local.isKasieRole(role) || com.example.data.local.isKasieRole(roleTitle) || (!isExecutive && !isOperator)
     val isAktif: Boolean get() = status.equals("Aktif", ignoreCase = true) || status.equals("Active", ignoreCase = true)
 
     val resolvedNamaLengkap: String

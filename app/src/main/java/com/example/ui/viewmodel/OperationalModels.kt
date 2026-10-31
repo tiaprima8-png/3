@@ -190,6 +190,7 @@ data class RealisasiFormUiState(
     val jumlahLiterSolarInput: String = "",
     val pemakaianSolarOtomatis: Double = 0.0,
     val hasilKerjaInput: String = "",
+    val isHasilKerjaError: Boolean = false,
     val keterangan: String = "",
     val photoPath: String? = null,
     val photoBase64: String? = null,
@@ -203,6 +204,9 @@ data class RealisasiFormUiState(
     val isSequentialHmFromPreviousPlan: Boolean = false,
     val sequentialSourcePlanText: String = ""
 ) {
+    val parsedHasilKerja: Double
+        get() = safeParseDouble(hasilKerjaInput)
+
     val isSpkTerbit: Boolean
         get() {
             val spk = nomorSpk.trim().ifBlank { selectedRencana?.nomorSpk?.trim() ?: "" }
@@ -397,3 +401,9 @@ data class FleetAnalyticsState(
     val unitSummaries: List<UnitAnalyticsRow> = emptyList(),
     val activitySummaries: List<ActivityAnalyticsRow> = emptyList()
 )
+
+fun safeParseDouble(text: String?): Double {
+    if (text.isNullOrBlank()) return 0.0
+    val normalized = text.trim().replace(',', '.')
+    return normalized.toDoubleOrNull() ?: 0.0
+}
