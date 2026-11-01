@@ -3515,55 +3515,6 @@ Halo Rekan Pengawas & Operator, berkas installer APK pembaruan aplikasi resmi te
         }
     }
 
-    fun saveRealisasiFromMasterEntity(entity: com.example.data.local.entity.MasterRealisasiEntity, context: Context? = null) {
-        viewModelScope.launch {
-            val reportEntity = entity.toActivityReportEntity()
-            if (entity.id > 0) {
-                repository.correctRealisasi(reportEntity).onSuccess {
-                    _uiEvents.emit(UiMessage.Success("Data realisasi unit ${entity.kodeUnit} berhasil dikoreksi!"))
-                }.onFailure { err ->
-                    _uiEvents.emit(UiMessage.Error("Gagal mengoreksi data: ${err.message}"))
-                }
-            } else {
-                val hasilEntity = HasilInputAktivitasEntity(
-                    rencanaId = 0L,
-                    nomorSpk = entity.nomorSpk,
-                    supervisorName = entity.kasie.ifBlank { _activeSupervisor.value },
-                    namaKasie = entity.kasie.ifBlank { _activeSupervisor.value },
-                    createdBy = entity.kasie.ifBlank { _activeSupervisor.value },
-                    kodeUnit = entity.kodeUnit,
-                    operator = entity.operator,
-                    kodeLokasi = entity.lokasi,
-                    activityName = entity.namaAktivitas,
-                    sapCode = "ACT-SAP-101",
-                    satuan = entity.satuan ?: "m3",
-                    unitStatus = "OPERASI",
-                    shift = entity.shift,
-                    jamKerja = 7.0,
-                    hmAwal = entity.hmAwal,
-                    hmAkhir = entity.hmAkhir,
-                    hmHarianBerjalan = entity.totalHm,
-                    isIsiSolar = entity.konsumsiSolar > 0,
-                    jumlahLiterSolar = entity.konsumsiSolar,
-                    stikSolarAwal = entity.stikSolarAwal,
-                    stikSolarAkhir = entity.stikSolarAkhir,
-                    pemakaianSolar = entity.konsumsiSolar,
-                    hasilKerja = entity.hasilKerja,
-                    keterangan = entity.keterangan ?: "",
-                    createdAt = System.currentTimeMillis(),
-                    tanggalFormat = normalizeDateToIso(entity.tanggal),
-                    approvalStatus = entity.approvalStatus ?: "Menunggu",
-                    isLocked = entity.isLocked
-                )
-                repository.submitHasilAktivitas(hasilEntity).onSuccess {
-                    _uiEvents.emit(UiMessage.Success("Realisasi unit ${entity.kodeUnit} berhasil disimpan!"))
-                }.onFailure { err ->
-                    _uiEvents.emit(UiMessage.Error("Gagal menyimpan realisasi: ${err.message}"))
-                }
-            }
-        }
-    }
-
     fun deleteReport(id: Long) {
         viewModelScope.launch {
             repository.deleteReport(id)

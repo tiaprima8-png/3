@@ -119,19 +119,4 @@ data class RencanaKerjaEntity(
 
     val satuan: String
         get() = satuanAktivitas
-
-    val shift: String
-        get() = shiftKerja
-
-    val lokasi: String
-        get() = kodeLokasi
-
-    val tanggal: String
-        get() = tanggalFormat.ifBlank { "2026-10-31" }
-
-    val isBacklog: Boolean
-        get() = false
-
-    val targetTerkunci: Boolean
-        get() = false
 }
