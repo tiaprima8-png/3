@@ -391,6 +391,8 @@ data class ApiResponse<T>(
 @JsonClass(generateAdapter = true)
 data class MasterDataPayload(
     val units: List<UnitPayload>? = emptyList(),
+    val unit: List<UnitPayload>? = emptyList(),
+    val master_unit: List<UnitPayload>? = emptyList(),
     // Matches 1-portalce.ai.studio "aktivitas"
     val aktivitas: List<ActivityPayload>? = emptyList(),
     val activities: List<ActivityPayload>? = emptyList(),
@@ -404,6 +406,14 @@ data class MasterDataPayload(
     val users: List<UserApiPayload>? = emptyList(),
     val kasie: List<UserApiPayload>? = emptyList()
 ) {
+    val resolvedUnits: List<UnitPayload>
+        get() {
+            if (!units.isNullOrEmpty()) return units
+            if (!unit.isNullOrEmpty()) return unit
+            if (!master_unit.isNullOrEmpty()) return master_unit
+            return emptyList()
+        }
+
     val resolvedActivities: List<ActivityPayload>
         get() {
             if (!aktivitas.isNullOrEmpty()) return aktivitas
@@ -534,6 +544,11 @@ data class UnitPayload(
     @Json(name = "last_hm") val last_hm: Double? = null,
     @Json(name = "lastHm") val lastHm: Double? = null,
 
+    @Json(name = "kasie") val kasie: String? = null,
+    @Json(name = "pengawas") val pengawas: String? = null,
+    @Json(name = "nama_kasie") val nama_kasie: String? = null,
+    @Json(name = "kasiePenanggungJawab") val kasiePenanggungJawab: String? = null,
+    @Json(name = "kasie_atasan") val kasie_atasan: String? = null,
     @Json(name = "kasie_penanggung_jawab") val kasie_penanggung_jawab: String? = null,
     @Json(name = "nama_pengawas") val nama_pengawas: String? = null,
     @Json(name = "supervisor_assigned") val supervisor_assigned: String? = null,
@@ -548,7 +563,8 @@ data class UnitPayload(
     @Json(name = "max_standar") val max_standar: Double? = null,
     @Json(name = "hmMinStandar") val hmMinStandar: Double? = null,
     @Json(name = "hmMaxStandar") val hmMaxStandar: Double? = null,
-    @Json(name = "wilayah") val wilayah: String? = null
+    @Json(name = "wilayah") val wilayah: String? = null,
+    @Json(name = "divisi") val divisi: String? = null
 ) {
     constructor(
         unitCode: String,
@@ -573,6 +589,8 @@ data class UnitPayload(
         hm_unit_terakhir_diinputkan = lastHm,
         last_hm = lastHm,
         lastHm = lastHm,
+        kasie = supervisorAssigned,
+        kasie_penanggung_jawab = supervisorAssigned,
         nama_pengawas = supervisorAssigned,
         supervisor_assigned = supervisorAssigned,
         supervisorAssigned = supervisorAssigned,
@@ -586,13 +604,14 @@ data class UnitPayload(
     val resolvedUnitType: String get() = jenis_unit ?: unit_type ?: unitType ?: "EXCAVATOR"
     val resolvedBrandModel: String get() = model_unit ?: brand_model ?: brandModel ?: ""
     val resolvedLastHm: Double get() = hm_unit_terakhir_diinputkan ?: last_hm ?: lastHm ?: 0.0
-    val resolvedSupervisor: String get() = kasie_penanggung_jawab ?: nama_pengawas ?: supervisor_assigned ?: supervisorAssigned ?: ""
+    val resolvedSupervisor: String
+        get() = (kasie ?: kasie_penanggung_jawab ?: kasiePenanggungJawab ?: nama_kasie ?: nama_pengawas ?: pengawas ?: kasie_atasan ?: supervisor_assigned ?: supervisorAssigned ?: "").trim()
     val resolvedStatus: String get() = status ?: "OPERASIONAL"
     val resolvedHmMinStandar: Double get() = hm_min_standar ?: hm_min ?: min_standar ?: hmMinStandar ?: 6.0
     val resolvedHmMaxStandar: Double get() = hm_max_standar ?: hm_max ?: max_standar ?: hmMaxStandar ?: 10.0
-    val resolvedWilayah: String get() = wilayah?.takeIf { it.isNotBlank() } ?: when {
-        resolvedSupervisor.contains("Agus", ignoreCase = true) -> "Geodesi PG2"
-        resolvedSupervisor.contains("Rudi", ignoreCase = true) -> "RC PG1"
+    val resolvedWilayah: String get() = (wilayah ?: divisi)?.takeIf { it.isNotBlank() } ?: when {
+        resolvedSupervisor.contains("Agus", ignoreCase = true) || resolvedSupervisor.contains("Zainudin", ignoreCase = true) -> "Geodesi PG2"
+        resolvedSupervisor.contains("Rudi", ignoreCase = true) || resolvedSupervisor.contains("Jahidi", ignoreCase = true) || resolvedSupervisor.contains("Hisar", ignoreCase = true) -> "RC PG1"
         else -> "Geodesi PG1"
     }
 }
@@ -951,12 +970,15 @@ data class UserApiPayload(
     @Json(name = "nama") val nama: String? = null,
     @Json(name = "nama_lengkap") val nama_lengkap: String? = null,
     @Json(name = "username") val username: String? = null,
+    @Json(name = "nik") val nik: String? = null,
     @Json(name = "password") val password: String? = null,
     @Json(name = "pin") val pin: String? = null,
     @Json(name = "password_pin") val password_pin: String? = null,
     @Json(name = "kata_sandi") val kata_sandi: String? = null,
     @Json(name = "hak_akses") val hak_akses: String? = null,
     @Json(name = "role") val role: String? = null,
+    @Json(name = "jabatan") val jabatan: String? = null,
+    @Json(name = "level") val level: String? = null,
     @Json(name = "wilayah") val wilayah: String? = null,
     @Json(name = "kasie_atasan") val kasie_atasan: String? = null,
     @Json(name = "kasie_penanggung_jawab") val kasie_penanggung_jawab: String? = null,
@@ -972,7 +994,7 @@ data class UserApiPayload(
         get() = (nama_lengkap ?: nama)?.trim()?.ifBlank { null } ?: username?.trim()?.removePrefix("@") ?: "Pengguna"
 
     val resolvedUsername: String
-        get() = (username ?: "").trim().removePrefix("@").trim()
+        get() = (username ?: nik ?: "").trim().removePrefix("@").trim()
 
     val resolvedPassword: String
         get() = (password ?: password_pin ?: pin ?: kata_sandi ?: "").trim().ifBlank {
@@ -1033,11 +1055,18 @@ data class UserApiPayload(
         get() {
             val rRole = (role ?: "").trim().uppercase()
             val rHak = (hak_akses ?: "").trim().uppercase()
+            val rJab = (jabatan ?: level ?: "").trim().uppercase()
+            val uLower = resolvedUsername.lowercase()
+            val nLower = resolvedNamaLengkap.lowercase()
+            val knownKasie = setOf("agung", "zainudin", "jahidi", "hisar", "yono", "yono1", "nyoman", "saipul", "galung")
             return when {
                 rRole.contains("SUPER_ADMIN") || rRole.contains("SUPERADMIN") || rRole == "SUPER ADMIN" || rHak.contains("SUPER ADMIN") || rHak.contains("SUPERADMIN") -> "SUPER ADMIN"
-                rRole.contains("MANAGER") || rHak.contains("MANAGER") -> "MANAGER"
-                rRole.contains("OPERATOR") || rHak.contains("OPERATOR") -> "OPERATOR"
-                rRole.contains("SUPERVISOR") || rRole.contains("KASIE") || rHak.contains("KASIE") || rHak.contains("PENGAWAS") -> "KASIE"
+                rRole.contains("MANAGER") || rHak.contains("MANAGER") || rJab.contains("MANAGER") -> "MANAGER"
+                rRole.contains("OPERATOR") || rHak.contains("OPERATOR") || rJab.contains("OPERATOR") ||
+                    uLower == "achmad" || uLower.startsWith("achmad") || nLower.contains("achmad") ||
+                    (uLower.all { it.isDigit() } && uLower.length >= 6) ||
+                    (resolvedKasieAtasan.isNotBlank() && uLower !in knownKasie) -> "OPERATOR"
+                rRole.contains("SUPERVISOR") || rRole.contains("KASIE") || rHak.contains("KASIE") || rHak.contains("PENGAWAS") || rJab.contains("KASIE") -> "KASIE"
                 else -> "KASIE"
             }
         }
@@ -1074,7 +1103,7 @@ data class UserApiPayload(
             },
             role = if (roleStr == "OPERATOR") "operator" else roleStr,
             wilayah = wilayah ?: if (isExec) "Semua Wilayah" else "Geodesi PG1",
-            kasieAtasan = resolvedKasieAtasan,
+            kasieAtasan = if (roleStr == "OPERATOR") resolvedKasieAtasan.ifBlank { "Jahidi" } else resolvedKasieAtasan,
             token = "token-auth-session",
             status = if (isAktif) "Aktif" else "Nonaktif"
         )
@@ -1089,6 +1118,8 @@ data class UserProfileDto(
     @Json(name = "username") val username: String? = null,
     @Json(name = "role") val role: String? = "KASIE", // KASIE | operator | OPERATOR | MANAGER | SUPER ADMIN
     @Json(name = "hak_akses") val hak_akses: String? = null,
+    @Json(name = "jabatan") val jabatan: String? = null,
+    @Json(name = "level") val level: String? = null,
     @Json(name = "wilayah") val wilayah: String? = "Geodesi 1",
     @Json(name = "kasie_atasan") val kasie_atasan: String? = null,
     @Json(name = "kasie_penanggung_jawab") val kasie_penanggung_jawab: String? = null,
@@ -1132,11 +1163,18 @@ data class UserProfileDto(
         get() {
             val rRole = (role ?: "").trim().uppercase()
             val rHak = (hak_akses ?: "").trim().uppercase()
+            val rJab = (jabatan ?: level ?: "").trim().uppercase()
+            val uLower = (username ?: "").trim().removePrefix("@").lowercase()
+            val nLower = resolvedNamaLengkap.lowercase()
+            val knownKasie = setOf("agung", "zainudin", "jahidi", "hisar", "yono", "yono1", "nyoman", "saipul", "galung")
             return when {
                 rRole.contains("SUPER_ADMIN") || rRole.contains("SUPERADMIN") || rRole == "SUPER ADMIN" || rHak.contains("SUPER ADMIN") || rHak.contains("SUPERADMIN") -> "SUPER ADMIN"
-                rRole.contains("MANAGER") || rHak.contains("MANAGER") -> "MANAGER"
-                rRole.contains("OPERATOR") || rHak.contains("OPERATOR") -> "OPERATOR"
-                rRole.contains("SUPERVISOR") || rRole.contains("KASIE") || rHak.contains("KASIE") || rHak.contains("PENGAWAS") -> "KASIE"
+                rRole.contains("MANAGER") || rHak.contains("MANAGER") || rJab.contains("MANAGER") -> "MANAGER"
+                rRole.contains("OPERATOR") || rHak.contains("OPERATOR") || rJab.contains("OPERATOR") ||
+                    uLower == "achmad" || uLower.startsWith("achmad") || nLower.contains("achmad") ||
+                    (uLower.all { it.isDigit() } && uLower.length >= 6) ||
+                    (resolvedKasieAtasan.isNotBlank() && uLower !in knownKasie) -> "OPERATOR"
+                rRole.contains("SUPERVISOR") || rRole.contains("KASIE") || rHak.contains("KASIE") || rHak.contains("PENGAWAS") || rJab.contains("KASIE") -> "KASIE"
                 else -> "KASIE"
             }
         }

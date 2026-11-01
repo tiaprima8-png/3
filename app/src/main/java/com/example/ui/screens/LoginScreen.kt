@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import com.example.ui.components.RkceBrandEmblem
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -119,13 +120,17 @@ fun LoginScreen(
                 val uClean = it.username.trim().removePrefix("@")
                 val nClean = it.namaLengkap.trim()
                 uClean.equals(userTrimmed, ignoreCase = true) ||
+                it.nik.trim().equals(userTrimmed, ignoreCase = true) ||
                 it.name.trim().equals(userTrimmed, ignoreCase = true) ||
-                nClean.equals(userTrimmed, ignoreCase = true) ||
-                (userBase.isNotBlank() && uClean.replace(Regex("\\d+$"), "").equals(userBase, ignoreCase = true))
+                nClean.equals(userTrimmed, ignoreCase = true)
+            }
+            ?: masterUsers.find {
+                val uClean = it.username.trim().removePrefix("@")
+                userBase.isNotBlank() && uClean.replace(Regex("\\d+$"), "").equals(userBase, ignoreCase = true)
             }
 
         if (candidate != null && candidate.isExecutive) {
-            errorMessage = "Akses Ditolak: Akun '${candidate.resolvedNamaLengkap}' khusus untuk Website Admin. Aplikasi mobile ini hanya untuk Kasie Lapangan."
+            errorMessage = "Akses Ditolak: Akun '${candidate.resolvedNamaLengkap}' khusus untuk Website Admin. Aplikasi mobile ini untuk Kasie & Operator Lapangan."
             return
         }
         if (candidate != null && !candidate.isAktif) {
@@ -133,7 +138,11 @@ fun LoginScreen(
             return
         }
 
-        val resolvedLoginIdentifier = candidate?.username?.trim()?.removePrefix("@")?.ifBlank { userTrimmed } ?: userTrimmed
+        val resolvedLoginIdentifier = when {
+            userTrimmed.equals("achmad", ignoreCase = true) -> "achmad"
+            candidate != null && candidate.username.isNotBlank() -> candidate.username.trim().removePrefix("@")
+            else -> userTrimmed
+        }
         isLoading = true
 
         if (onLoginWithApi != null) {
@@ -142,7 +151,7 @@ fun LoginScreen(
                 isLoading = false
                 when (result) {
                     is LoginResult.Success -> {
-                        // Navigasi & state ditangani secara reaktif di ViewModel
+                        // Navigasi & state ditangani secara reaktif di ViewModel & NavHost
                     }
                     is LoginResult.Error -> {
                         errorMessage = result.message
@@ -152,7 +161,7 @@ fun LoginScreen(
             return
         }
 
-        // Fallback autentikasi lokal yang fleksibel
+        // Fallback autentikasi lokal yang fleksibel (Kasie & Operator)
         val (supervisor, errorMsg) = SupervisorDirectory.authenticateKasie(resolvedLoginIdentifier, passTrimmed)
         isLoading = false
         if (supervisor != null) {
@@ -211,46 +220,31 @@ fun LoginScreen(
         ) {
             Spacer(modifier = Modifier.height(36.dp))
 
-            // Ikon logo RKCE (hijau emerald rounded-2xl)
-            Surface(
-                modifier = Modifier.size(68.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF059669), // Hijau Emerald
-                shadowElevation = 8.dp
+            // Emblem Logo Vektor Native RKCE Civil Engineering
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(bottom = 16.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.PrecisionManufacturing,
-                        contentDescription = "Logo RKCE",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
+                RkceBrandEmblem(size = 72.dp)
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "RKCE",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp
+                )
+                Text(
+                    text = "CIVIL ENGINEERING • PORTAL OPERASIONAL",
+                    color = Color(0xFF93C5FD),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                    textAlign = TextAlign.Center
+                )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Teks judul "RKCE" (Putih, Bold, 26.sp)
-            Text(
-                text = "RKCE",
-                color = Color.White,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Subtitle ringkas "Portal Operasional Alat Berat" (Putih 80%, 12.sp)
-            Text(
-                text = "Portal Operasional Alat Berat",
-                color = Color.White.copy(alpha = 0.8f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // 3. Kartu Login Putih Melayang (Card Elevated)
             Card(

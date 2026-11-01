@@ -839,6 +839,12 @@ object CompanyServerSimulator {
         return list // Total 39 units
     }
 
+    fun findDefaultKasieForUnit(unitCode: String): String {
+        val clean = unitCode.trim()
+        if (clean.isBlank()) return ""
+        return serverUnits.find { it.resolvedUnitCode.equals(clean, ignoreCase = true) }?.resolvedSupervisor ?: ""
+    }
+
     private fun createDefaultServerOperators(): List<OperatorPayload> {
         val list = mutableListOf<OperatorPayload>()
         val kasieList = listOf(

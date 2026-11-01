@@ -319,6 +319,21 @@ class HeavyTrackRepository(
 
     suspend fun reconcileSyncStatus() = withContext(Dispatchers.IO) {
         try {
+            // Self-heal jika tabel units lokal sempat tertimpa massal ke 1 Kasie (> 15 unit memiliki supervisorAssigned yang sama)
+            val currentUnits = unitDao.getAllUnits().firstOrNull() ?: emptyList()
+            val groupedBySpv = currentUnits.groupBy { it.supervisorAssigned.trim().lowercase() }
+            if (currentUnits.size > 15 && groupedBySpv.values.any { it.size > 15 }) {
+                val repairedUnits = currentUnits.map { u ->
+                    val defaultOwner = CompanyServerSimulator.findDefaultKasieForUnit(u.unitCode)
+                    if (defaultOwner.isNotBlank()) {
+                        u.copy(supervisorAssigned = defaultOwner)
+                    } else {
+                        u
+                    }
+                }
+                unitDao.replaceAll(repairedUnits)
+            }
+
             val allHasil = hasilDao.getAllHasil().firstOrNull() ?: emptyList()
             val unsyncedReports = reportDao.getUnsyncedReportsList()
             for (report in unsyncedReports) {
@@ -430,18 +445,25 @@ class HeavyTrackRepository(
     suspend fun fetchMasterData(supervisorName: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             val (payload, message) = apiClientManager.fetchMasterData(supervisorName)
+            val existingUnitsMap = (unitDao.getAllUnits().firstOrNull() ?: emptyList()).associateBy { it.unitCode.uppercase() }
+            val isExistingMassCorrupted = existingUnitsMap.size > 15 &&
+                existingUnitsMap.values.groupBy { it.supervisorAssigned.trim().lowercase() }.values.any { it.size > 15 }
 
-            // 1. Process Units Aktif
-            val incomingUnits = (payload.units ?: emptyList())
+            // 1. Process Units Aktif (JANGAN timpa supervisorAssigned dengan supervisorName global!)
+            val incomingUnits = payload.resolvedUnits
                 .filter { com.example.data.model.UnitConstants.isJenisUnitValid(it.resolvedUnitType) }
                 .filter { !it.resolvedStatus.equals("Nonaktif", ignoreCase = true) && !it.resolvedStatus.equals("Inactive", ignoreCase = true) }
             val unitEntities = incomingUnits.map {
+                val existingOwner = if (!isExistingMassCorrupted) existingUnitsMap[it.resolvedUnitCode.uppercase()]?.supervisorAssigned.orEmpty() else ""
+                val resolvedKasie = it.resolvedSupervisor
+                    .ifBlank { existingOwner }
+                    .ifBlank { CompanyServerSimulator.findDefaultKasieForUnit(it.resolvedUnitCode) }
                 UnitEntity(
                     unitCode = it.resolvedUnitCode,
                     unitType = it.resolvedUnitType,
                     brandModel = it.resolvedBrandModel,
                     lastHm = it.resolvedLastHm,
-                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
+                    supervisorAssigned = resolvedKasie,
                     status = it.resolvedStatus,
                     hmMinStandar = it.resolvedHmMinStandar,
                     hmMaxStandar = it.resolvedHmMaxStandar,
@@ -449,8 +471,10 @@ class HeavyTrackRepository(
                     updatedAt = System.currentTimeMillis()
                 )
             }
-            unitDao.replaceAll(unitEntities)
-            reportDao.deleteOrphanedReports()
+            if (unitEntities.isNotEmpty()) {
+                unitDao.replaceAll(unitEntities)
+                reportDao.deleteOrphanedReports()
+            }
 
             // 2. Process Activities Aktif
             val incomingActivities = payload.resolvedActivities
@@ -467,7 +491,9 @@ class HeavyTrackRepository(
                     updatedAt = System.currentTimeMillis()
                 )
             }
-            activityDao.replaceAll(actEntities)
+            if (actEntities.isNotEmpty()) {
+                activityDao.replaceAll(actEntities)
+            }
 
             // 3. Process Operators Aktif
             val incomingOperators = (payload.resolvedOperators)
@@ -477,15 +503,17 @@ class HeavyTrackRepository(
                     operatorId = it.resolvedOperatorId,
                     name = it.resolvedName,
                     badgeNumber = it.resolvedBadgeNumber,
-                    supervisorAssigned = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
+                    supervisorAssigned = it.resolvedSupervisor,
                     skillLevel = it.resolvedSkillLevel,
                     status = it.resolvedStatus,
                     wilayah = it.resolvedWilayah,
-                    kasiePenanggungJawab = if (it.resolvedSupervisor.isNotBlank()) it.resolvedSupervisor else supervisorName,
+                    kasiePenanggungJawab = it.resolvedSupervisor,
                     updatedAt = System.currentTimeMillis()
                 )
             }
-            operatorDao.replaceAll(opEntities)
+            if (opEntities.isNotEmpty()) {
+                operatorDao.replaceAll(opEntities)
+            }
             seedOperatorsIntoUsersTable()
 
             // 4. Process Lokasi

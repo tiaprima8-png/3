@@ -202,7 +202,10 @@ data class RealisasiFormUiState(
     val clientTransactionId: String = "TX-" + java.util.UUID.randomUUID().toString(),
     // Kesinambungan HM Berantai (Sequential HM)
     val isSequentialHmFromPreviousPlan: Boolean = false,
-    val sequentialSourcePlanText: String = ""
+    val sequentialSourcePlanText: String = "",
+    // Mode Koreksi / Edit Realisasi oleh Kasie
+    val isEditKoreksiMode: Boolean = false,
+    val correctingReportId: Long? = null
 ) {
     val parsedHasilKerja: Double
         get() = safeParseDouble(hasilKerjaInput)

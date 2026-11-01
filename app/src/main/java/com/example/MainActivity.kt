@@ -96,8 +96,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.data.local.AppDatabase
 import com.example.data.remote.ApiClientManager
+import com.example.data.remote.LoginResult
 import com.example.data.repository.HeavyTrackRepository
 import com.example.ui.screens.AnalyticsScreen
 import com.example.ui.screens.DistributionDialog
@@ -163,6 +169,8 @@ fun HeavyTrackApp() {
     val customApkUrl by viewModel.customApkUrl.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val isManagerSession by viewModel.isManagerSession.collectAsState()
+    val isOperatorSession by viewModel.isOperatorSession.collectAsState()
+    val currentSession by viewModel.currentSupervisorSession.collectAsState()
     val unsyncedCount by viewModel.unsyncedCount.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
     val isSyncingMaster by viewModel.isSyncingMaster.collectAsState()
@@ -174,6 +182,17 @@ fun HeavyTrackApp() {
     val isSyncingUsers by viewModel.isSyncingUsers.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val navController = rememberNavController()
+
+    val resolvedRoleArg = if (
+        isOperatorSession ||
+        currentSession?.isOperator == true ||
+        currentSession?.username?.trim()?.equals("achmad", ignoreCase = true) == true
+    ) {
+        "operator"
+    } else {
+        "kasie"
+    }
 
     // Handle back button: kembali ke tab utama (Tab 0 - Formulir) jika sedang berada di tab lain
     BackHandler(enabled = isLoggedIn && currentTab != 0) {
@@ -181,8 +200,29 @@ fun HeavyTrackApp() {
     }
 
     // Reset tab ke posisi awal saat role berganti atau login baru
-    LaunchedEffect(isManagerSession, isLoggedIn) {
+    LaunchedEffect(isManagerSession, isOperatorSession, isLoggedIn) {
         currentTab = 0
+    }
+
+    // Sinkronisasi reaktif NavController dengan status autentikasi & role (Kasie / Operator)
+    LaunchedEffect(isLoggedIn, resolvedRoleArg) {
+        val currentRoute = navController.currentBackStackEntry?.destination?.route
+        if (isLoggedIn) {
+            val targetRoute = "dashboard/$resolvedRoleArg"
+            if (currentRoute == "login" || currentRoute == null) {
+                navController.navigate(targetRoute) {
+                    popUpTo("login") { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        } else {
+            if (currentRoute != null && currentRoute != "login") {
+                navController.navigate("login") {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
     }
 
     // Collect UI messages / notifications
@@ -196,27 +236,71 @@ fun HeavyTrackApp() {
         }
     }
 
-    if (!isLoggedIn) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            LoginScreen(
-                masterUsers = masterUsers,
-                isSyncingUsers = isSyncingUsers,
-                onRefreshUsers = { viewModel.syncMasterUsers() },
-                onLoginSuccess = { supervisor ->
-                    viewModel.login(supervisor)
-                },
-                onLoginWithApi = { username, password ->
-                    viewModel.loginWithApi(username, password)
+    NavHost(
+        navController = navController,
+        startDestination = if (isLoggedIn) "dashboard/$resolvedRoleArg" else "login",
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable("login") {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LoginScreen(
+                    masterUsers = masterUsers,
+                    isSyncingUsers = isSyncingUsers,
+                    onRefreshUsers = { viewModel.syncMasterUsers() },
+                    onLoginSuccess = { supervisor ->
+                        viewModel.login(supervisor)
+                        val roleParam = if (
+                            supervisor.isOperator ||
+                            supervisor.username.trim().equals("achmad", ignoreCase = true)
+                        ) {
+                            "operator"
+                        } else {
+                            "kasie"
+                        }
+                        navController.navigate("dashboard/$roleParam") {
+                            popUpTo("login") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onLoginWithApi = { username, password ->
+                        val result = viewModel.loginWithApi(username, password)
+                        if (result is LoginResult.Success) {
+                            val roleParam = if (
+                                result.user.isOperator ||
+                                result.user.username?.trim()?.equals("achmad", ignoreCase = true) == true ||
+                                username.trim().equals("achmad", ignoreCase = true)
+                            ) {
+                                "operator"
+                            } else {
+                                "kasie"
+                            }
+                            navController.navigate("dashboard/$roleParam") {
+                                popUpTo("login") { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                        result
+                    }
+                )
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+        }
+
+        composable(
+            route = "dashboard/{role}",
+            arguments = listOf(
+                navArgument("role") {
+                    type = NavType.StringType
+                    defaultValue = "kasie"
                 }
             )
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-    } else {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
+        ) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color(0xFFF8FAFC),
             snackbarHost = {
                 SnackbarHost(
                     hostState = snackbarHostState,
@@ -231,6 +315,7 @@ fun HeavyTrackApp() {
                 )
             },
             topBar = {
+                if (currentTab !in 0..2) {
                 val supervisorSession by viewModel.currentSupervisorSession.collectAsState()
                 val activeSupervisorName by viewModel.activeSupervisor.collectAsState()
 
@@ -489,13 +574,14 @@ fun HeavyTrackApp() {
                         }
                     }
                 }
+                }
             },
             bottomBar = {
-                // Bottom Navigation Bar: Berlatar putih bersih dengan garis pembatas atas sangat tipis
-                Column {
+                // Bottom Navigation Bar: Berlatar putih bersih dengan garis pemisah atas 1dp #E2E8F0
+                Column(modifier = Modifier.background(Color.White)) {
                     androidx.compose.material3.HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = Slate200
+                        thickness = 1.dp,
+                        color = Color(0xFFE2E8F0)
                     )
                     NavigationBar(
                         containerColor = Color.White,
@@ -608,6 +694,7 @@ fun HeavyTrackApp() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(Color(0xFFF8FAFC))
                     .padding(innerPadding)
                     .imePadding()
             ) {
@@ -951,6 +1038,7 @@ fun HeavyTrackApp() {
                 containerColor = Color.White,
                 shape = RoundedCornerShape(16.dp)
             )
+        }
         }
     }
 

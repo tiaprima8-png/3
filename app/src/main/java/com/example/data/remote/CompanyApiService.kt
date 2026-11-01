@@ -396,12 +396,13 @@ class ApiClientManager(val context: Context) {
             .filter { com.example.data.model.UnitConstants.isJenisUnitValid(it.resolvedUnitType) }
             .filter { !it.resolvedStatus.equals("Nonaktif", ignoreCase = true) && !it.resolvedStatus.equals("Inactive", ignoreCase = true) }
             .map { un ->
+                val resolvedKasie = un.resolvedSupervisor.ifBlank { CompanyServerSimulator.findDefaultKasieForUnit(un.resolvedUnitCode) }
                 com.example.data.local.entity.UnitEntity(
                     unitCode = un.resolvedUnitCode,
                     unitType = un.resolvedUnitType,
                     brandModel = un.resolvedBrandModel,
                     lastHm = un.resolvedLastHm,
-                    supervisorAssigned = if (un.resolvedSupervisor.isNotBlank()) un.resolvedSupervisor else supervisorName,
+                    supervisorAssigned = resolvedKasie,
                     status = un.resolvedStatus,
                     hmMinStandar = un.resolvedHmMinStandar,
                     hmMaxStandar = un.resolvedHmMaxStandar,
@@ -417,11 +418,11 @@ class ApiClientManager(val context: Context) {
                     operatorId = op.resolvedOperatorId,
                     name = op.resolvedName,
                     badgeNumber = op.resolvedBadgeNumber,
-                    supervisorAssigned = if (op.resolvedSupervisor.isNotBlank()) op.resolvedSupervisor else supervisorName,
+                    supervisorAssigned = op.resolvedSupervisor,
                     skillLevel = op.resolvedSkillLevel,
                     status = op.resolvedStatus,
                     wilayah = op.resolvedWilayah,
-                    kasiePenanggungJawab = if (op.resolvedSupervisor.isNotBlank()) op.resolvedSupervisor else supervisorName,
+                    kasiePenanggungJawab = op.resolvedSupervisor,
                     updatedAt = System.currentTimeMillis()
                 )
             }
@@ -603,9 +604,17 @@ class ApiClientManager(val context: Context) {
                         else -> !status.equals("Nonaktif", ignoreCase = true) && !status.equals("Inactive", ignoreCase = true)
                     }
                     if (!isAktif) continue
-                    val nama = optStringFirst(u, "nama_lengkap", "name").ifBlank { uname }
-                    val role = optStringFirst(u, "role", "hak_akses").uppercase()
+                    val nama = optStringFirst(u, "nama_lengkap", "name", "nama").ifBlank { uname }
+                    val role = optStringFirst(u, "role", "hak_akses", "jabatan", "level").uppercase()
+                    val kasieAtasan = optStringFirst(u, "kasie_atasan", "kasie_penanggung_jawab", "kasie")
                     val wil = optStringFirst(u, "wilayah").ifBlank { "Geodesi PG1" }
+                    val knownKasie = setOf("agung", "zainudin", "jahidi", "hisar", "yono", "yono1", "nyoman", "saipul", "galung")
+                    val isOp = role.contains("OPERATOR") ||
+                        uname.equals("achmad", ignoreCase = true) ||
+                        uname.lowercase().startsWith("achmad") ||
+                        nama.contains("achmad", ignoreCase = true) ||
+                        (uname.all { it.isDigit() } && uname.length >= 6) ||
+                        (kasieAtasan.isNotBlank() && uname.lowercase() !in knownKasie && !role.contains("SUPER") && !role.contains("MANAGER"))
                     userMap[uname.lowercase()] = com.example.data.local.entity.UserEntity(
                         username = uname,
                         id = optStringFirst(u, "id").ifBlank { (userMap.size + 1).toString() },
@@ -613,8 +622,9 @@ class ApiClientManager(val context: Context) {
                         name = nama,
                         namaLengkap = nama,
                         nik = uname,
-                        role = if (role.contains("SUPER")) "SUPER ADMIN" else if (role.contains("MANAGER")) "MANAGER" else "KASIE",
-                        roleTitle = if (role.contains("SUPER")) "Super Admin" else if (role.contains("MANAGER")) "Manager Operasional" else "Kasie Lapangan",
+                        role = if (role.contains("SUPER")) "SUPER ADMIN" else if (role.contains("MANAGER")) "MANAGER" else if (isOp) "operator" else "KASIE",
+                        roleTitle = if (role.contains("SUPER")) "Super Admin" else if (role.contains("MANAGER")) "Manager Operasional" else if (isOp) "Operator Alat Berat" else "Kasie Lapangan",
+                        kasieAtasan = if (isOp) kasieAtasan.ifBlank { "Jahidi" } else kasieAtasan,
                         wilayah = wil,
                         status = "Aktif",
                         isActiveSession = false,
@@ -648,8 +658,20 @@ class ApiClientManager(val context: Context) {
                     if (!isAktif) continue
                     val status = optStringFirst(un, "status").ifBlank { "OPERASIONAL" }
                     if (status.equals("Nonaktif", ignoreCase = true) || status.equals("Inactive", ignoreCase = true)) continue
-                    val kasieSpv = optStringFirst(un, "kasie", "nama_pengawas", "kasie_penanggung_jawab", "supervisor_assigned", "supervisorAssigned").ifBlank { supervisorName }
-                    val wil = optStringFirst(un, "wilayah").ifBlank { "Geodesi PG1" }
+                    val kasieSpv = optStringFirst(
+                        un,
+                        "kasie",
+                        "kasie_penanggung_jawab",
+                        "kasiePenanggungJawab",
+                        "nama_kasie",
+                        "namaKasie",
+                        "nama_pengawas",
+                        "pengawas",
+                        "supervisor_assigned",
+                        "supervisorAssigned",
+                        "kasie_atasan"
+                    ).ifBlank { CompanyServerSimulator.findDefaultKasieForUnit(code) }
+                    val wil = optStringFirst(un, "wilayah", "divisi").ifBlank { "Geodesi PG1" }
                     val brand = optStringFirst(un, "brand_model", "model_unit", "brandModel")
                     val lastHm = un.optDouble("hm_terakhir", un.optDouble("hm_unit_terakhir_diinputkan", un.optDouble("last_hm", 0.0)))
                     val minHm = un.optDouble("hm_min_standar", if (uType.contains("Compactor") || uType.contains("Grader")) 5.0 else 6.0)
@@ -695,7 +717,7 @@ class ApiClientManager(val context: Context) {
                     if (!status.equals("AKTIF", ignoreCase = true) && !status.equals("ACTIVE", ignoreCase = true)) continue
                     val badge = optStringFirst(op, "nik", "nik_operator", "username", "kode_operator", "badge_number", "badgeNumber", "operator_id", "operatorId").ifBlank { "8504${4295 + i}" }
                     val opId = optStringFirst(op, "nik", "nik_operator", "operator_id", "operatorId", "id").ifBlank { badge }
-                    val spv = optStringFirst(op, "kasie_penanggung_jawab", "kasie", "nama_pengawas", "kasiePenanggungJawab", "supervisor_assigned", "supervisorAssigned", "kasie_atasan").ifBlank { supervisorName }
+                    val spv = optStringFirst(op, "kasie_penanggung_jawab", "kasie", "nama_pengawas", "kasiePenanggungJawab", "supervisor_assigned", "supervisorAssigned", "kasie_atasan")
                     val skill = optStringFirst(op, "jabatan", "skill_level", "skillLevel").ifBlank { "Class A" }
                     val wil = optStringFirst(op, "wilayah").ifBlank { "Geodesi PG1" }
                     opList.add(
@@ -1624,14 +1646,26 @@ class ApiClientManager(val context: Context) {
         if (statusCode == 200 && !responseBodyStr.isNullOrBlank()) {
             try {
                 val jsonObj = JSONObject(responseBodyStr)
-                if (jsonObj.has("success") && !jsonObj.optBoolean("success", true)) {
+                val isServerSuccess = !jsonObj.has("success") || jsonObj.optBoolean("success", true)
+                if (!isServerSuccess) {
                     val errMsg = jsonObj.optString("message", "")
-                    if (errMsg.contains("Password", ignoreCase = true)) {
+                    val canUseLocalFallback = matchedAccount != null && matchedAccount.isAktif && (
+                        matchedAccount.passwordPin.equals(trimmedPassword, ignoreCase = true) ||
+                            SupervisorDirectory.isPasswordFlexibleMatch(matchedAccount, trimmedPassword)
+                        )
+                    if (!canUseLocalFallback && errMsg.contains("Password", ignoreCase = true)) {
                         return@withContext LoginResult.Error("Password yang Anda masukkan salah.")
                     }
                 } else {
-                    val userObj = jsonObj.optJSONObject("user") ?: jsonObj.optJSONObject("data") ?: jsonObj
-                    val role = (userObj.optString("role", "").ifBlank { userObj.optString("hak_akses", "") }).uppercase()
+                    val dataObj = jsonObj.optJSONObject("data")
+                    val userObj = jsonObj.optJSONObject("user")
+                        ?: dataObj?.optJSONObject("user")
+                        ?: dataObj
+                        ?: jsonObj
+                    val role = optStringFirst(userObj, "role", "hak_akses", "jabatan", "level", "user_role")
+                        .ifBlank { if (dataObj != null) optStringFirst(dataObj, "role", "hak_akses", "jabatan", "level") else "" }
+                        .ifBlank { optStringFirst(jsonObj, "role", "hak_akses", "jabatan", "level") }
+                        .uppercase()
 
                     // Cek apakah akun adalah Executive (Super Admin / Manager)
                     if (role.contains("SUPER") || role.contains("MANAGER")) {
@@ -1652,19 +1686,29 @@ class ApiClientManager(val context: Context) {
                         return@withContext LoginResult.Error("Akun tidak terdaftar atau telah dinonaktifkan oleh Admin.")
                     }
 
-                    val isOp = role.contains("OPERATOR") || matchedAccount?.isOperator == true
-                    val uname = userObj.optString("username", cleanUsername).removePrefix("@").trim()
+                    val uname = optStringFirst(userObj, "username", "nik").ifBlank { cleanUsername }.removePrefix("@").trim()
                     val nama = optStringFirst(userObj, "nama", "nama_lengkap", "name").ifBlank {
                         matchedAccount?.resolvedNamaLengkap ?: uname
                     }
-                    val wil = userObj.optString("wilayah", matchedAccount?.wilayah ?: "Geodesi PG1").ifBlank {
-                        matchedAccount?.wilayah ?: "Geodesi PG1"
+                    val rawKasieAtasan = optStringFirst(userObj, "kasie_atasan", "kasie_penanggung_jawab", "kasie")
+                    val knownKasie = setOf("agung", "zainudin", "jahidi", "hisar", "yono", "yono1", "nyoman", "saipul", "galung")
+                    val isOp = role.contains("OPERATOR") ||
+                        matchedAccount?.isOperator == true ||
+                        cleanUsername.equals("achmad", ignoreCase = true) ||
+                        uname.equals("achmad", ignoreCase = true) ||
+                        nama.contains("achmad", ignoreCase = true) ||
+                        (uname.all { it.isDigit() } && uname.length >= 6) ||
+                        (rawKasieAtasan.isNotBlank() && uname.lowercase() !in knownKasie)
+                    val wil = optStringFirst(userObj, "wilayah").ifBlank {
+                        matchedAccount?.wilayah ?: if (isOp) "RC PG1" else "Geodesi PG1"
                     }
-                    val kasieAtasan = optStringFirst(userObj, "kasie_atasan", "kasie_penanggung_jawab", "kasie").ifBlank {
-                        if (isOp) (matchedAccount?.kasieAtasan?.ifBlank { "Agung" } ?: "Agung") else ""
+                    val kasieAtasan = rawKasieAtasan.ifBlank {
+                        if (isOp) (matchedAccount?.kasieAtasan?.ifBlank { "Jahidi" } ?: "Jahidi") else ""
                     }
-                    val uid = userObj.optString("id", matchedAccount?.id ?: "1").ifBlank { matchedAccount?.id ?: "1" }
-                    val token = jsonObj.optString("token", "token-auth-session").ifBlank { "token-auth-session" }
+                    val uid = optStringFirst(userObj, "id").ifBlank { matchedAccount?.id ?: "1" }
+                    val token = optStringFirst(jsonObj, "token").ifBlank {
+                        if (dataObj != null) optStringFirst(dataObj, "token") else ""
+                    }.ifBlank { "token-auth-session" }
 
                     return@withContext LoginResult.Success(
                         token = token,
@@ -1686,7 +1730,7 @@ class ApiClientManager(val context: Context) {
             }
         }
 
-        // 3. Jika akun terdaftar sebagai Operator (dari auto-seed 35 operator / tabel users) atau Kasie aktif:
+        // 3. Jika akun terdaftar sebagai Operator (dari auto-seed operator / tabel users) atau Kasie aktif:
         //    Verifikasi password dengan perbandingan teks polos maupun fleksibel
         if (matchedAccount != null && matchedAccount.isAktif) {
             if (matchedAccount.isExecutive) {
@@ -1695,39 +1739,44 @@ class ApiClientManager(val context: Context) {
                 )
             }
 
-            val isPasswordValid = (matchedAccount.passwordPin == trimmedPassword) ||
+            val isPasswordValid = matchedAccount.passwordPin.equals(trimmedPassword, ignoreCase = true) ||
+                SupervisorDirectory.isPasswordFlexibleMatch(matchedAccount, trimmedPassword) ||
                 SupervisorDirectory.authenticate(cleanUsername, trimmedPassword) != null
 
             if (!isPasswordValid) {
                 return@withContext LoginResult.Error("Password yang Anda masukkan salah.")
             }
 
-            // Jika akun adalah Operator (misal NIK 85044295) atau server mengalami kendala/belum sinkron tabel users remote
-            if (matchedAccount.isOperator || isNetworkError || statusCode == 401 || statusCode == 404 || statusCode == 403 || statusCode >= 500) {
-                val isOp = matchedAccount.isOperator
-                val resolvedRole = if (isOp) "operator" else "kasie"
-                val resolvedKasie = if (isOp) matchedAccount.kasieAtasan.ifBlank { "Agung" } else ""
-                val resolvedUsername = if (isOp) matchedAccount.nik.ifBlank { matchedAccount.username } else matchedAccount.username
-
-                return@withContext LoginResult.Success(
-                    token = "token-auth-session",
-                    user = UserProfileDto(
-                        id = matchedAccount.id,
-                        nama = matchedAccount.resolvedNamaLengkap,
-                        nama_lengkap = matchedAccount.resolvedNamaLengkap,
-                        username = resolvedUsername,
-                        role = resolvedRole,
-                        kasie_atasan = resolvedKasie,
-                        wilayah = matchedAccount.wilayah,
-                        status = "Aktif"
-                    ),
-                    message = if (isOp) {
-                        "Login berhasil sebagai Operator (${matchedAccount.resolvedNamaLengkap})"
-                    } else {
-                        "Login berhasil sebagai Kasie Lapangan (${matchedAccount.resolvedNamaLengkap})"
-                    }
-                )
+            val isOp = matchedAccount.isOperator ||
+                cleanUsername.equals("achmad", ignoreCase = true) ||
+                matchedAccount.username.equals("achmad", ignoreCase = true) ||
+                matchedAccount.resolvedNamaLengkap.contains("achmad", ignoreCase = true)
+            val resolvedRole = if (isOp) "operator" else "kasie"
+            val resolvedKasie = if (isOp) matchedAccount.kasieAtasan.ifBlank { "Jahidi" } else ""
+            val resolvedUsername = when {
+                cleanUsername.equals("achmad", ignoreCase = true) -> "achmad"
+                isOp -> matchedAccount.username.ifBlank { matchedAccount.nik }
+                else -> matchedAccount.username
             }
+
+            return@withContext LoginResult.Success(
+                token = "token-auth-session",
+                user = UserProfileDto(
+                    id = matchedAccount.id,
+                    nama = matchedAccount.resolvedNamaLengkap,
+                    nama_lengkap = matchedAccount.resolvedNamaLengkap,
+                    username = resolvedUsername,
+                    role = resolvedRole,
+                    kasie_atasan = resolvedKasie,
+                    wilayah = matchedAccount.wilayah,
+                    status = "Aktif"
+                ),
+                message = if (isOp) {
+                    "Login berhasil sebagai Operator (${matchedAccount.resolvedNamaLengkap})"
+                } else {
+                    "Login berhasil sebagai Kasie Lapangan (${matchedAccount.resolvedNamaLengkap})"
+                }
+            )
         }
 
         // 4. Jika server mengembalikan pesan error spesifik tentang password salah pada HTTP 401

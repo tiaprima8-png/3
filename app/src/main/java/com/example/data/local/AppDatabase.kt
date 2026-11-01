@@ -148,12 +148,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // Pertahankan sesi user yang sedang aktif login
+        // Pertahankan sesi user yang sedang aktif login beserta role aslinya
         if (currentUser != null && !activeUsername.isNullOrBlank()) {
             val activeKey = activeUsername.lowercase()
             val existing = combinedUsersMap[activeKey]
             if (existing != null) {
+                val preserveOp = currentUser.isOperator || existing.isOperator || activeKey == "achmad"
                 combinedUsersMap[activeKey] = existing.copy(
+                    role = if (preserveOp) "operator" else existing.role,
+                    roleTitle = if (preserveOp) "Operator Alat Berat" else existing.roleTitle,
+                    kasieAtasan = if (preserveOp) (currentUser.kasieAtasan?.takeIf { it.isNotBlank() } ?: existing.kasieAtasan ?: "Jahidi") else existing.kasieAtasan,
                     isActiveSession = true,
                     lastLoginAt = System.currentTimeMillis()
                 )
