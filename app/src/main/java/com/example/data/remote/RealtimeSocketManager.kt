@@ -52,7 +52,25 @@ data class RealtimeRealisasiData(
     val nomorSpk: String = "",
     val approvalStatus: String = "Menunggu Approval",
     val isLocked: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val stikSolarAwal: Double = 0.0,
+    val stikSolarAkhir: Double = 0.0,
+    val isIsiSolar: Boolean = false,
+    val jumlahLiterSolar: Double = 0.0,
+    val pemakaianSolar: Double = 0.0,
+    val kendalaId: String? = null,
+    val kendalaNama: String? = null,
+    val catatanKendala: String? = null,
+    val daftarKendalaJson: String? = null,
+    val hasilKerja: Double = 0.0,
+    val keterangan: String = "",
+    val photoBase64: String? = null,
+    val photoPath: String? = null,
+    val photoSizeKb: Long? = null,
+    val photoDimensions: String? = null,
+    val durasiJamKerja: Double = 7.0,
+    val isHmAwalCorrected: Boolean = false,
+    val alasanKoreksiHm: String? = null
 )
 
 /**
@@ -459,6 +477,24 @@ class RealtimeSocketManager(
         var solar = 0.0
         var approvalStatus = "Menunggu Approval"
         var isLocked = false
+        var stikSolarAwal = 0.0
+        var stikSolarAkhir = 0.0
+        var isIsiSolar = false
+        var jumlahLiterSolar = 0.0
+        var pemakaianSolar = 0.0
+        var kendalaId: String? = null
+        var kendalaNama: String? = null
+        var catatanKendala: String? = null
+        var daftarKendalaJson: String? = null
+        var hasilKerja = 0.0
+        var keterangan = ""
+        var photoBase64: String? = null
+        var photoPath: String? = null
+        var photoSizeKb: Long? = null
+        var photoDimensions: String? = null
+        var durasiJamKerja = 7.0
+        var isHmAwalCorrected = false
+        var alasanKoreksiHm: String? = null
 
         for (src in sources) {
             if (src == null) continue
@@ -471,8 +507,20 @@ class RealtimeSocketManager(
             if (src.has("hm_harian_berjalan") || src.has("hmDailyRunning") || src.has("total_hm")) {
                 totalHm = src.optDouble("hm_harian_berjalan", src.optDouble("hmDailyRunning", src.optDouble("total_hm", totalHm)))
             }
-            if (src.has("jumlah_liter_solar") || src.has("fuelLiters") || src.has("pemakaian_solar") || src.has("pemakaianSolar")) {
-                solar = src.optDouble("jumlah_liter_solar", src.optDouble("fuelLiters", src.optDouble("pemakaian_solar", src.optDouble("pemakaianSolar", solar))))
+            if (src.has("jumlah_liter_solar") || src.has("fuelLiters") || src.has("fuel_liters")) {
+                jumlahLiterSolar = src.optDouble("jumlah_liter_solar", src.optDouble("fuelLiters", src.optDouble("fuel_liters", jumlahLiterSolar)))
+            }
+            if (src.has("stik_solar_awal") || src.has("stikSolarAwal")) {
+                stikSolarAwal = src.optDouble("stik_solar_awal", src.optDouble("stikSolarAwal", stikSolarAwal))
+            }
+            if (src.has("stik_solar_akhir") || src.has("stikSolarAkhir")) {
+                stikSolarAkhir = src.optDouble("stik_solar_akhir", src.optDouble("stikSolarAkhir", stikSolarAkhir))
+            }
+            if (src.has("is_isi_solar") || src.has("isIsiSolar") || src.has("is_refueled") || src.has("isRefueled")) {
+                isIsiSolar = src.optBoolean("is_isi_solar", src.optBoolean("isIsiSolar", src.optBoolean("is_refueled", src.optBoolean("isRefueled", isIsiSolar))))
+            }
+            if (src.has("pemakaian_solar") || src.has("pemakaianSolar")) {
+                pemakaianSolar = src.optDouble("pemakaian_solar", src.optDouble("pemakaianSolar", pemakaianSolar))
             }
             if (src.has("approval_status") || src.has("approvalStatus")) {
                 approvalStatus = src.optString("approval_status", src.optString("approvalStatus", approvalStatus))
@@ -480,10 +528,64 @@ class RealtimeSocketManager(
             if (src.has("is_locked") || src.has("isLocked")) {
                 isLocked = src.optBoolean("is_locked", src.optBoolean("isLocked", isLocked))
             }
+            if (src.has("kendala_id") || src.has("kendalaId")) {
+                kendalaId = src.optString("kendala_id", src.optString("kendalaId", kendalaId ?: "")).takeIf { it.isNotBlank() }
+            }
+            if (src.has("kendala_nama") || src.has("kendalaNama") || src.has("kendala_lapangan") || src.has("kendalaLapangan")) {
+                kendalaNama = src.optString("kendala_nama", src.optString("kendalaNama", src.optString("kendala_lapangan", src.optString("kendalaLapangan", kendalaNama ?: "")))).takeIf { it.isNotBlank() }
+            }
+            if (src.has("catatan_kendala") || src.has("catatanKendala")) {
+                catatanKendala = src.optString("catatan_kendala", src.optString("catatanKendala", catatanKendala ?: "")).takeIf { it.isNotBlank() }
+            }
+            if (src.has("daftar_kendala") || src.has("daftar_kendala_json") || src.has("daftarKendalaJson") || src.has("kendala_list") || src.has("kendalaList")) {
+                val rawK = extractFirstNonEmpty(src, keys = arrayOf("daftar_kendala", "daftar_kendala_json", "daftarKendalaJson", "kendala_list", "kendalaList"))
+                if (rawK.isNotBlank()) daftarKendalaJson = rawK
+            }
+            if (src.has("hasil_kerja") || src.has("hasilKerja") || src.has("work_output") || src.has("workOutput")) {
+                hasilKerja = src.optDouble("hasil_kerja", src.optDouble("hasilKerja", src.optDouble("work_output", src.optDouble("workOutput", hasilKerja))))
+            }
+            if (src.has("keterangan") || src.has("notes") || src.has("catatan")) {
+                val rawNotes = extractFirstNonEmpty(src, keys = arrayOf("keterangan", "notes", "catatan"))
+                if (rawNotes.isNotBlank()) keterangan = rawNotes
+            }
+            if (src.has("foto") || src.has("foto_bukti") || src.has("photo_base64") || src.has("photoBase64")) {
+                val rawP = extractFirstNonEmpty(src, keys = arrayOf("photo_base64", "photoBase64", "foto_bukti", "foto"))
+                if (rawP.isNotBlank()) photoBase64 = rawP
+            }
+            if (src.has("photo_path") || src.has("photoPath")) {
+                val rawPath = extractFirstNonEmpty(src, keys = arrayOf("photo_path", "photoPath"))
+                if (rawPath.isNotBlank()) photoPath = rawPath
+            }
+            if (src.has("photo_size_kb") || src.has("photoSizeKb")) {
+                photoSizeKb = src.optLong("photo_size_kb", src.optLong("photoSizeKb", photoSizeKb ?: 0L)).takeIf { it > 0L }
+            }
+            if (src.has("photo_dimensions") || src.has("photoDimensions")) {
+                photoDimensions = extractFirstNonEmpty(src, keys = arrayOf("photo_dimensions", "photoDimensions")).takeIf { it.isNotBlank() }
+            }
+            if (src.has("durasi_jam_kerja") || src.has("durasiJamKerja") || src.has("work_duration_hours") || src.has("jam_kerja") || src.has("jamKerja")) {
+                durasiJamKerja = src.optDouble("durasi_jam_kerja", src.optDouble("durasiJamKerja", src.optDouble("work_duration_hours", src.optDouble("jam_kerja", src.optDouble("jamKerja", durasiJamKerja)))))
+            }
+            if (src.has("is_hm_awal_corrected") || src.has("isHmAwalCorrected")) {
+                isHmAwalCorrected = src.optBoolean("is_hm_awal_corrected", src.optBoolean("isHmAwalCorrected", isHmAwalCorrected))
+            }
+            if (src.has("alasan_koreksi_hm") || src.has("alasanKoreksiHm")) {
+                alasanKoreksiHm = extractFirstNonEmpty(src, keys = arrayOf("alasan_koreksi_hm", "alasanKoreksiHm")).takeIf { it.isNotBlank() }
+            }
         }
 
         if (totalHm <= 0.0 && hmAkhir > hmAwal) {
             totalHm = hmAkhir - hmAwal
+        }
+
+        if (stikSolarAwal > 0.0 || stikSolarAkhir > 0.0) {
+            val calc = if (isIsiSolar) ((stikSolarAwal + jumlahLiterSolar) - stikSolarAkhir).coerceAtLeast(0.0)
+                       else (stikSolarAwal - stikSolarAkhir).coerceAtLeast(0.0)
+            pemakaianSolar = calc
+            solar = calc
+        } else if (pemakaianSolar > 0.0) {
+            solar = pemakaianSolar
+        } else if (isIsiSolar && jumlahLiterSolar > 0.0) {
+            solar = jumlahLiterSolar
         }
 
         return RealtimeRealisasiData(
@@ -501,7 +603,25 @@ class RealtimeSocketManager(
             shift = shift,
             nomorSpk = nomorSpk,
             approvalStatus = approvalStatus,
-            isLocked = isLocked
+            isLocked = isLocked,
+            stikSolarAwal = stikSolarAwal,
+            stikSolarAkhir = stikSolarAkhir,
+            isIsiSolar = isIsiSolar,
+            jumlahLiterSolar = jumlahLiterSolar,
+            pemakaianSolar = pemakaianSolar,
+            kendalaId = kendalaId,
+            kendalaNama = kendalaNama,
+            catatanKendala = catatanKendala,
+            daftarKendalaJson = daftarKendalaJson,
+            hasilKerja = hasilKerja,
+            keterangan = keterangan,
+            photoBase64 = photoBase64,
+            photoPath = photoPath,
+            photoSizeKb = photoSizeKb,
+            photoDimensions = photoDimensions,
+            durasiJamKerja = durasiJamKerja,
+            isHmAwalCorrected = isHmAwalCorrected,
+            alasanKoreksiHm = alasanKoreksiHm
         )
     }
 

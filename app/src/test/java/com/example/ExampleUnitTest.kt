@@ -785,6 +785,14 @@ class ExampleUnitTest {
                 nama_pengawas = "Agung"
             )
         )
+        com.example.data.remote.CompanyServerSimulator.receivedReportsOnServer.add(
+            com.example.data.remote.PostActivityReportRequest(
+                tanggal = "11/10/2026",
+                nama_pengawas = "Agung",
+                kode_unit = "HEH0013",
+                hm_akhir = 12.0
+            )
+        )
         val response = com.example.data.remote.CompanyServerSimulator.fetchBootstrapData(
             pengawas = "Agung",
             tanggal = "11/10/2026"
@@ -1462,6 +1470,35 @@ class ExampleUnitTest {
 
         // Same task does not lock itself
         assertFalse(com.example.ui.viewmodel.isPriorTask(currentTask = todaySiangPlan, otherTask = todaySiangPlan))
+    }
+
+    @Test
+    fun test_hasil_kerja_validation_rules() {
+        fun validateHasilKerja(input: String): Boolean {
+            val raw = input.trim().replace(',', '.')
+            val parsed = raw.toDoubleOrNull()
+            return raw.isNotEmpty() && parsed != null && parsed >= 0.0
+        }
+
+        // Blank or whitespace -> Invalid
+        assertFalse(validateHasilKerja(""))
+        assertFalse(validateHasilKerja("   "))
+
+        // Zero / 0.0 -> Valid
+        assertTrue(validateHasilKerja("0"))
+        assertTrue(validateHasilKerja("0.0"))
+        assertTrue(validateHasilKerja("0,0"))
+
+        // Positive numbers -> Valid
+        assertTrue(validateHasilKerja("5"))
+        assertTrue(validateHasilKerja("12.5"))
+        assertTrue(validateHasilKerja("12,5"))
+        assertTrue(validateHasilKerja("100"))
+
+        // Negative numbers or non-numeric -> Invalid
+        assertFalse(validateHasilKerja("-1"))
+        assertFalse(validateHasilKerja("-0.5"))
+        assertFalse(validateHasilKerja("abc"))
     }
 }
 

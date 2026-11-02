@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.graphics.BitmapFactory
 import android.util.Base64
+import java.util.Locale
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -467,22 +468,36 @@ fun ReportDetailDialog(
                                     )
                                 }
                                 if (report.stikSolarAwal > 0.0 || report.stikSolarAkhir > 0.0) {
+                                    val sAwal = if (report.stikSolarAwal % 1.0 == 0.0) report.stikSolarAwal.toInt().toString() else String.format(Locale.US, "%.1f", report.stikSolarAwal)
+                                    val sAkhir = if (report.stikSolarAkhir % 1.0 == 0.0) report.stikSolarAkhir.toInt().toString() else String.format(Locale.US, "%.1f", report.stikSolarAkhir)
+                                    val isiStr = if (report.isRefueled && report.fuelLiters > 0.0) {
+                                        val lStr = if (report.fuelLiters % 1.0 == 0.0) report.fuelLiters.toInt().toString() else String.format(Locale.US, "%.1f", report.fuelLiters)
+                                        " (+$lStr L)"
+                                    } else ""
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text("Stik Solar (Awal / Akhir):", color = Slate500, fontSize = 12.sp)
-                                        Text("${String.format("%.1f", report.stikSolarAwal)} / ${String.format("%.1f", report.stikSolarAkhir)} cm", fontWeight = FontWeight.SemiBold, color = Slate900, fontSize = 12.sp)
+                                        Text("Stik Solar BBM:", color = Slate500, fontSize = 12.sp)
+                                        Text("Stik: $sAwal ➔ $sAkhir$isiStr", fontWeight = FontWeight.SemiBold, color = Slate900, fontSize = 12.sp)
                                     }
                                 }
-                                if (report.pemakaianSolar > 0.0) {
+                                val computedSolar = if (report.stikSolarAwal > 0.0 || report.stikSolarAkhir > 0.0) {
+                                    (report.stikSolarAwal + (if (report.isRefueled) report.fuelLiters else 0.0) - report.stikSolarAkhir).coerceAtLeast(0.0)
+                                } else if (report.pemakaianSolar > 0.0) {
+                                    report.pemakaianSolar
+                                } else if (report.isRefueled && report.fuelLiters > 0.0) {
+                                    report.fuelLiters
+                                } else 0.0
+
+                                if (computedSolar > 0.0) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text("Estimasi Konsumsi Solar:", color = Slate700, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        Text("${String.format("%.1f", report.pemakaianSolar)} Liter/cm", fontWeight = FontWeight.ExtraBold, color = Emerald700, fontSize = 13.sp)
+                                        Text("Total Konsumsi Solar:", color = Slate700, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("${String.format(Locale.US, "%.1f", computedSolar)} L", fontWeight = FontWeight.ExtraBold, color = Emerald700, fontSize = 13.sp)
                                     }
                                 }
                             }

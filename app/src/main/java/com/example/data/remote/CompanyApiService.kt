@@ -1445,6 +1445,7 @@ class ApiClientManager(val context: Context) {
             val errSummary = if (lastErrorCode > 0) "Error Server ($lastErrorCode): $lastErrorMsg" else lastErrorMsg.ifBlank { "Gagal menghubungi server Web Admin" }
             android.util.Log.e("HTTP_REALISASI", "Gagal kirim: $lastErrorCode - $lastErrorMsg")
             if (useSimulationFallback) {
+                CompanyServerSimulator.postActivityReport(report)
                 val simResp = CompanyServerSimulator.postHasilAktivitas(hasilReq)
                 return@withContext "Tersimpan lokal & disinkronkan (${simResp.message})"
             }

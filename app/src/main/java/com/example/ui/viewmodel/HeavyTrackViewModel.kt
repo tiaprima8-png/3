@@ -2291,21 +2291,79 @@ class HeavyTrackViewModel(
             rawSpk.equals("MENUNGGU", ignoreCase = true)
         val resolvedSpk = if (!isPlaceholderSpk) rawSpk else (CompanyServerSimulator.getPublishedSpk(rencana.id) ?: "")
 
-        // JANGAN jalankan logika auto-fill HM berantai (HM Akhir kemarin = HM Awal hari ini) saat Koreksi!
-        // Nilai HM AWAL WAJIB diisi persis menggunakan nilai HM Awal dari data realisasi yang baru saja diinput oleh operator (termasuk 0.0).
-        val cleanAwal = report.hmAwal.coerceAtLeast(0.0)
+        val localHasil = hasilAktivitasList.value.firstOrNull {
+            (resolvedSpk.isNotBlank() && it.nomorSpk.equals(resolvedSpk, ignoreCase = true)) ||
+                (rencana.id > 0 && it.rencanaId == rencana.id) ||
+                (report.idRencanaKerja > 0 && it.rencanaId == report.idRencanaKerja) ||
+                (report.clientUuid.isNotBlank() && it.clientTransactionId == report.clientUuid)
+        }
+
+        // Hapus draft tersimpan untuk rencana ini agar tidak menimpa data realisasi asli operator
+        viewModelScope.launch {
+            try {
+                repository.deleteDraftForRencana(rencana.id)
+            } catch (_: Exception) {}
+        }
+
+        // JANGAN jalankan logika auto-fill HM berantai saat Koreksi!
+        // Nilai HM AWAL WAJIB diisi persis menggunakan nilai HM Awal dari data realisasi yang baru saja diinput oleh operator
+        val rawAwal = if (report.hmAwal > 0.0) report.hmAwal else (localHasil?.hmAwal ?: 0.0)
+        val cleanAwal = rawAwal.coerceAtLeast(0.0)
         val hmAwalStr = String.format(Locale.US, "%.1f", cleanAwal)
-        val hmAkhirStr = if (report.hmAkhir > 0.0) String.format(Locale.US, "%.1f", report.hmAkhir) else ""
-        val cleanAkhir = report.hmAkhir.takeIf { it > 0.0 }
+        val rawAkhir = if (report.hmAkhir > 0.0) report.hmAkhir else (localHasil?.hmAkhir ?: 0.0)
+        val hmAkhirStr = if (rawAkhir > 0.0) String.format(Locale.US, "%.1f", rawAkhir) else ""
+        val cleanAkhir = rawAkhir.takeIf { it > 0.0 }
         val (isValid, running, errorMsg) = validateHm(cleanAwal, cleanAkhir)
 
-        val stikAwalStr = if (report.stikSolarAwal > 0.0) String.format(Locale.US, "%.1f", report.stikSolarAwal) else ""
-        val stikAkhirStr = if (report.stikSolarAkhir > 0.0) String.format(Locale.US, "%.1f", report.stikSolarAkhir) else ""
-        val solarStr = if (report.fuelLiters > 0.0) String.format(Locale.US, "%.1f", report.fuelLiters) else if (report.pemakaianSolar > 0.0) String.format(Locale.US, "%.1f", report.pemakaianSolar) else ""
-        val hasilStr = if (report.workOutput > 0.0) String.format(Locale.US, "%.1f", report.workOutput) else ""
+        val effectiveDurasi = if (report.workDurationHours > 0.0) {
+            report.workDurationHours
+        } else if ((localHasil?.jamKerja ?: 0.0) > 0.0) {
+            localHasil!!.jamKerja
+        } else 7.0
 
-        val restoredKendala = if (!report.daftarKendalaJson.isNullOrBlank()) {
-            val payloads = KendalaJsonConverter.fromJson(report.daftarKendalaJson)
+        val effectiveStikAwal = if (report.stikSolarAwal > 0.0) report.stikSolarAwal else (localHasil?.stikSolarAwal ?: 0.0)
+        val effectiveStikAkhir = if (report.stikSolarAkhir > 0.0) report.stikSolarAkhir else (localHasil?.stikSolarAkhir ?: 0.0)
+        val effectiveFuelLiters = if (report.fuelLiters > 0.0) report.fuelLiters else (localHasil?.jumlahLiterSolar ?: 0.0)
+        val effectiveIsIsiSolar = report.isRefueled || (localHasil?.isIsiSolar == true) || effectiveFuelLiters > 0.0
+
+        val effectiveWorkOutput = if (report.workOutput > 0.0) {
+            report.workOutput
+        } else if ((localHasil?.hasilKerja ?: 0.0) > 0.0) {
+            localHasil!!.hasilKerja
+        } else if (report.workOutput == 0.0 || localHasil?.hasilKerja == 0.0) {
+            0.0
+        } else 0.0
+
+        val effectiveNotes = report.notes.ifBlank { localHasil?.keterangan ?: "" }
+        val effectivePhotoPath = report.photoPath ?: localHasil?.photoPath
+        val effectivePhotoBase64 = report.photoBase64 ?: localHasil?.photoBase64
+        val effectivePhotoSizeKb = report.photoSizeKb ?: localHasil?.photoSizeKb
+        val effectivePhotoDimensions = report.photoDimensions ?: localHasil?.photoDimensions
+
+        val computedPemakaianSolar = if (effectiveStikAwal > 0.0 || effectiveStikAkhir > 0.0) {
+            val calc = if (effectiveIsIsiSolar) ((effectiveStikAwal + effectiveFuelLiters) - effectiveStikAkhir).coerceAtLeast(0.0)
+            else (effectiveStikAwal - effectiveStikAkhir).coerceAtLeast(0.0)
+            calc
+        } else if (report.pemakaianSolar > 0.0) {
+            report.pemakaianSolar
+        } else {
+            localHasil?.pemakaianSolar ?: (if (effectiveIsIsiSolar) effectiveFuelLiters else 0.0)
+        }
+
+        fun formatCleanNumber(num: Double): String {
+            return if (num % 1.0 == 0.0) num.toInt().toString() else String.format(Locale.US, "%.1f", num)
+        }
+
+        val stikAwalStr = if (effectiveStikAwal > 0.0) formatCleanNumber(effectiveStikAwal) else ""
+        val stikAkhirStr = if (effectiveStikAkhir > 0.0) formatCleanNumber(effectiveStikAkhir) else ""
+        val solarStr = if (effectiveFuelLiters > 0.0) formatCleanNumber(effectiveFuelLiters) else ""
+        val hasilStr = if (effectiveWorkOutput > 0.0) formatCleanNumber(effectiveWorkOutput) else if (effectiveWorkOutput == 0.0 && (report.workOutput == 0.0 || localHasil?.hasilKerja == 0.0)) "0" else ""
+
+        val effectiveKendalaJson = report.daftarKendalaJson?.takeIf { it.isNotBlank() }
+            ?: localHasil?.daftarKendalaJson?.takeIf { it.isNotBlank() }
+
+        val restoredKendala = if (!effectiveKendalaJson.isNullOrBlank()) {
+            val payloads = KendalaJsonConverter.fromJson(effectiveKendalaJson)
             if (payloads.isNotEmpty()) {
                 payloads.map { p ->
                     val kndCode = p.resolvedKode
@@ -2313,20 +2371,44 @@ class HeavyTrackViewModel(
                     val matched = kendalaList.value.find {
                         it.kodeKendala.equals(kndCode, ignoreCase = true) ||
                             KendalaItemPayload.resolveKodeKendala(it.kodeKendala) == kndCode ||
-                            it.namaKendala.equals(kndName, ignoreCase = true)
+                            it.namaKendala.equals(kndName, ignoreCase = true) ||
+                            (kndName.isNotBlank() && it.namaKendala.contains(kndName, ignoreCase = true)) ||
+                            (kndName.isNotBlank() && kndName.contains(it.namaKendala, ignoreCase = true))
                     }
                     KendalaItemFormState(
                         selectedKendala = matched ?: KendalaEntity(
-                            kodeKendala = kndCode,
-                            namaKendala = kndName,
+                            kodeKendala = kndCode.ifBlank { "1.0" },
+                            namaKendala = kndName.ifBlank { "Antar - jemput" },
                             kategori = "OPERASIONAL"
                         ),
-                        waktuMulai = p.resolvedJamMulai,
-                        waktuSelesai = p.resolvedJamSelesai
+                        waktuMulai = p.resolvedJamMulai.ifBlank { "08:00" },
+                        waktuSelesai = p.resolvedJamSelesai.ifBlank { "09:00" }
                     )
                 }
-            } else listOf(KendalaItemFormState())
-        } else listOf(KendalaItemFormState())
+            } else null
+        } else null
+
+        val singleKendalaName = report.kendalaNama?.takeIf { it.isNotBlank() } ?: localHasil?.kendalaNama
+        val singleKendalaCode = report.kendalaId?.takeIf { it.isNotBlank() } ?: localHasil?.kendalaId
+        val finalRestoredKendala = restoredKendala ?: if (!singleKendalaName.isNullOrBlank()) {
+            val matched = kendalaList.value.find {
+                it.namaKendala.equals(singleKendalaName, ignoreCase = true) ||
+                    (singleKendalaCode != null && it.kodeKendala.equals(singleKendalaCode, ignoreCase = true))
+            }
+            listOf(
+                KendalaItemFormState(
+                    selectedKendala = matched ?: KendalaEntity(
+                        kodeKendala = singleKendalaCode ?: "1.0",
+                        namaKendala = singleKendalaName,
+                        kategori = "OPERASIONAL"
+                    ),
+                    waktuMulai = "08:00",
+                    waktuSelesai = "09:00"
+                )
+            )
+        } else {
+            listOf(KendalaItemFormState())
+        }
 
         _realisasiFormState.value = RealisasiFormUiState(
             selectedRencana = rencana,
@@ -2334,6 +2416,7 @@ class HeavyTrackViewModel(
             selectedLokasi = matchedLokasi,
             nomorSpk = resolvedSpk,
             statusSpk = if (resolvedSpk.isNotBlank()) "SPK_TERBIT" else rencana.statusSpk,
+            durasiJamKerja = effectiveDurasi,
             hmAwalOriginal = cleanAwal,
             hmAwal = cleanAwal,
             hmAwalInput = hmAwalStr,
@@ -2353,16 +2436,68 @@ class HeavyTrackViewModel(
             isUnderMinStandard = running > 0.0 && running < minStd,
             stikSolarAwalInput = stikAwalStr,
             stikSolarAkhirInput = stikAkhirStr,
-            isIsiSolar = report.isRefueled || (report.fuelLiters > 0.0),
+            isIsiSolar = effectiveIsIsiSolar,
             jumlahLiterSolarInput = solarStr,
-            pemakaianSolarOtomatis = report.pemakaianSolar,
-            daftarKendala = restoredKendala,
+            pemakaianSolarOtomatis = computedPemakaianSolar,
+            daftarKendala = finalRestoredKendala,
             hasilKerjaInput = hasilStr,
-            keterangan = report.notes,
-            photoPath = report.photoPath,
-            photoBase64 = report.photoBase64,
-            photoSizeKb = report.photoSizeKb
+            keterangan = effectiveNotes,
+            photoPath = effectivePhotoPath,
+            photoBase64 = effectivePhotoBase64,
+            photoSizeKb = effectivePhotoSizeKb,
+            photoDimensions = effectivePhotoDimensions
         )
+
+        if (effectiveStikAwal == 0.0 && effectiveStikAkhir == 0.0) {
+            viewModelScope.launch {
+                val dbHasil = repository.getHasilBySpkOrRencana(resolvedSpk, rencana.id, report.clientUuid)
+                if (dbHasil != null && (dbHasil.stikSolarAwal > 0.0 || dbHasil.stikSolarAkhir > 0.0 || !dbHasil.daftarKendalaJson.isNullOrBlank())) {
+                    val cur = _realisasiFormState.value
+                    if (cur.selectedRencana?.id == rencana.id && cur.isEditKoreksiMode) {
+                        val sAwal = if (dbHasil.stikSolarAwal > 0.0) formatCleanNumber(dbHasil.stikSolarAwal) else cur.stikSolarAwalInput
+                        val sAkhir = if (dbHasil.stikSolarAkhir > 0.0) formatCleanNumber(dbHasil.stikSolarAkhir) else cur.stikSolarAkhirInput
+                        val sIsi = if (dbHasil.jumlahLiterSolar > 0.0) formatCleanNumber(dbHasil.jumlahLiterSolar) else cur.jumlahLiterSolarInput
+                        val isIsiDb = dbHasil.isIsiSolar || dbHasil.jumlahLiterSolar > 0.0
+                        val restoredK = if (!dbHasil.daftarKendalaJson.isNullOrBlank()) {
+                            val payloads = KendalaJsonConverter.fromJson(dbHasil.daftarKendalaJson)
+                            if (payloads.isNotEmpty()) {
+                                payloads.map { p ->
+                                    val kndCode = p.resolvedKode
+                                    val kndName = p.resolvedNama
+                                    val matched = kendalaList.value.find {
+                                        it.kodeKendala.equals(kndCode, ignoreCase = true) ||
+                                            KendalaItemPayload.resolveKodeKendala(it.kodeKendala) == kndCode ||
+                                            it.namaKendala.equals(kndName, ignoreCase = true) ||
+                                            (kndName.isNotBlank() && it.namaKendala.contains(kndName, ignoreCase = true)) ||
+                                            (kndName.isNotBlank() && kndName.contains(it.namaKendala, ignoreCase = true))
+                                    }
+                                    KendalaItemFormState(
+                                        selectedKendala = matched ?: KendalaEntity(
+                                            kodeKendala = kndCode.ifBlank { "1.0" },
+                                            namaKendala = kndName.ifBlank { "Antar - jemput" },
+                                            kategori = "OPERASIONAL"
+                                        ),
+                                        waktuMulai = p.resolvedJamMulai.ifBlank { "08:00" },
+                                        waktuSelesai = p.resolvedJamSelesai.ifBlank { "09:00" }
+                                    )
+                                }
+                            } else cur.daftarKendala
+                        } else cur.daftarKendala
+
+                        _realisasiFormState.value = cur.copy(
+                            stikSolarAwalInput = sAwal,
+                            stikSolarAkhirInput = sAkhir,
+                            isIsiSolar = isIsiDb || cur.isIsiSolar,
+                            jumlahLiterSolarInput = sIsi,
+                            daftarKendala = restoredK,
+                            hasilKerjaInput = if (cur.hasilKerjaInput.isBlank() && dbHasil.hasilKerja >= 0.0) formatCleanNumber(dbHasil.hasilKerja) else cur.hasilKerjaInput,
+                            keterangan = cur.keterangan.ifBlank { dbHasil.keterangan }
+                        )
+                        recalculateSolarConsumption()
+                    }
+                }
+            }
+        }
     }
 
     // Fitur Koreksi Manual HM Awal & Logika Pergantian Shift
@@ -2602,8 +2737,12 @@ class HeavyTrackViewModel(
         val awal = state.parsedStikAwal ?: 0.0
         val akhir = state.parsedStikAkhir ?: 0.0
         val isi = if (state.isIsiSolar) (state.parsedJumlahLiterSolar ?: 0.0) else 0.0
-        // Formula: Konsumsi Solar = (Stik Solar Awal + Total Isi Solar Tambahan) - Stik Solar Akhir
-        val total = (awal + isi) - akhir
+        // Formula: Konsumsi Solar = if (isIsiSolar) ((Stik Solar Awal + Total Isi Solar) - Stik Solar Akhir) else (Stik Solar Awal - Stik Solar Akhir)
+        val total = if (awal > 0.0 || akhir > 0.0) {
+            if (state.isIsiSolar) ((awal + isi) - akhir).coerceAtLeast(0.0) else (awal - akhir).coerceAtLeast(0.0)
+        } else {
+            if (state.isIsiSolar) isi else 0.0
+        }
         _realisasiFormState.value = _realisasiFormState.value.copy(
             pemakaianSolarOtomatis = total
         )
@@ -2673,9 +2812,12 @@ class HeavyTrackViewModel(
     }
 
     fun setRealisasiHasilKerja(hasil: String) {
+        val normalized = hasil.trim().replace(',', '.')
+        val parsed = normalized.toDoubleOrNull()
+        val isValid = normalized.isNotEmpty() && parsed != null && parsed >= 0.0
         _realisasiFormState.value = _realisasiFormState.value.copy(
             hasilKerjaInput = hasil,
-            isHasilKerjaError = false
+            isHasilKerjaError = if (isValid) false else _realisasiFormState.value.isHasilKerjaError
         )
         autoSaveDraftCurrentRealisasi()
     }
@@ -2730,6 +2872,7 @@ class HeavyTrackViewModel(
     // ======================================================================
     fun autoSaveDraftCurrentRealisasi() {
         val state = _realisasiFormState.value
+        if (state.isEditKoreksiMode) return
         val ren = state.selectedRencana ?: return
         viewModelScope.launch {
             val kendalaPayloads = state.daftarKendala
@@ -2930,12 +3073,16 @@ class HeavyTrackViewModel(
         val isOperasi = resolvedStatusUnit.equals("OPERASI", ignoreCase = true)
         val workOutput = safeParseDouble(state.hasilKerjaInput)
 
-        // VALIDASI ATURAN OPERASI: Jika kategori = "OPERASI" dan Total HM > 0, Hasil Kerja WAJIB DIISI (> 0)
-        if (isOperasi && runningHm > 0.0 && workOutput <= 0.0) {
+        // VALIDASI HASIL KERJA: Wajib diisi angka >= 0 (boleh 0 / 0.0 jika nihil)
+        val hasilRaw = state.hasilKerjaInput.trim().replace(',', '.')
+        val parsedHasil = hasilRaw.toDoubleOrNull()
+        val isHasilKerjaValid = hasilRaw.isNotEmpty() && parsedHasil != null && parsedHasil >= 0.0
+
+        if (!isHasilKerjaValid) {
             _realisasiFormState.value = _realisasiFormState.value.copy(isHasilKerjaError = true)
             viewModelScope.launch {
                 _uiEvents.emit(
-                    UiMessage.Error("Hasil kerja ($satuan) wajib diisi untuk aktivitas Operasi!")
+                    UiMessage.Error("Hasil Kerja wajib diisi (ketik 0 jika tidak ada hasil kerja)")
                 )
             }
             return

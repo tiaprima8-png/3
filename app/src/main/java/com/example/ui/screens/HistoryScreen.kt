@@ -281,7 +281,9 @@ fun HistoryScreen(
             val opRencana = matchedRencana?.operator?.ifBlank { null } ?: rep.operatorName
             val opAktual = rep.operatorName
 
-            val solarKonsumsi = if (rep.pemakaianSolar > 0.0) {
+            val solarKonsumsi = if (rep.stikSolarAwal > 0.0 || rep.stikSolarAkhir > 0.0) {
+                (rep.stikSolarAwal + (if (rep.isRefueled) rep.fuelLiters else 0.0) - rep.stikSolarAkhir).coerceAtLeast(0.0)
+            } else if (rep.pemakaianSolar > 0.0) {
                 rep.pemakaianSolar
             } else if (rep.isRefueled && rep.fuelLiters > 0.0) {
                 rep.fuelLiters
@@ -1309,7 +1311,8 @@ fun RkceAuditDetailDialog(
         record.report.stikSolarAwal > 0.0 || record.report.stikSolarAkhir > 0.0 -> {
             val sAwal = String.format(Locale.US, "%.0f", record.report.stikSolarAwal)
             val sAkhir = String.format(Locale.US, "%.0f", record.report.stikSolarAkhir)
-            "Stik: $sAwal ➔ $sAkhir"
+            val isiStr = if (record.isRefueled && record.refuelLiters > 0.0) " (+${String.format(Locale.US, "%.0f", record.refuelLiters)}L)" else ""
+            "Stik: $sAwal ➔ $sAkhir$isiStr"
         }
         record.isRefueled && record.refuelLiters > 0.0 -> {
             "Isi: +${String.format(Locale.US, "%.0f", record.refuelLiters)} L"
@@ -1326,10 +1329,18 @@ fun RkceAuditDetailDialog(
     val satuanStr = record.report.unitOfMeasure.ifBlank { "Ha" }
     val jamKerjaStr = String.format(Locale.US, "%.1f Jam Kerja", record.jamKerja)
 
+    val parsedKendalaItems = com.example.data.remote.KendalaJsonConverter.fromJson(record.report.daftarKendalaJson)
     val catatanGabungan = buildList {
         if (record.report.notes.isNotBlank()) add(record.report.notes)
         if (!record.report.alasanKoreksiHm.isNullOrBlank()) add("Koreksi HM: ${record.report.alasanKoreksiHm}")
-        if (!record.kendalaNama.isNullOrBlank()) {
+        if (parsedKendalaItems.isNotEmpty()) {
+            parsedKendalaItems.forEach { k ->
+                val code = k.resolvedKode
+                val name = k.resolvedNama
+                val dur = if (k.resolvedDurasiJam > 0.0) " (${k.resolvedDurasiJam} Jam)" else ""
+                add("Kendala: $name [$code] (${k.resolvedJamMulai}-${k.resolvedJamSelesai})$dur")
+            }
+        } else if (!record.kendalaNama.isNullOrBlank()) {
             val det = record.report.catatanKendala?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
             add("Kendala: ${record.kendalaNama}$det")
         }

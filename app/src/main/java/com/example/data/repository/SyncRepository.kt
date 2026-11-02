@@ -62,6 +62,32 @@ class SyncRepository(
                     req.approval_status?.takeIf { it.isNotBlank() } ?: "Menunggu"
                 }
 
+                val stikAwalVal = req.stik_solar_awal ?: 0.0
+                val stikAkhirVal = req.stik_solar_akhir ?: 0.0
+                val isIsiSolarVal = req.is_isi_solar == true || (req.jumlah_liter_solar ?: 0.0) > 0.0
+                val fuelLitersVal = req.jumlah_liter_solar ?: req.fuel_liters ?: 0.0
+                val computedPemakaian = if (stikAwalVal > 0.0 && stikAkhirVal > 0.0) {
+                    (stikAwalVal + (if (isIsiSolarVal) fuelLitersVal else 0.0) - stikAkhirVal).coerceAtLeast(0.0)
+                } else {
+                    req.pemakaian_solar ?: fuelLitersVal
+                }
+                val durasiJam = req.durasi_jam_kerja ?: req.work_duration_hours ?: 7.0
+                val kendalaPayloads = req.kendala_lapangan ?: req.kendala_list ?: req.daftar_kendala
+                val kendalaJsonVal = if (!kendalaPayloads.isNullOrEmpty()) {
+                    com.example.data.remote.KendalaJsonConverter.toJson(kendalaPayloads)
+                } else null
+                val firstKendala = kendalaPayloads?.firstOrNull()
+                val kendalaIdVal = req.kendala_id?.takeIf { it.isNotBlank() } ?: firstKendala?.resolvedKode
+                val kendalaNamaVal = req.kendala_nama?.takeIf { it.isNotBlank() } ?: firstKendala?.resolvedNama
+                val catatanKendalaVal = req.catatan_kendala?.takeIf { it.isNotBlank() }
+                val notesVal = req.keterangan ?: req.notes ?: ""
+                val photoPathVal = req.photo_path
+                val photoBase64Val = req.photo_base64 ?: req.foto_bukti ?: req.foto
+                val photoSizeKbVal = req.photo_size_kb
+                val photoDimensionsVal = req.photo_dimensions
+                val isHmAwalCorrectedVal = req.is_hm_awal_corrected == true
+                val alasanKoreksiHmVal = req.alasan_koreksi_hm
+
                 val entity = com.example.data.local.entity.ActivityReportEntity(
                     id = (idx + 1).toLong(),
                     clientUuid = uuid,
@@ -77,13 +103,27 @@ class SyncRepository(
                     operatorNik = req.operator_nik,
                     workLocation = req.lokasi_kerja ?: "",
                     shift = req.shift ?: "SIANG",
+                    workDurationHours = durasiJam,
                     hmAwal = hmAwal,
                     hmAkhir = hmAkhir,
                     hmDailyRunning = hmDaily,
                     workOutput = req.hasil_kerja ?: 0.0,
-                    isRefueled = req.is_isi_solar == true,
-                    fuelLiters = req.jumlah_liter_solar ?: 0.0,
-                    pemakaianSolar = req.pemakaian_solar ?: req.jumlah_liter_solar ?: 0.0,
+                    notes = notesVal,
+                    isRefueled = isIsiSolarVal,
+                    fuelLiters = fuelLitersVal,
+                    stikSolarAwal = stikAwalVal,
+                    stikSolarAkhir = stikAkhirVal,
+                    pemakaianSolar = computedPemakaian,
+                    kendalaId = kendalaIdVal,
+                    kendalaNama = kendalaNamaVal,
+                    catatanKendala = catatanKendalaVal,
+                    daftarKendalaJson = kendalaJsonVal,
+                    photoPath = photoPathVal,
+                    photoBase64 = photoBase64Val,
+                    photoSizeKb = photoSizeKbVal,
+                    photoDimensions = photoDimensionsVal,
+                    isHmAwalCorrected = isHmAwalCorrectedVal,
+                    alasanKoreksiHm = alasanKoreksiHmVal,
                     approvalStatus = resolvedApproval,
                     isLocked = isLocked,
                     nomorSpk = resolvedSpk,
@@ -113,9 +153,22 @@ class SyncRepository(
                         hmAkhir = hmAkhir,
                         hmHarianBerjalan = hmDaily,
                         hasilKerja = entity.workOutput,
+                        keterangan = entity.notes,
                         isIsiSolar = entity.isRefueled,
                         jumlahLiterSolar = entity.fuelLiters,
-                        pemakaianSolar = entity.pemakaianSolar,
+                        stikSolarAwal = stikAwalVal,
+                        stikSolarAkhir = stikAkhirVal,
+                        pemakaianSolar = computedPemakaian,
+                        kendalaId = kendalaIdVal,
+                        kendalaNama = kendalaNamaVal,
+                        catatanKendala = catatanKendalaVal,
+                        daftarKendalaJson = kendalaJsonVal,
+                        photoPath = photoPathVal,
+                        photoBase64 = photoBase64Val,
+                        photoSizeKb = photoSizeKbVal,
+                        photoDimensions = photoDimensionsVal,
+                        isHmAwalCorrected = isHmAwalCorrectedVal,
+                        alasanKoreksiHm = alasanKoreksiHmVal,
                         statusKirim = "SYNCED",
                         isSynced = true,
                         approvalStatus = entity.approvalStatus,

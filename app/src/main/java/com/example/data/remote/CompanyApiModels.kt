@@ -932,6 +932,11 @@ data class PostHasilAktivitasRequest(
     @Json(name = "satuan") val satuan: String? = null,
     @Json(name = "status_unit") val status_unit: String? = null,
     @Json(name = "foto_bukti") val foto_bukti: String? = null,
+    @Json(name = "foto") val foto: String? = null,
+    @Json(name = "photo_base64") val photo_base64: String? = null,
+    @Json(name = "photo_path") val photo_path: String? = null,
+    @Json(name = "photo_size_kb") val photo_size_kb: Long? = null,
+    @Json(name = "photo_dimensions") val photo_dimensions: String? = null,
     // Audit log koreksi HM Awal manual
     @Json(name = "is_hm_awal_corrected") val is_hm_awal_corrected: Boolean? = false,
     @Json(name = "alasan_koreksi_hm") val alasan_koreksi_hm: String? = null,

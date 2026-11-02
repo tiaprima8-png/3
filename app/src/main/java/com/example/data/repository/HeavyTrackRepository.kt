@@ -931,8 +931,37 @@ class HeavyTrackRepository(
         saveIncomingRealisasiInternal(req)
     }
 
+    suspend fun getHasilBySpkOrRencana(spk: String, rencanaId: Long, txId: String = ""): HasilInputAktivitasEntity? = withContext(Dispatchers.IO) {
+        val bySpk = if (spk.isNotBlank() && spk != "SPK Menyusul" && spk != "-") hasilDao.getHasilByNomorSpk(spk) else null
+        bySpk ?: (if (rencanaId > 0) hasilDao.getHasilByRencanaId(rencanaId) else null)
+            ?: (if (txId.isNotBlank()) hasilDao.getHasilByTxId(txId) else null)
+    }
+
     suspend fun saveIncomingRealisasi(relData: RealtimeRealisasiData): ActivityReportEntity? = withContext(Dispatchers.IO) {
         val txId = if (relData.id.isNotBlank()) relData.id else UUID.randomUUID().toString()
+        val calculatedSolar = if (relData.stikSolarAwal > 0.0 || relData.stikSolarAkhir > 0.0) {
+            if (relData.isIsiSolar) ((relData.stikSolarAwal + relData.jumlahLiterSolar) - relData.stikSolarAkhir).coerceAtLeast(0.0)
+            else (relData.stikSolarAwal - relData.stikSolarAkhir).coerceAtLeast(0.0)
+        } else if (relData.pemakaianSolar > 0.0) {
+            relData.pemakaianSolar
+        } else {
+            relData.solar
+        }
+
+        val kendalaPayloads = relData.daftarKendalaJson?.takeIf { it.isNotBlank() }?.let {
+            com.example.data.remote.KendalaJsonConverter.fromJson(it)
+        } ?: if (!relData.kendalaNama.isNullOrBlank()) {
+            listOf(
+                com.example.data.remote.KendalaItemPayload(
+                    kode_kendala = relData.kendalaId ?: "1.0",
+                    nama_kendala = relData.kendalaNama,
+                    jam_mulai = "08:00",
+                    jam_selesai = "09:00",
+                    durasi_jam = 1.0
+                )
+            )
+        } else null
+
         val req = PostActivityReportRequest(
             id_rencana_kerja = relData.rencanaId,
             kode_unit = relData.unitKode,
@@ -945,8 +974,31 @@ class HeavyTrackRepository(
             hm_awal = relData.hmAwal,
             hm_akhir = relData.hmAkhir,
             hm_harian_berjalan = relData.totalHm,
-            jumlah_liter_solar = relData.solar,
-            pemakaian_solar = relData.solar,
+            durasi_jam_kerja = relData.durasiJamKerja,
+            work_duration_hours = relData.durasiJamKerja,
+            is_refueled = relData.isIsiSolar,
+            is_isi_solar = relData.isIsiSolar,
+            fuel_liters = relData.jumlahLiterSolar,
+            jumlah_liter_solar = relData.jumlahLiterSolar,
+            stik_solar_awal = relData.stikSolarAwal,
+            stik_solar_akhir = relData.stikSolarAkhir,
+            pemakaian_solar = calculatedSolar,
+            kendala_id = relData.kendalaId,
+            kendala_nama = relData.kendalaNama,
+            catatan_kendala = relData.catatanKendala,
+            kendala_lapangan = kendalaPayloads,
+            daftar_kendala = kendalaPayloads,
+            kendala_list = kendalaPayloads,
+            hasil_kerja = relData.hasilKerja,
+            work_output = relData.hasilKerja,
+            notes = relData.keterangan,
+            foto = relData.photoBase64,
+            photo_base64 = relData.photoBase64,
+            photo_path = relData.photoPath,
+            photo_size_kb = relData.photoSizeKb,
+            photo_dimensions = relData.photoDimensions,
+            is_hm_awal_corrected = relData.isHmAwalCorrected,
+            alasan_koreksi_hm = relData.alasanKoreksiHm,
             nomor_spk = relData.nomorSpk,
             approval_status = relData.approvalStatus,
             is_locked = relData.isLocked,
@@ -1002,9 +1054,46 @@ class HeavyTrackRepository(
         val hmAwal = reqHmAwal
         val hmAkhir = reqHmAkhir
         val hmDaily = reqHmDaily
-        val fuel = req.pemakaian_solar ?: req.jumlah_liter_solar ?: existingReport?.pemakaianSolar ?: 0.0
+        val stikAwalVal = req.stik_solar_awal ?: existingReport?.stikSolarAwal ?: 0.0
+        val stikAkhirVal = req.stik_solar_akhir ?: existingReport?.stikSolarAkhir ?: 0.0
+        val isIsiSolarVal = req.is_isi_solar == true || req.is_refueled == true || (req.jumlah_liter_solar ?: 0.0) > 0.0 || (existingReport?.isRefueled == true)
+        val fuelLitersVal = req.jumlah_liter_solar ?: req.fuel_liters ?: existingReport?.fuelLiters ?: 0.0
+        val computedPemakaian = if (stikAwalVal > 0.0 && stikAkhirVal > 0.0) {
+            (stikAwalVal + (if (isIsiSolarVal) fuelLitersVal else 0.0) - stikAkhirVal).coerceAtLeast(0.0)
+        } else {
+            req.pemakaian_solar ?: fuelLitersVal.takeIf { it > 0.0 } ?: existingReport?.pemakaianSolar ?: 0.0
+        }
         val isLocked = existingReport?.isLocked == true || req.is_locked == true || req.approval_status.equals("Disetujui Kasie", ignoreCase = true)
         val approvalStatus = if (isLocked) "Disetujui Kasie" else (req.approval_status ?: existingReport?.approvalStatus ?: "Menunggu Approval")
+
+        // Parse & normalisasi kendala lapangan
+        val kendalaPayloads = req.kendala_lapangan ?: req.kendala_list ?: req.daftar_kendala
+        val kendalaJsonVal = if (!kendalaPayloads.isNullOrEmpty()) {
+            com.example.data.remote.KendalaJsonConverter.toJson(kendalaPayloads)
+        } else {
+            existingReport?.daftarKendalaJson
+        }
+        val firstKendala = kendalaPayloads?.firstOrNull()
+        val kendalaIdVal = req.kendala_id?.takeIf { it.isNotBlank() }
+            ?: firstKendala?.resolvedKode?.takeIf { it.isNotBlank() }
+            ?: existingReport?.kendalaId
+        val kendalaNamaVal = req.kendala_nama?.takeIf { it.isNotBlank() }
+            ?: firstKendala?.resolvedNama?.takeIf { it.isNotBlank() }
+            ?: existingReport?.kendalaNama
+        val catatanKendalaVal = req.catatan_kendala?.takeIf { it.isNotBlank() }
+            ?: existingReport?.catatanKendala
+
+        // Parse & normalisasi foto dokumentasi
+        val photoPathVal = req.photo_path?.takeIf { it.isNotBlank() } ?: existingReport?.photoPath
+        val photoBase64Val = req.photo_base64?.takeIf { it.isNotBlank() }
+            ?: req.foto_bukti?.takeIf { it.isNotBlank() }
+            ?: req.foto?.takeIf { it.isNotBlank() }
+            ?: existingReport?.photoBase64
+        val photoSizeKbVal = req.photo_size_kb ?: existingReport?.photoSizeKb
+        val photoDimensionsVal = req.photo_dimensions?.takeIf { it.isNotBlank() } ?: existingReport?.photoDimensions
+
+        val isHmAwalCorrectedVal = req.is_hm_awal_corrected == true || (existingReport?.isHmAwalCorrected == true)
+        val alasanKoreksiHmVal = req.alasan_koreksi_hm?.takeIf { it.isNotBlank() } ?: existingReport?.alasanKoreksiHm
 
         val reportEntity = ActivityReportEntity(
             id = targetReportId,
@@ -1023,16 +1112,28 @@ class HeavyTrackRepository(
             workLocation = req.lokasi_kerja?.takeIf { it.isNotBlank() } ?: existingReport?.workLocation ?: "",
             wilayah = req.wilayah?.takeIf { it.isNotBlank() } ?: existingReport?.wilayah ?: "PG1",
             shift = req.shift?.takeIf { it.isNotBlank() } ?: existingReport?.shift ?: "SIANG",
-            workDurationHours = req.durasi_jam_kerja ?: existingReport?.workDurationHours ?: 7.0,
+            workDurationHours = req.durasi_jam_kerja ?: req.work_duration_hours ?: existingReport?.workDurationHours ?: 7.0,
             hmAwal = hmAwal,
             hmAkhir = hmAkhir,
             hmDailyRunning = hmDaily,
             workOutput = reqWorkOutput,
-            notes = req.keterangan?.takeIf { it.isNotBlank() } ?: existingReport?.notes ?: "",
+            notes = req.keterangan?.takeIf { it.isNotBlank() } ?: req.notes?.takeIf { it.isNotBlank() } ?: existingReport?.notes ?: "",
             unitStatus = req.status_unit?.takeIf { it.isNotBlank() } ?: existingReport?.unitStatus ?: "OPERASI",
-            isRefueled = req.is_isi_solar == true || fuel > 0.0,
-            fuelLiters = fuel,
-            pemakaianSolar = fuel,
+            isRefueled = isIsiSolarVal,
+            fuelLiters = fuelLitersVal,
+            stikSolarAwal = stikAwalVal,
+            stikSolarAkhir = stikAkhirVal,
+            pemakaianSolar = computedPemakaian,
+            kendalaId = kendalaIdVal,
+            kendalaNama = kendalaNamaVal,
+            catatanKendala = catatanKendalaVal,
+            daftarKendalaJson = kendalaJsonVal,
+            photoPath = photoPathVal,
+            photoBase64 = photoBase64Val,
+            photoSizeKb = photoSizeKbVal,
+            photoDimensions = photoDimensionsVal,
+            isHmAwalCorrected = isHmAwalCorrectedVal,
+            alasanKoreksiHm = alasanKoreksiHmVal,
             approvalStatus = approvalStatus,
             approvedBy = req.approved_by ?: existingReport?.approvedBy,
             approvedAt = req.approved_at ?: existingReport?.approvedAt,
@@ -1073,9 +1174,21 @@ class HeavyTrackRepository(
             hmHarianBerjalan = hmDaily,
             hasilKerja = reportEntity.workOutput,
             keterangan = reportEntity.notes,
-            isIsiSolar = reportEntity.isRefueled,
-            jumlahLiterSolar = fuel,
-            pemakaianSolar = fuel,
+            isIsiSolar = isIsiSolarVal,
+            jumlahLiterSolar = fuelLitersVal,
+            stikSolarAwal = stikAwalVal,
+            stikSolarAkhir = stikAkhirVal,
+            pemakaianSolar = computedPemakaian,
+            kendalaId = kendalaIdVal,
+            kendalaNama = kendalaNamaVal,
+            catatanKendala = catatanKendalaVal,
+            daftarKendalaJson = kendalaJsonVal,
+            photoPath = photoPathVal,
+            photoBase64 = photoBase64Val,
+            photoSizeKb = photoSizeKbVal,
+            photoDimensions = photoDimensionsVal,
+            isHmAwalCorrected = isHmAwalCorrectedVal,
+            alasanKoreksiHm = alasanKoreksiHmVal,
             statusKirim = "SYNCED",
             isSynced = true,
             approvalStatus = approvalStatus,

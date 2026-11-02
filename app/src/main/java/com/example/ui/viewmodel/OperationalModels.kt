@@ -238,13 +238,14 @@ data class RealisasiFormUiState(
     val parsedJumlahLiterSolar: Double?
         get() = if (isIsiSolar) jumlahLiterSolarInput.trim().replace(',', '.').toDoubleOrNull() else 0.0
 
-    // Formula: Konsumsi Solar = (Stik Solar Awal + Total Isi Solar Tambahan) - Stik Solar Akhir
+    // Formula: Konsumsi Solar = if (isIsiSolar) ((Stik Solar Awal + Total Isi Solar) - Stik Solar Akhir) else (Stik Solar Awal - Stik Solar Akhir)
     val computedKonsumsiSolar: Double
         get() {
             val awal = parsedStikAwal ?: 0.0
             val akhir = parsedStikAkhir ?: 0.0
             val refuel = if (isIsiSolar) (parsedJumlahLiterSolar ?: 0.0) else 0.0
-            return (awal + refuel) - akhir
+            val result = if (isIsiSolar) ((awal + refuel) - akhir) else (awal - akhir)
+            return if (awal > 0.0 || akhir > 0.0) result else if (isIsiSolar) refuel else 0.0
         }
 
     // 1. Jika Stik Solar Akhir > Stik Solar Awal dan toggle [Isi Solar Tambahan] MATI

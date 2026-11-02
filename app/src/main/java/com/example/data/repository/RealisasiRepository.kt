@@ -308,6 +308,18 @@ class RealisasiRepository(
         val txId = request.client_transaction_id?.takeIf { it.isNotBlank() } ?: "TX-$spk"
         val supervisor = request.nama_pengawas ?: request.kasie ?: ""
         val opName = request.nama_operator ?: request.operator ?: ""
+        val stikAwal = request.stik_solar_awal ?: 0.0
+        val stikAkhir = request.stik_solar_akhir ?: 0.0
+        val isiLiters = request.jumlah_liter_solar ?: 0.0
+        val isIsi = (request.is_isi_solar == true) || isiLiters > 0.0
+        val calculatedSolar = if (stikAwal > 0.0 || stikAkhir > 0.0) {
+            if (isIsi) ((stikAwal + isiLiters) - stikAkhir).coerceAtLeast(0.0) else (stikAwal - stikAkhir).coerceAtLeast(0.0)
+        } else {
+            request.pemakaian_solar ?: (if (isIsi) isiLiters else 0.0)
+        }
+        val kendalaItems = request.daftar_kendala ?: request.kendala_list ?: request.kendala_lapangan
+        val kendalaJson = kendalaItems?.let { com.example.data.remote.KendalaJsonConverter.toJson(it) }
+
         return HasilInputAktivitasEntity(
             id = request.id ?: 0L,
             rencanaId = request.rencanaId,
@@ -329,17 +341,21 @@ class RealisasiRepository(
             hmAwal = request.hm_awal ?: 0.0,
             hmAkhir = request.hm_akhir ?: 0.0,
             hmHarianBerjalan = request.hm_harian_berjalan ?: 0.0,
-            isIsiSolar = request.is_isi_solar ?: false,
-            jumlahLiterSolar = request.jumlah_liter_solar ?: 0.0,
-            stikSolarAwal = request.stik_solar_awal ?: 0.0,
-            stikSolarAkhir = request.stik_solar_akhir ?: 0.0,
-            pemakaianSolar = request.pemakaian_solar ?: 0.0,
+            isIsiSolar = isIsi,
+            jumlahLiterSolar = isiLiters,
+            stikSolarAwal = stikAwal,
+            stikSolarAkhir = stikAkhir,
+            pemakaianSolar = calculatedSolar,
             kendalaId = request.kendala_id,
             kendalaNama = request.kendala_nama,
             catatanKendala = request.catatan_kendala,
+            daftarKendalaJson = kendalaJson,
             hasilKerja = request.hasil_kerja ?: 0.0,
             keterangan = request.keterangan ?: "",
-            photoBase64 = request.foto_bukti,
+            photoBase64 = request.foto_bukti ?: request.foto ?: request.photo_base64,
+            photoPath = request.photo_path,
+            photoSizeKb = request.photo_size_kb,
+            photoDimensions = request.photo_dimensions,
             isHmAwalCorrected = request.is_hm_awal_corrected ?: false,
             alasanKoreksiHm = request.alasan_koreksi_hm,
             statusKirim = if (isSynced) "SYNCED" else "PENDING",
