@@ -16,10 +16,28 @@ import java.io.IOException
 
 val Context.userSessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "user_session_preferences")
 
+val KNOWN_KASIE_USERNAMES = setOf(
+    "agung", "zainudin", "jahidi", "jaidi", "hisar",
+    "yono", "yono1", "suyono", "nyoman", "saipul", "galung"
+)
+
+fun isKnownKasieIdentifier(value: String?): Boolean {
+    if (value.isNullOrBlank()) return false
+    val clean = value.trim().removePrefix("@").lowercase()
+    return clean in KNOWN_KASIE_USERNAMES
+}
+
+fun isSuperAdminRoleString(roleStr: String?): Boolean {
+    if (roleStr.isNullOrBlank()) return false
+    val r = roleStr.trim().uppercase()
+    if (r.contains("SUPERVISOR") || r.contains("KASIE") || r.contains("PENGAWAS") || r.contains("OPERATOR")) return false
+    return r == "SUPER ADMIN" || r == "SUPER_ADMIN" || r == "SUPERADMIN" || r.contains("SUPER ADMIN") || r.contains("SUPER_ADMIN") || r.contains("SUPERADMIN")
+}
+
 fun isKasieRole(roleStr: String?): Boolean {
     if (roleStr.isNullOrBlank()) return false
     val r = roleStr.trim().lowercase()
-    return r.contains("kasie") && !r.contains("operator")
+    return (r.contains("kasie") || r.contains("supervisor") || r.contains("pengawas")) && !r.contains("operator")
 }
 
 fun isOperatorRole(roleStr: String?): Boolean {
@@ -40,11 +58,12 @@ data class UserSessionData(
     val isLoggedIn: Boolean = false
 ) {
     val nama: String get() = namaLengkap
-    val isManager: Boolean get() = role.equals("MANAGER", ignoreCase = true)
-    val isSuperAdmin: Boolean get() = role.equals("SUPER ADMIN", ignoreCase = true) || role.equals("SUPERADMIN", ignoreCase = true)
+    private val isKnownKasieUser: Boolean get() = isKnownKasieIdentifier(username) || isKnownKasieIdentifier(namaLengkap)
+    val isManager: Boolean get() = !isKnownKasieUser && role.equals("MANAGER", ignoreCase = true)
+    val isSuperAdmin: Boolean get() = !isKnownKasieUser && isSuperAdminRoleString(role)
     val isOperator: Boolean get() = isOperatorRole(role)
     val isExecutive: Boolean get() = isManager || isSuperAdmin
-    val isKasie: Boolean get() = isKasieRole(role) || (!isExecutive && !isOperator)
+    val isKasie: Boolean get() = isKnownKasieUser || isKasieRole(role) || (!isExecutive && !isOperator)
     val isAktif: Boolean get() = status.equals("Aktif", ignoreCase = true) || status.equals("Active", ignoreCase = true)
 }
 

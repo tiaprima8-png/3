@@ -117,12 +117,25 @@ data class KendalaItemFormState(
         }
 
     companion object {
-        fun parseTimeToMinutes(timeStr: String): Int? {
-            val trimmed = timeStr.trim()
+        fun normalizeTimeFormat(timeStr: String): String {
+            val trimmed = timeStr.trim().replace('.', ':')
             val parts = trimmed.split(":")
-            if (parts.size != 2) return null
-            val h = parts[0].toIntOrNull() ?: return null
-            val m = parts[1].toIntOrNull() ?: return null
+            if (parts.size >= 2) {
+                val h = parts[0].trim().toIntOrNull()
+                val m = parts[1].trim().take(2).toIntOrNull()
+                if (h != null && m != null && h in 0..23 && m in 0..59) {
+                    return String.format(java.util.Locale.US, "%02d:%02d", h, m)
+                }
+            }
+            return trimmed
+        }
+
+        fun parseTimeToMinutes(timeStr: String): Int? {
+            val trimmed = timeStr.trim().replace('.', ':')
+            val parts = trimmed.split(":")
+            if (parts.size < 2) return null
+            val h = parts[0].trim().toIntOrNull() ?: return null
+            val m = parts[1].trim().take(2).toIntOrNull() ?: return null
             if (h !in 0..23 || m !in 0..59) return null
             return h * 60 + m
         }
@@ -194,6 +207,7 @@ data class RealisasiFormUiState(
     val keterangan: String = "",
     val photoPath: String? = null,
     val photoBase64: String? = null,
+    val hasExistingPhoto: Boolean = false,
     val photoSizeKb: Long? = null,
     val photoDimensions: String? = null,
     val isCompressingPhoto: Boolean = false,
@@ -238,13 +252,13 @@ data class RealisasiFormUiState(
     val parsedJumlahLiterSolar: Double?
         get() = if (isIsiSolar) jumlahLiterSolarInput.trim().replace(',', '.').toDoubleOrNull() else 0.0
 
-    // Formula: Konsumsi Solar = if (isIsiSolar) ((Stik Solar Awal + Total Isi Solar) - Stik Solar Akhir) else (Stik Solar Awal - Stik Solar Akhir)
+    // Formula Universal: Konsumsi Solar = ((Stik Solar Awal + Isi Solar) - Stik Solar Akhir)
     val computedKonsumsiSolar: Double
         get() {
             val awal = parsedStikAwal ?: 0.0
             val akhir = parsedStikAkhir ?: 0.0
             val refuel = if (isIsiSolar) (parsedJumlahLiterSolar ?: 0.0) else 0.0
-            val result = if (isIsiSolar) ((awal + refuel) - akhir) else (awal - akhir)
+            val result = ((awal + refuel) - akhir).coerceAtLeast(0.0)
             return if (awal > 0.0 || akhir > 0.0) result else if (isIsiSolar) refuel else 0.0
         }
 
@@ -332,19 +346,29 @@ data class RealisasiFormUiState(
     // ======================================================================
     // 3. VALIDASI LONJAKAN HM EKSTREM (ANTI-TYPO FAT FINGER)
     // ======================================================================
+    val isDumpTruckUnit: Boolean
+        get() {
+            val code = selectedRencana?.kodeUnit?.trim()?.uppercase().orEmpty()
+            return code.startsWith("TTM") || hmMaxStandar > 24.0
+        }
+
+    val effectiveMaxJumpHm: Double
+        get() = if (isDumpTruckUnit) maxOf(1000000.0, hmMaxStandar) else maxOf(24.0, hmMaxStandar)
+
     // Selisih HM berjalan: durasi_hm = hm_akhir - hm_awal
     val isHmJumpExtreme24h: Boolean
         get() {
             val akhir = hmAkhirInput.trim().replace(',', '.').toDoubleOrNull() ?: return false
             val durasi = akhir - hmAwal
-            return durasi > 24.0
+            return durasi > effectiveMaxJumpHm
         }
 
     val isHmWarningExceed14h: Boolean
         get() {
+            if (isDumpTruckUnit) return false
             val akhir = hmAkhirInput.trim().replace(',', '.').toDoubleOrNull() ?: return false
             val durasi = akhir - hmAwal
-            return durasi > 14.0 && durasi <= 24.0
+            return durasi > 14.0 && durasi <= effectiveMaxJumpHm
         }
 }
 

@@ -64,36 +64,91 @@ import com.example.ui.theme.Slate900
 import java.io.File
 
 /**
+ * Decodes Base64 string (raw or data:image/...;base64, URL) or local file path directly into an Android Bitmap.
+ */
+fun decodePhotoBitmap(photoPath: String?, photoBase64: String?): android.graphics.Bitmap? {
+    if (!photoPath.isNullOrBlank()) {
+        try {
+            val file = File(photoPath)
+            if (file.exists() && file.length() > 0L) {
+                val bmp = BitmapFactory.decodeFile(file.absolutePath)
+                if (bmp != null) return bmp
+            }
+        } catch (_: Exception) {}
+    }
+    if (!photoBase64.isNullOrBlank()) {
+        val raw = photoBase64.trim()
+        val cleanBase64 = if (raw.contains("base64,", ignoreCase = true)) {
+            raw.substringAfter("base64,").trim()
+        } else {
+            raw
+        }
+        val flagsToTry = intArrayOf(Base64.DEFAULT, Base64.NO_WRAP, Base64.URL_SAFE)
+        for (flag in flagsToTry) {
+            try {
+                val imageBytes = Base64.decode(cleanBase64, flag)
+                if (imageBytes.isNotEmpty()) {
+                    val bmp = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                    if (bmp != null) return bmp
+                }
+            } catch (_: Exception) {}
+        }
+    }
+    return null
+}
+
+/**
+ * Computes photo size in KB from explicit size, local file length, or Base64 payload length (defaulting to 150 KB when photo exists).
+ */
+fun resolvePhotoSizeKb(photoSizeKb: Long?, photoPath: String?, photoBase64: String?): Long {
+    if (photoSizeKb != null && photoSizeKb > 0L) return photoSizeKb
+    if (!photoPath.isNullOrBlank()) {
+        try {
+            val file = File(photoPath)
+            if (file.exists() && file.length() > 0L) {
+                return (file.length() / 1024L).coerceAtLeast(1L)
+            }
+        } catch (_: Exception) {}
+    }
+    if (!photoBase64.isNullOrBlank()) {
+        val clean = if (photoBase64.contains("base64,", ignoreCase = true)) {
+            photoBase64.substringAfter("base64,").trim()
+        } else {
+            photoBase64.trim()
+        }
+        val approxKb = ((clean.length * 3L) / 4L / 1024L).coerceAtLeast(1L)
+        if (approxKb > 0L) return approxKb
+    }
+    return 150L
+}
+
+/**
  * Parses image source model from either a local file path or base64 (raw or data:image/jpeg;base64, URL).
  */
 @Composable
 fun rememberImageModel(photoPath: String?, photoBase64: String?): Any? {
-    val context = LocalContext.current
     return remember(photoPath, photoBase64) {
-        val file = photoPath?.let { File(it) }
-        if (file != null && file.exists()) {
-            file
-        } else if (!photoBase64.isNullOrBlank()) {
-            try {
-                val cleanBase64 = if (photoBase64.startsWith("data:")) {
-                    photoBase64.substringAfter("base64,").trim()
-                } else {
-                    photoBase64.trim()
-                }
-                val imageBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            } catch (_: Exception) {
+        val decodedBmp = decodePhotoBitmap(photoPath, photoBase64)
+        if (decodedBmp != null) {
+            decodedBmp
+        } else {
+            val file = photoPath?.let { File(it) }
+            if (file != null && file.exists()) {
+                file
+            } else if (!photoBase64.isNullOrBlank() && (photoBase64.startsWith("http://", ignoreCase = true) || photoBase64.startsWith("https://", ignoreCase = true) || photoBase64.startsWith("content://", ignoreCase = true) || photoBase64.startsWith("file://", ignoreCase = true))) {
+                photoBase64.trim()
+            } else if (!photoPath.isNullOrBlank() && (photoPath.startsWith("http://", ignoreCase = true) || photoPath.startsWith("https://", ignoreCase = true) || photoPath.startsWith("content://", ignoreCase = true))) {
+                photoPath.trim()
+            } else {
                 null
             }
-        } else {
-            null
         }
     }
 }
 
 /**
  * 64x64 dp photo thumbnail displayed inside the report history card.
- * Shows rounded corners, center-crop thumbnail, or a clean neutral placeholder if no photo.
+ * Shows rounded corners, center-crop thumbnail, size badge (e.g. "150K"), or a clean neutral placeholder if no photo.
  */
 @Composable
 fun ReportPhotoThumbnail(
@@ -105,7 +160,10 @@ fun ReportPhotoThumbnail(
 ) {
     val context = LocalContext.current
     val imageModel = rememberImageModel(photoPath, photoBase64)
-    val hasPhoto = imageModel != null
+    val hasPhoto = imageModel != null || !photoBase64.isNullOrBlank() || (!photoPath.isNullOrBlank() && File(photoPath).exists())
+    val effectiveSizeKb = remember(photoSizeKb, photoPath, photoBase64) {
+        resolvePhotoSizeKb(photoSizeKb, photoPath, photoBase64)
+    }
 
     Box(
         modifier = modifier
@@ -126,7 +184,15 @@ fun ReportPhotoThumbnail(
     ) {
         if (hasPhoto) {
             when (imageModel) {
-                is File -> {
+                is android.graphics.Bitmap -> {
+                    androidx.compose.foundation.Image(
+                        bitmap = imageModel.asImageBitmap(),
+                        contentDescription = "Foto Bukti Lapangan",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                is File, is String -> {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
                             .data(imageModel)
@@ -137,33 +203,25 @@ fun ReportPhotoThumbnail(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-                is android.graphics.Bitmap -> {
-                    androidx.compose.foundation.Image(
-                        bitmap = imageModel.asImageBitmap(),
-                        contentDescription = "Foto Bukti Lapangan",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
                 else -> {
                     Icon(
                         imageVector = Icons.Default.Image,
-                        contentDescription = null,
-                        tint = Slate400,
-                        modifier = Modifier.size(24.dp)
+                        contentDescription = "Foto Bukti Lapangan",
+                        tint = Emerald600,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             }
 
-            // Small badge in thumbnail corner if size is known
-            if (photoSizeKb != null && photoSizeKb > 0) {
+            // Small badge in thumbnail corner showing size (e.g., "150K")
+            if (effectiveSizeKb > 0) {
                 Surface(
                     shape = RoundedCornerShape(topStart = 6.dp),
                     color = Color(0xCC059669),
                     modifier = Modifier.align(Alignment.BottomEnd)
                 ) {
                     Text(
-                        text = "${photoSizeKb}K",
+                        text = "${effectiveSizeKb}K",
                         color = Color.White,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
@@ -209,6 +267,9 @@ fun FullscreenPhotoPreviewDialog(
 ) {
     val context = LocalContext.current
     val imageModel = rememberImageModel(photoPath, photoBase64)
+    val effectiveSizeKb = remember(photoSizeKb, photoPath, photoBase64) {
+        resolvePhotoSizeKb(photoSizeKb, photoPath, photoBase64)
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -307,20 +368,20 @@ fun FullscreenPhotoPreviewDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         when (imageModel) {
-                            is File -> {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(imageModel)
-                                        .crossfade(true)
-                                        .build(),
+                            is android.graphics.Bitmap -> {
+                                androidx.compose.foundation.Image(
+                                    bitmap = imageModel.asImageBitmap(),
                                     contentDescription = "Foto Bukti Layar Penuh",
                                     contentScale = ContentScale.Fit,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
-                            is android.graphics.Bitmap -> {
-                                androidx.compose.foundation.Image(
-                                    bitmap = imageModel.asImageBitmap(),
+                            is File, is String -> {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(imageModel)
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = "Foto Bukti Layar Penuh",
                                     contentScale = ContentScale.Fit,
                                     modifier = Modifier.fillMaxSize()
@@ -392,13 +453,13 @@ fun FullscreenPhotoPreviewDialog(
                                 }
 
                                 // Photo Size Badge
-                                if (photoSizeKb != null && photoSizeKb > 0) {
+                                if (effectiveSizeKb > 0) {
                                     Surface(
                                         shape = RoundedCornerShape(4.dp),
                                         color = Emerald100
                                     ) {
                                         Text(
-                                            text = "$photoSizeKb KB",
+                                            text = "${effectiveSizeKb}K",
                                             color = Emerald900,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 11.sp,

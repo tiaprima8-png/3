@@ -470,23 +470,23 @@ fun ReportDetailDialog(
                                 if (report.stikSolarAwal > 0.0 || report.stikSolarAkhir > 0.0) {
                                     val sAwal = if (report.stikSolarAwal % 1.0 == 0.0) report.stikSolarAwal.toInt().toString() else String.format(Locale.US, "%.1f", report.stikSolarAwal)
                                     val sAkhir = if (report.stikSolarAkhir % 1.0 == 0.0) report.stikSolarAkhir.toInt().toString() else String.format(Locale.US, "%.1f", report.stikSolarAkhir)
-                                    val isiStr = if (report.isRefueled && report.fuelLiters > 0.0) {
+                                    val isiStr = if (report.fuelLiters > 0.0) {
                                         val lStr = if (report.fuelLiters % 1.0 == 0.0) report.fuelLiters.toInt().toString() else String.format(Locale.US, "%.1f", report.fuelLiters)
-                                        " (+$lStr L)"
+                                        " (+${lStr}L)"
                                     } else ""
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text("Stik Solar BBM:", color = Slate500, fontSize = 12.sp)
-                                        Text("Stik: $sAwal ➔ $sAkhir$isiStr", fontWeight = FontWeight.SemiBold, color = Slate900, fontSize = 12.sp)
+                                        Text("Stik: $sAwal -> $sAkhir$isiStr", fontWeight = FontWeight.SemiBold, color = Slate900, fontSize = 12.sp)
                                     }
                                 }
                                 val computedSolar = if (report.stikSolarAwal > 0.0 || report.stikSolarAkhir > 0.0) {
-                                    (report.stikSolarAwal + (if (report.isRefueled) report.fuelLiters else 0.0) - report.stikSolarAkhir).coerceAtLeast(0.0)
+                                    ((report.stikSolarAwal + report.fuelLiters) - report.stikSolarAkhir).coerceAtLeast(0.0)
                                 } else if (report.pemakaianSolar > 0.0) {
                                     report.pemakaianSolar
-                                } else if (report.isRefueled && report.fuelLiters > 0.0) {
+                                } else if (report.fuelLiters > 0.0) {
                                     report.fuelLiters
                                 } else 0.0
 
@@ -593,113 +593,126 @@ fun ReportDetailDialog(
                         }
                     }
 
-                    // Catatan & Keterangan Lapangan
-                    if (report.notes.isNotBlank()) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFF8FAFC),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Notes, contentDescription = null, tint = Slate600, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Catatan / Keterangan Lapangan", fontWeight = FontWeight.SemiBold, color = Slate900, fontSize = 12.sp)
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = report.notes,
-                                    fontSize = 12.sp,
-                                    color = Slate700,
-                                    lineHeight = 16.sp
-                                )
-                            }
-                        }
-                    }
-
-                    // Foto Bukti Lapangan
+                    // Catatan & Dokumentasi (Catatan Lapangan + Foto Bukti Dokumentasi)
                     val hasPhoto = !report.photoPath.isNullOrBlank() || !report.photoBase64.isNullOrBlank()
-                    if (hasPhoto) {
+                    val effectiveSizeKb = com.example.ui.components.resolvePhotoSizeKb(
+                        report.photoSizeKb,
+                        report.photoPath,
+                        report.photoBase64
+                    )
+                    if (report.notes.isNotBlank() || hasPhoto) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = Color(0xFFF8FAFC),
                             border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Image, contentDescription = null, tint = Emerald600, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Foto Bukti Lapangan", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Slate900)
-                                    }
-                                    Surface(shape = RoundedCornerShape(4.dp), color = Emerald100) {
-                                        Text(
-                                            text = "${report.photoSizeKb ?: 145} KB • Ketuk Pratinjau",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 10.sp,
-                                            color = Emerald900,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        Icon(
+                                            imageVector = if (hasPhoto) Icons.Default.Image else Icons.Default.Notes,
+                                            contentDescription = null,
+                                            tint = if (hasPhoto) Emerald600 else Slate600,
+                                            modifier = Modifier.size(16.dp)
                                         )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Catatan & Dokumentasi",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = Slate900
+                                        )
+                                    }
+                                    if (hasPhoto) {
+                                        Surface(shape = RoundedCornerShape(4.dp), color = Emerald100) {
+                                            Text(
+                                                text = "${effectiveSizeKb}K",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp,
+                                                color = Emerald900,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                val photoFile = report.photoPath?.let { File(it) }
-                                if (photoFile != null && photoFile.exists()) {
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(context)
-                                            .data(photoFile)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = "Foto Bukti Lapangan",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(150.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable { showFullscreenPhoto = true }
+                                if (report.notes.isNotBlank()) {
+                                    Text(
+                                        text = report.notes,
+                                        fontSize = 12.sp,
+                                        color = Slate700,
+                                        lineHeight = 16.sp
                                     )
-                                } else if (!report.photoBase64.isNullOrBlank()) {
-                                    val bitmap = try {
-                                        val cleanBase64 = if (report.photoBase64.startsWith("data:")) {
-                                            report.photoBase64.substringAfter("base64,").trim()
-                                        } else {
-                                            report.photoBase64.trim()
+                                }
+
+                                if (hasPhoto) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        com.example.ui.components.ReportPhotoThumbnail(
+                                            photoPath = report.photoPath,
+                                            photoBase64 = report.photoBase64,
+                                            photoSizeKb = effectiveSizeKb,
+                                            onClick = { showFullscreenPhoto = true }
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Dokumentasi Bukti Kerja Terlampir (${effectiveSizeKb}K)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Slate900
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "Ketuk foto untuk memperbesar dokumentasi kerja",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Emerald600,
+                                                modifier = Modifier.clickable { showFullscreenPhoto = true }
+                                            )
                                         }
-                                        val imageBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
-                                        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                                    } catch (_: Exception) {
-                                        null
                                     }
 
-                                    if (bitmap != null) {
-                                        Image(
-                                            bitmap = bitmap.asImageBitmap(),
-                                            contentDescription = "Foto Bukti Lapangan",
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(150.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .clickable { showFullscreenPhoto = true }
-                                        )
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(50.dp)
-                                                .background(Color(0xFFE2E8F0), RoundedCornerShape(8.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text("Foto tersimpan di cloud / lokal", fontSize = 11.sp, color = Slate700)
+                                    val imageModel = com.example.ui.components.rememberImageModel(report.photoPath, report.photoBase64)
+                                    when (imageModel) {
+                                        is android.graphics.Bitmap -> {
+                                            Image(
+                                                bitmap = imageModel.asImageBitmap(),
+                                                contentDescription = "Foto Bukti Lapangan",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(150.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { showFullscreenPhoto = true }
+                                            )
                                         }
+                                        is File, is String -> {
+                                            AsyncImage(
+                                                model = ImageRequest.Builder(context)
+                                                    .data(imageModel)
+                                                    .crossfade(true)
+                                                    .build(),
+                                                contentDescription = "Foto Bukti Lapangan",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(150.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { showFullscreenPhoto = true }
+                                            )
+                                        }
+                                        else -> Unit
                                     }
                                 }
                             }

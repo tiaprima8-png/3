@@ -309,22 +309,21 @@ object CompanyServerSimulator {
             throw java.io.IOException("Mode Offline Lapangan: Hasil kerja disimpan ke penyimpanan lokal")
         }
 
-        // Anti-duplikasi berdasarkan client_transaction_id atau nomor_spk
+        // Anti-duplikasi / Upsert berdasarkan client_transaction_id, nomor_spk, atau rencana_id
         val txId = request.client_transaction_id
         val spkVal = request.nomor_spk?.trim() ?: ""
         val renIdVal = request.rencana_id ?: request.id_rencana_kerja ?: 0L
-        if ((!txId.isNullOrBlank() && serverHasilAktivitas.any { it.client_transaction_id == txId }) ||
-            (spkVal.isNotBlank() && spkVal != "SPK Menyusul" && spkVal != "-" && serverHasilAktivitas.any { it.nomor_spk.equals(spkVal, ignoreCase = true) })
-        ) {
-            markRencanaRealized(renIdVal, spkVal)
-            return ApiResponse(
-                status = "SUCCESS",
-                message = "Realisasi Unit ${request.kode_unit ?: ""} sudah tercatat di Web Admin (Anti-Duplikat Terverifikasi).",
-                data = "ACK-IDEMPOTENT"
-            )
+        val existingHasilIdx = serverHasilAktivitas.indexOfFirst {
+            (!txId.isNullOrBlank() && it.client_transaction_id == txId) ||
+                (spkVal.isNotBlank() && spkVal != "SPK Menyusul" && spkVal != "-" && it.nomor_spk.equals(spkVal, ignoreCase = true)) ||
+                (renIdVal > 0 && (it.rencana_id == renIdVal || it.id_rencana_kerja == renIdVal))
         }
-
-        serverHasilAktivitas.add(request)
+        val prevHasil = if (existingHasilIdx >= 0) serverHasilAktivitas[existingHasilIdx] else null
+        if (existingHasilIdx >= 0) {
+            serverHasilAktivitas[existingHasilIdx] = request
+        } else {
+            serverHasilAktivitas.add(request)
+        }
         markRencanaRealized(renIdVal, spkVal)
 
         val targetUnitCode = request.kode_unit ?: ""
@@ -335,6 +334,29 @@ object CompanyServerSimulator {
             val old = serverUnits[index]
             serverUnits[index] = old.copy(last_hm = lastHmVal, lastHm = lastHmVal)
         }
+
+        val resolvedPhotoBase64 = request.photo_base64
+            ?: request.photoBase64
+            ?: request.foto_bukti
+            ?: request.fotoBukti
+            ?: request.bukti_foto
+            ?: request.foto
+            ?: prevHasil?.photo_base64
+            ?: prevHasil?.photoBase64
+            ?: prevHasil?.foto_bukti
+            ?: prevHasil?.foto
+        val resolvedPhotoPath = request.photo_path
+            ?: request.photoPath
+            ?: prevHasil?.photo_path
+            ?: prevHasil?.photoPath
+        val resolvedPhotoSizeKb = request.photo_size_kb
+            ?: request.photoSizeKb
+            ?: prevHasil?.photo_size_kb
+            ?: prevHasil?.photoSizeKb
+        val resolvedPhotoDimensions = request.photo_dimensions
+            ?: request.photoDimensions
+            ?: prevHasil?.photo_dimensions
+            ?: prevHasil?.photoDimensions
 
         val convertedReport = PostActivityReportRequest(
             id_rencana_kerja = renIdVal,
@@ -360,20 +382,31 @@ object CompanyServerSimulator {
             jumlah_liter_solar = request.jumlah_liter_solar,
             fuel_liters = request.jumlah_liter_solar,
             stik_solar_awal = request.stik_solar_awal,
+            stikSolarAwal = request.stikSolarAwal ?: request.stik_solar_awal,
             stik_solar_akhir = request.stik_solar_akhir,
+            stikSolarAkhir = request.stikSolarAkhir ?: request.stik_solar_akhir,
             pemakaian_solar = request.pemakaian_solar,
+            pemakaianSolar = request.pemakaianSolar ?: request.pemakaian_solar,
+            total_konsumsi_solar = request.total_konsumsi_solar ?: request.pemakaian_solar,
+            totalKonsumsiSolar = request.totalKonsumsiSolar ?: request.pemakaian_solar,
             kendala_id = request.kendala_id,
             kendala_nama = request.kendala_nama,
             catatan_kendala = request.catatan_kendala,
             kendala_lapangan = request.kendala_lapangan ?: request.kendala_list ?: request.daftar_kendala,
             kendala_list = request.kendala_list ?: request.kendala_lapangan ?: request.daftar_kendala,
             daftar_kendala = request.daftar_kendala ?: request.kendala_lapangan ?: request.kendala_list,
-            foto_bukti = request.foto_bukti ?: request.foto,
-            foto = request.foto ?: request.foto_bukti,
-            photo_base64 = request.photo_base64 ?: request.foto_bukti ?: request.foto,
-            photo_path = request.photo_path,
-            photo_size_kb = request.photo_size_kb,
-            photo_dimensions = request.photo_dimensions,
+            foto_bukti = resolvedPhotoBase64,
+            fotoBukti = resolvedPhotoBase64,
+            bukti_foto = resolvedPhotoBase64,
+            foto = resolvedPhotoBase64,
+            photo_base64 = resolvedPhotoBase64,
+            photoBase64 = resolvedPhotoBase64,
+            photo_path = resolvedPhotoPath,
+            photoPath = resolvedPhotoPath,
+            photo_size_kb = resolvedPhotoSizeKb,
+            photoSizeKb = resolvedPhotoSizeKb,
+            photo_dimensions = resolvedPhotoDimensions,
+            photoDimensions = resolvedPhotoDimensions,
             is_hm_awal_corrected = request.is_hm_awal_corrected,
             alasan_koreksi_hm = request.alasan_koreksi_hm,
             nomor_spk = request.nomor_spk,
@@ -382,12 +415,15 @@ object CompanyServerSimulator {
             client_uuid = request.client_transaction_id,
             client_transaction_id = request.client_transaction_id
         )
-        val isDuplicateReport = receivedReportsOnServer.any { existing ->
+        val existingReportIdx = receivedReportsOnServer.indexOfFirst { existing ->
             (!txId.isNullOrBlank() && (existing.client_transaction_id == txId || existing.client_uuid == txId)) ||
             (spkVal.isNotBlank() && spkVal != "SPK Menyusul" && spkVal != "-" && existing.nomor_spk.equals(spkVal, ignoreCase = true)) ||
             (renIdVal > 0 && existing.id_rencana_kerja == renIdVal)
         }
-        if (!isDuplicateReport) {
+        if (existingReportIdx >= 0) {
+            receivedReportsOnServer[existingReportIdx] = convertedReport
+            _realisasiCreatedEventFlow.tryEmit(convertedReport)
+        } else {
             receivedReportsOnServer.add(convertedReport)
             _realisasiCreatedEventFlow.tryEmit(convertedReport)
         }
@@ -831,6 +867,7 @@ object CompanyServerSimulator {
                 val (uType, brand, lastHm) = specs
                 val isCompactor = uType.contains("Compactor", ignoreCase = true)
                 val isGrader = uType.contains("Grader", ignoreCase = true)
+                val isDumpTruck = code.trim().uppercase().startsWith("TTM") || uType.contains("Dump", ignoreCase = true)
                 list.add(
                     UnitPayload(
                         kode_unit = code,
@@ -851,7 +888,11 @@ object CompanyServerSimulator {
                         supervisorAssigned = kasie,
                         status = "OPERASIONAL",
                         hm_min_standar = if (isCompactor || isGrader) 5.0 else 6.0,
-                        hm_max_standar = if (isCompactor || isGrader) 8.5 else 10.0,
+                        hm_max_standar = when {
+                            isDumpTruck -> 1000000.0
+                            isCompactor || isGrader -> 8.5
+                            else -> 10.0
+                        },
                         wilayah = wil
                     )
                 )

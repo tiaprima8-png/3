@@ -24,7 +24,10 @@ interface UnitDao {
               OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
               OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:username, '@', '')))
               OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:namaKasie, '@', '')))
-              OR (:namaKasie = 'Yono' AND LOWER(TRIM(supervisorAssigned)) = 'suyono')
+              OR (LOWER(TRIM(:namaKasie)) IN ('yono', 'suyono', 'yono1') AND LOWER(TRIM(supervisorAssigned)) IN ('yono', 'suyono', 'yono1'))
+              OR (LOWER(TRIM(REPLACE(:username, '@', ''))) IN ('yono', 'suyono', 'yono1') AND LOWER(TRIM(supervisorAssigned)) IN ('yono', 'suyono', 'yono1'))
+              OR (LOWER(TRIM(:namaKasie)) IN ('jahidi', 'jaidi') AND LOWER(TRIM(supervisorAssigned)) IN ('jahidi', 'jaidi'))
+              OR (LOWER(TRIM(REPLACE(:username, '@', ''))) IN ('jahidi', 'jaidi') AND LOWER(TRIM(supervisorAssigned)) IN ('jahidi', 'jaidi'))
           )
         ORDER BY unitCode ASC
     """)
@@ -38,7 +41,10 @@ interface UnitDao {
             OR LOWER(TRIM(supervisorAssigned)) = LOWER(TRIM(REPLACE(:username, '@', '')))
             OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:username, '@', '')))
             OR LOWER(TRIM(REPLACE(supervisorAssigned, '@', ''))) = LOWER(TRIM(REPLACE(:kasieName, '@', '')))
-            OR (:kasieName = 'Yono' AND LOWER(TRIM(supervisorAssigned)) = 'suyono')
+            OR (LOWER(TRIM(:kasieName)) IN ('yono', 'suyono', 'yono1') AND LOWER(TRIM(supervisorAssigned)) IN ('yono', 'suyono', 'yono1'))
+            OR (LOWER(TRIM(REPLACE(:username, '@', ''))) IN ('yono', 'suyono', 'yono1') AND LOWER(TRIM(supervisorAssigned)) IN ('yono', 'suyono', 'yono1'))
+            OR (LOWER(TRIM(:kasieName)) IN ('jahidi', 'jaidi') AND LOWER(TRIM(supervisorAssigned)) IN ('jahidi', 'jaidi'))
+            OR (LOWER(TRIM(REPLACE(:username, '@', ''))) IN ('jahidi', 'jaidi') AND LOWER(TRIM(supervisorAssigned)) IN ('jahidi', 'jaidi'))
         )
         AND (status = 'Aktif' OR status = 'OPERASIONAL' OR status = 'aktif' OR status = 'operasional' OR status != 'Nonaktif')
         ORDER BY unitCode ASC

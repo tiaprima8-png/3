@@ -51,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -78,6 +79,8 @@ import java.io.File
 @Composable
 fun PhotoProofCard(
     photoPath: String?,
+    photoBase64: String? = null,
+    hasExistingPhoto: Boolean = false,
     photoSizeKb: Long?,
     photoDimensions: String?,
     isCompressing: Boolean,
@@ -88,6 +91,15 @@ fun PhotoProofCard(
     val context = LocalContext.current
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     var showPreviewModal by remember { mutableStateOf(false) }
+
+    val imageModel = rememberImageModel(photoPath, photoBase64)
+    val hasAttachedPhoto = imageModel != null ||
+        !photoBase64.isNullOrBlank() ||
+        (!photoPath.isNullOrBlank() && File(photoPath).exists()) ||
+        hasExistingPhoto
+    val effectiveSizeKb = remember(photoSizeKb, photoPath, photoBase64) {
+        resolvePhotoSizeKb(photoSizeKb, photoPath, photoBase64)
+    }
 
     // Launcher for Camera
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -177,8 +189,8 @@ fun PhotoProofCard(
                         )
                     }
                 }
-            } else if (!photoPath.isNullOrBlank() && File(photoPath).exists()) {
-                // Attached photo state: compact row
+            } else if (hasAttachedPhoto) {
+                // Attached photo state: preview card + Ganti Foto & Hapus Foto buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -186,21 +198,43 @@ fun PhotoProofCard(
                     // Small thumbnail preview (click to full view)
                     Box(
                         modifier = Modifier
-                            .size(width = 68.dp, height = 54.dp)
+                            .size(width = 68.dp, height = 56.dp)
                             .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFF1F5F9))
                             .border(1.dp, Emerald600.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                             .clickable { showPreviewModal = true }
-                            .testTag("photo_thumbnail_preview")
+                            .testTag("photo_thumbnail_preview"),
+                        contentAlignment = Alignment.Center
                     ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(File(photoPath))
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "Thumbnail Foto Bukti Lapangan",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        when (imageModel) {
+                            is android.graphics.Bitmap -> {
+                                androidx.compose.foundation.Image(
+                                    bitmap = imageModel.asImageBitmap(),
+                                    contentDescription = "Thumbnail Foto Bukti Lapangan",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            is File, is String -> {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(imageModel)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = "Thumbnail Foto Bukti Lapangan",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoCamera,
+                                    contentDescription = "Foto Terlampir",
+                                    tint = Emerald600,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
 
                         Surface(
                             shape = RoundedCornerShape(bottomStart = 6.dp),
@@ -216,11 +250,25 @@ fun PhotoProofCard(
                                     .size(10.dp)
                             )
                         }
+
+                        Surface(
+                            shape = RoundedCornerShape(topStart = 6.dp),
+                            color = Color(0xCC059669),
+                            modifier = Modifier.align(Alignment.BottomEnd)
+                        ) {
+                            Text(
+                                text = "${effectiveSizeKb}K",
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(10.dp))
 
-                    // Info: file size & dimensions
+                    // Info: file size, dimensions & hint
                     Column(
                         modifier = Modifier.weight(1f)
                     ) {
@@ -239,7 +287,7 @@ fun PhotoProofCard(
                                 color = Emerald100
                             ) {
                                 Text(
-                                    text = "${photoSizeKb ?: 145} KB",
+                                    text = "${effectiveSizeKb}K",
                                     color = Emerald900,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
@@ -250,20 +298,24 @@ fun PhotoProofCard(
                             }
                         }
                         Text(
-                            text = photoDimensions ?: "Resolusi Terkompresi",
+                            text = photoDimensions ?: "Ketuk foto untuk memperbesar dokumentasi kerja",
                             color = Slate500,
                             fontSize = 10.sp,
                             modifier = Modifier.padding(top = 1.dp)
                         )
                     }
 
-                    // Action buttons: Ganti & Hapus
+                    // Action buttons: Ganti Foto & Hapus Foto
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedButton(
-                            onClick = { launchCamera() },
+                            onClick = {
+                                galleryLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Slate700),
@@ -274,7 +326,7 @@ fun PhotoProofCard(
                         ) {
                             Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(12.dp), tint = Emerald600)
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text("Ganti", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Ganti Foto", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                         }
 
                         OutlinedButton(
@@ -289,7 +341,7 @@ fun PhotoProofCard(
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(12.dp), tint = ErrorRose)
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text("Hapus", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Hapus Foto", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -394,14 +446,14 @@ fun PhotoProofCard(
     }
 
     // Modal popup if thumbnail clicked
-    if (showPreviewModal && !photoPath.isNullOrBlank()) {
+    if (showPreviewModal && hasAttachedPhoto) {
         FullscreenPhotoPreviewDialog(
             photoPath = photoPath,
-            photoBase64 = null,
+            photoBase64 = photoBase64,
             unitCode = "Unit Lapangan",
             reportDate = "Foto Bukti Aktual",
             nomorSpk = null,
-            photoSizeKb = photoSizeKb,
+            photoSizeKb = effectiveSizeKb,
             onDismiss = { showPreviewModal = false }
         )
     }

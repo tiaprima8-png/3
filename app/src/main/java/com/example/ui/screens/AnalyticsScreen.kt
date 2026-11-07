@@ -132,8 +132,8 @@ fun AnalyticsScreen(
     }
 
     // SELECT DISTINCT kodeUnit FROM realisasi WHERE operatorId/namaOperator = :currentOperator (untuk Operator)
-    // atau seluruh unit aktif Kasie (untuk Kasie)
-    val roleAvailableUnits = remember(isOperatorSession, units, operatorRealizedReports) {
+    // atau seluruh unit aktif spesifik milik Kasie yang sedang login (untuk Kasie)
+    val roleAvailableUnits = remember(isOperatorSession, units, currentSupervisor, activeSupervisor, operatorRealizedReports) {
         if (isOperatorSession) {
             val distinctCodes = operatorRealizedReports
                 .map { it.unitCode.trim() }
@@ -151,7 +151,28 @@ fun AnalyticsScreen(
                 )
             }
         } else {
-            units
+            val kasieName = (currentSupervisor?.namaLengkap?.ifBlank { currentSupervisor?.name } ?: activeSupervisor).trim().removePrefix("@")
+            val username = (currentSupervisor?.username ?: "").trim().removePrefix("@")
+            val wilayahKasie = (currentSupervisor?.wilayah ?: "").trim()
+            val byKasie = units.filter { u ->
+                val spv = u.supervisorAssigned.trim().removePrefix("@")
+                spv.equals(kasieName, ignoreCase = true) ||
+                    (username.isNotBlank() && spv.equals(username, ignoreCase = true)) ||
+                    (kasieName.lowercase() in listOf("yono", "suyono", "yono1") && spv.lowercase() in listOf("yono", "suyono", "yono1")) ||
+                    (username.lowercase() in listOf("yono", "suyono", "yono1") && spv.lowercase() in listOf("yono", "suyono", "yono1")) ||
+                    (kasieName.lowercase() in listOf("jahidi", "jaidi") && spv.lowercase() in listOf("jahidi", "jaidi")) ||
+                    (username.lowercase() in listOf("jahidi", "jaidi") && spv.lowercase() in listOf("jahidi", "jaidi"))
+            }
+            when {
+                byKasie.isNotEmpty() -> byKasie
+                wilayahKasie.isNotBlank() && !wilayahKasie.equals("Semua Wilayah", ignoreCase = true) -> {
+                    units.filter { u ->
+                        u.wilayah.equals(wilayahKasie, ignoreCase = true) ||
+                            u.wilayah.replace(" PG", " ").equals(wilayahKasie.replace(" PG", " "), ignoreCase = true)
+                    }
+                }
+                else -> units
+            }
         }
     }
 

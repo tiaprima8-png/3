@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.ActivityMasterEntity
 import com.example.data.local.entity.ActivityReportEntity
@@ -79,12 +80,32 @@ class HeavyTrackRepository(
     suspend fun getActiveUser(): UserEntity? = withContext(Dispatchers.IO) {
         val roomUser = userDao.getActiveUser()
         if (roomUser != null && roomUser.isActiveSession) {
+            val isKasieAccount = com.example.data.local.isKnownKasieIdentifier(roomUser.username) ||
+                com.example.data.local.isKnownKasieIdentifier(roomUser.namaLengkap)
+            if (isKasieAccount && !roomUser.isOperator && !roomUser.role.equals("KASIE", ignoreCase = true)) {
+                val healed = roomUser.copy(role = "KASIE", roleTitle = "Kasie Lapangan")
+                userDao.insertOrUpdate(healed)
+                userSessionManager.saveSession(
+                    token = healed.token,
+                    userId = healed.id,
+                    namaLengkap = healed.resolvedNamaLengkap,
+                    username = healed.username,
+                    role = "KASIE",
+                    wilayah = healed.wilayah ?: "Geodesi PG1",
+                    kasieAtasan = healed.kasieAtasan ?: "",
+                    status = healed.status
+                )
+                return@withContext healed
+            }
             return@withContext roomUser
         }
 
         // Restore from DataStore Preferences jika ada
         val dsSession = userSessionManager.getSession()
         if (dsSession != null && dsSession.isLoggedIn && dsSession.isAktif) {
+            val isKasieAccount = com.example.data.local.isKnownKasieIdentifier(dsSession.username) ||
+                com.example.data.local.isKnownKasieIdentifier(dsSession.namaLengkap)
+            val safeRole = if (!dsSession.isOperator && isKasieAccount) "KASIE" else dsSession.role
             val restoredUser = UserEntity(
                 username = dsSession.username,
                 id = dsSession.userId,
@@ -92,7 +113,7 @@ class HeavyTrackRepository(
                 name = dsSession.namaLengkap,
                 namaLengkap = dsSession.namaLengkap,
                 nik = dsSession.username,
-                role = dsSession.role,
+                role = safeRole,
                 roleTitle = when {
                     dsSession.isManager -> "Manager Operasional"
                     dsSession.isSuperAdmin -> "Super Admin"
@@ -471,11 +492,6 @@ class HeavyTrackRepository(
                     updatedAt = System.currentTimeMillis()
                 )
             }
-            if (unitEntities.isNotEmpty()) {
-                unitDao.replaceAll(unitEntities)
-                reportDao.deleteOrphanedReports()
-            }
-
             // 2. Process Activities Aktif
             val incomingActivities = payload.resolvedActivities
                 .filter { !it.resolvedKategoriStatus.equals("Nonaktif", ignoreCase = true) }
@@ -490,9 +506,6 @@ class HeavyTrackRepository(
                     jenisUnit = it.resolvedJenisUnit,
                     updatedAt = System.currentTimeMillis()
                 )
-            }
-            if (actEntities.isNotEmpty()) {
-                activityDao.replaceAll(actEntities)
             }
 
             // 3. Process Operators Aktif
@@ -511,10 +524,6 @@ class HeavyTrackRepository(
                     updatedAt = System.currentTimeMillis()
                 )
             }
-            if (opEntities.isNotEmpty()) {
-                operatorDao.replaceAll(opEntities)
-            }
-            seedOperatorsIntoUsersTable()
 
             // 4. Process Lokasi
             val incomingLokasi = payload.resolvedLokasi
@@ -529,21 +538,35 @@ class HeavyTrackRepository(
                     updatedAt = System.currentTimeMillis()
                 )
             }
-            lokasiDao.replaceAll(lokasiEntities)
 
             // 5. Process Kendala
             val incomingKendala = payload.kendala ?: emptyList()
-            if (incomingKendala.isNotEmpty()) {
-                val kendalaEntities = incomingKendala.mapIndexed { index, it ->
-                    KendalaEntity(
-                        kodeKendala = it.resolveKode(index),
-                        namaKendala = it.resolvedNama,
-                        kategori = it.resolvedKategori,
-                        deskripsi = it.resolvedDeskripsi,
-                        updatedAt = System.currentTimeMillis()
-                    )
+            val kendalaEntities = incomingKendala.mapIndexed { index, it ->
+                KendalaEntity(
+                    kodeKendala = it.resolveKode(index),
+                    namaKendala = it.resolvedNama,
+                    kategori = it.resolvedKategori,
+                    deskripsi = it.resolvedDeskripsi,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+
+            database.withTransaction {
+                if (unitEntities.isNotEmpty()) {
+                    unitDao.replaceAll(unitEntities)
+                    reportDao.deleteOrphanedReports()
                 }
-                kendalaDao.replaceAll(kendalaEntities)
+                if (actEntities.isNotEmpty()) {
+                    activityDao.replaceAll(actEntities)
+                }
+                if (opEntities.isNotEmpty()) {
+                    operatorDao.replaceAll(opEntities)
+                }
+                seedOperatorsIntoUsersTable()
+                lokasiDao.replaceAll(lokasiEntities)
+                if (kendalaEntities.isNotEmpty()) {
+                    kendalaDao.replaceAll(kendalaEntities)
+                }
             }
 
             _lastSyncTimeMillis.value = System.currentTimeMillis()
@@ -769,10 +792,8 @@ class HeavyTrackRepository(
                     ?: ""
                 val reportBySpk = if (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-") reportDao.getReportByNomorSpk(spkNum) else null
                 val hasilBySpk = if (spkNum.isNotBlank() && spkNum != "SPK Menyusul" && spkNum != "-") hasilDao.getHasilByNomorSpk(spkNum) else null
-                val hasValidReportInDb = reportBySpk != null && reportBySpk.hmAkhir > 0.0 &&
-                    (reportBySpk.hmDailyRunning > 0.0 || reportBySpk.hmAkhir > reportBySpk.hmAwal || reportBySpk.workOutput > 0.0)
-                val hasValidHasilInDb = hasilBySpk != null && hasilBySpk.hmAkhir > 0.0 &&
-                    (hasilBySpk.hmHarianBerjalan > 0.0 || hasilBySpk.hmAkhir > hasilBySpk.hmAwal || hasilBySpk.hasilKerja > 0.0)
+                val hasValidReportInDb = reportBySpk != null && reportBySpk.hmAkhir > 0.0 && reportBySpk.hmAkhir >= reportBySpk.hmAwal
+                val hasValidHasilInDb = hasilBySpk != null && hasilBySpk.hmAkhir > 0.0 && hasilBySpk.hmAkhir >= hasilBySpk.hmAwal
                 val hasRealisasiInDb = hasValidReportInDb || hasValidHasilInDb
                 val isAlreadyRealized = hasRealisasiInDb || (matchedLocal?.isRealized == true && hasRealisasiInDb)
                 val parsedSubIdx = spkNum.split("-").takeIf { it.size >= 4 }?.lastOrNull()?.toIntOrNull()?.takeIf { it in 1..99 } ?: 1
@@ -812,10 +833,12 @@ class HeavyTrackRepository(
                 serverEntities.add(entity)
             }
 
-            // FULL MIRROR SYNC: Hapus rencana lokal lama, lalu isi data remote terkini
-            rencanaDao.deleteAll()
-            if (serverEntities.isNotEmpty()) {
-                rencanaDao.insertAll(serverEntities)
+            // FULL MIRROR SYNC ATOMIC: Hapus rencana lokal lama & isi data remote dalam 1 transaksi tunggal (anti-flicker)
+            database.withTransaction {
+                rencanaDao.deleteAll()
+                if (serverEntities.isNotEmpty()) {
+                    rencanaDao.insertAll(serverEntities)
+                }
             }
 
             _lastSyncTimeMillis.value = System.currentTimeMillis()
@@ -872,53 +895,64 @@ class HeavyTrackRepository(
             val unsyncedHasilBackup = hasilDao.getUnsyncedHasilList().filter { !it.isSynced }
 
             val (incomingReports, _) = apiClientManager.fetchPendingRealisasiForKasie(kasieName)
-            // Filter ketat: Hanya terima data yang benar-benar sudah diisi angka realisasi oleh operator
+            // Terima seluruh realisasi valid (termasuk HM Akhir == HM Awal / 0.0 HM saat Breakdown / Standby)
             val validReports = incomingReports.filter { req ->
                 val hmAwal = req.hm_awal ?: 0.0
                 val hmAkhir = req.hm_akhir ?: 0.0
-                val totalHm = req.hm_harian_berjalan ?: (if (hmAkhir > hmAwal) hmAkhir - hmAwal else 0.0)
-                val hasilKerja = req.hasil_kerja ?: 0.0
-                hmAkhir > 0.0 && (totalHm > 0.0 || hmAkhir > hmAwal || hasilKerja > 0.0)
+                hmAkhir > 0.0 && hmAkhir >= hmAwal
             }
 
-            // FULL MIRROR SYNC: Hapus data transaksi lokal lama, lalu isi dengan data remote terkini
-            // (Jika server dikosongkan / 0 laporan, lokal juga ikut bersih menjadi 0 laporan)
-            reportDao.deleteAll()
-            hasilDao.deleteAll()
-            aktivitasUnitDao.clearAll()
+            // Simpan snapshot lokal sebelum mirror sync agar field lokal (seperti photoPath, photoBase64, stikSolar, kendala)
+            // tetap terjaga jika payload ringkas dari server tidak menyertakan sebagian field.
+            val previousReportsSnapshot = reportDao.getAllReportsList()
+            val previousHasilSnapshot = hasilDao.getAllHasilList()
 
             val savedEntities = mutableListOf<ActivityReportEntity>()
-            if (validReports.isNotEmpty()) {
-                for (req in validReports) {
-                    val entity = saveIncomingRealisasiInternal(req)
-                    if (entity != null) {
-                        savedEntities.add(entity)
+
+            // ATOMIC TRANSACTION: Eksekusi penghapusan & penyisipan seluruh laporan dalam 1 transaksi tunggal
+            // sehingga Room Flow HANYA memancarkan (emit) data 1 kali di akhir (bebas kedip 0 -> 5 -> 45 -> 51)
+            database.withTransaction {
+                reportDao.deleteAll()
+                hasilDao.deleteAll()
+                aktivitasUnitDao.clearAll()
+
+                if (validReports.isNotEmpty()) {
+                    for (req in validReports) {
+                        val entity = saveIncomingRealisasiInternal(
+                            req = req,
+                            previousReports = previousReportsSnapshot,
+                            previousHasil = previousHasilSnapshot
+                        )
+                        if (entity != null) {
+                            savedEntities.add(entity)
+                        }
                     }
                 }
+
+                // Pulihkan antrean lokal yang belum terkirim ke server (jika masih offline)
+                for (unsyncedRep in unsyncedReportsBackup) {
+                    val alreadyInServer = savedEntities.any {
+                        (unsyncedRep.nomorSpk.isNotBlank() && it.nomorSpk.equals(unsyncedRep.nomorSpk, ignoreCase = true)) ||
+                            (unsyncedRep.clientUuid.isNotBlank() && it.clientUuid.equals(unsyncedRep.clientUuid, ignoreCase = true))
+                    }
+                    if (!alreadyInServer) {
+                        reportDao.insertReport(unsyncedRep)
+                        savedEntities.add(unsyncedRep)
+                    }
+                }
+                for (unsyncedHas in unsyncedHasilBackup) {
+                    val alreadyInServer = savedEntities.any {
+                        (unsyncedHas.nomorSpk.isNotBlank() && it.nomorSpk.equals(unsyncedHas.nomorSpk, ignoreCase = true)) ||
+                            (unsyncedHas.clientTransactionId.isNotBlank() && it.clientUuid.equals(unsyncedHas.clientTransactionId, ignoreCase = true))
+                    }
+                    if (!alreadyInServer) {
+                        hasilDao.insertHasil(unsyncedHas)
+                    }
+                }
+
+                rencanaDao.restoreUnrealizedPlansWithNoValidReport()
             }
 
-            // Pulihkan antrean lokal yang belum terkirim ke server (jika masih offline)
-            for (unsyncedRep in unsyncedReportsBackup) {
-                val alreadyInServer = savedEntities.any {
-                    (unsyncedRep.nomorSpk.isNotBlank() && it.nomorSpk.equals(unsyncedRep.nomorSpk, ignoreCase = true)) ||
-                        (unsyncedRep.clientUuid.isNotBlank() && it.clientUuid.equals(unsyncedRep.clientUuid, ignoreCase = true))
-                }
-                if (!alreadyInServer) {
-                    reportDao.insertReport(unsyncedRep)
-                    savedEntities.add(unsyncedRep)
-                }
-            }
-            for (unsyncedHas in unsyncedHasilBackup) {
-                val alreadyInServer = savedEntities.any {
-                    (unsyncedHas.nomorSpk.isNotBlank() && it.nomorSpk.equals(unsyncedHas.nomorSpk, ignoreCase = true)) ||
-                        (unsyncedHas.clientTransactionId.isNotBlank() && it.clientUuid.equals(unsyncedHas.clientTransactionId, ignoreCase = true))
-                }
-                if (!alreadyInServer) {
-                    hasilDao.insertHasil(unsyncedHas)
-                }
-            }
-
-            rencanaDao.restoreUnrealizedPlansWithNoValidReport()
             addLog("GET /api/realisasi?kasie=$kasieName", "GET", "200 OK", "Full Mirror Sync: ${savedEntities.size} realisasi", true)
             Result.success(savedEntities)
         } catch (e: Exception) {
@@ -940,8 +974,7 @@ class HeavyTrackRepository(
     suspend fun saveIncomingRealisasi(relData: RealtimeRealisasiData): ActivityReportEntity? = withContext(Dispatchers.IO) {
         val txId = if (relData.id.isNotBlank()) relData.id else UUID.randomUUID().toString()
         val calculatedSolar = if (relData.stikSolarAwal > 0.0 || relData.stikSolarAkhir > 0.0) {
-            if (relData.isIsiSolar) ((relData.stikSolarAwal + relData.jumlahLiterSolar) - relData.stikSolarAkhir).coerceAtLeast(0.0)
-            else (relData.stikSolarAwal - relData.stikSolarAkhir).coerceAtLeast(0.0)
+            ((relData.stikSolarAwal + relData.jumlahLiterSolar) - relData.stikSolarAkhir).coerceAtLeast(0.0)
         } else if (relData.pemakaianSolar > 0.0) {
             relData.pemakaianSolar
         } else {
@@ -952,12 +985,12 @@ class HeavyTrackRepository(
             com.example.data.remote.KendalaJsonConverter.fromJson(it)
         } ?: if (!relData.kendalaNama.isNullOrBlank()) {
             listOf(
-                com.example.data.remote.KendalaItemPayload(
-                    kode_kendala = relData.kendalaId ?: "1.0",
-                    nama_kendala = relData.kendalaNama,
-                    jam_mulai = "08:00",
-                    jam_selesai = "09:00",
-                    durasi_jam = 1.0
+                com.example.data.remote.KendalaItemPayload.create(
+                    namaKendala = relData.kendalaNama,
+                    kodeKendala = relData.kendalaId ?: com.example.data.remote.KendalaItemPayload.resolveKodeKendala(null, relData.kendalaNama),
+                    jamMulai = "08:00",
+                    jamSelesai = "09:00",
+                    durasiJam = 1.0
                 )
             )
         } else null
@@ -976,27 +1009,41 @@ class HeavyTrackRepository(
             hm_harian_berjalan = relData.totalHm,
             durasi_jam_kerja = relData.durasiJamKerja,
             work_duration_hours = relData.durasiJamKerja,
-            is_refueled = relData.isIsiSolar,
-            is_isi_solar = relData.isIsiSolar,
+            is_refueled = relData.isIsiSolar || relData.jumlahLiterSolar > 0.0,
+            is_isi_solar = relData.isIsiSolar || relData.jumlahLiterSolar > 0.0,
             fuel_liters = relData.jumlahLiterSolar,
             jumlah_liter_solar = relData.jumlahLiterSolar,
+            isi_solar = relData.jumlahLiterSolar,
+            jumlahIsiSolar = relData.jumlahLiterSolar,
             stik_solar_awal = relData.stikSolarAwal,
+            stikSolarAwal = relData.stikSolarAwal,
             stik_solar_akhir = relData.stikSolarAkhir,
+            stikSolarAkhir = relData.stikSolarAkhir,
             pemakaian_solar = calculatedSolar,
+            total_konsumsi_solar = calculatedSolar,
             kendala_id = relData.kendalaId,
             kendala_nama = relData.kendalaNama,
             catatan_kendala = relData.catatanKendala,
             kendala_lapangan = kendalaPayloads,
             daftar_kendala = kendalaPayloads,
             kendala_list = kendalaPayloads,
+            kendalaList = kendalaPayloads,
+            daftar_kendala_json = relData.daftarKendalaJson,
             hasil_kerja = relData.hasilKerja,
             work_output = relData.hasilKerja,
             notes = relData.keterangan,
+            foto_bukti = relData.photoBase64,
+            fotoBukti = relData.photoBase64,
+            bukti_foto = relData.photoBase64,
             foto = relData.photoBase64,
             photo_base64 = relData.photoBase64,
+            photoBase64 = relData.photoBase64,
             photo_path = relData.photoPath,
+            photoPath = relData.photoPath,
             photo_size_kb = relData.photoSizeKb,
+            photoSizeKb = relData.photoSizeKb,
             photo_dimensions = relData.photoDimensions,
+            photoDimensions = relData.photoDimensions,
             is_hm_awal_corrected = relData.isHmAwalCorrected,
             alasan_koreksi_hm = relData.alasanKoreksiHm,
             nomor_spk = relData.nomorSpk,
@@ -1007,14 +1054,18 @@ class HeavyTrackRepository(
         saveIncomingRealisasiInternal(req)
     }
 
-    private suspend fun saveIncomingRealisasiInternal(req: PostActivityReportRequest): ActivityReportEntity? {
+    private suspend fun saveIncomingRealisasiInternal(
+        req: PostActivityReportRequest,
+        previousReports: List<ActivityReportEntity> = emptyList(),
+        previousHasil: List<HasilInputAktivitasEntity> = emptyList()
+    ): ActivityReportEntity? {
         val reqHmAwal = req.hm_awal ?: 0.0
         val reqHmAkhir = req.hm_akhir ?: 0.0
         val reqHmDaily = if ((req.hm_harian_berjalan ?: 0.0) > 0.0) req.hm_harian_berjalan!! else if (reqHmAkhir > reqHmAwal) reqHmAkhir - reqHmAwal else 0.0
         val reqWorkOutput = req.hasil_kerja ?: 0.0
 
-        // DILARANG menyimpan data realisasi palsu/kosong (misal HM 0.0, Solar 25.0 L) atau menandai rencana sebagai selesai!
-        if (reqHmAkhir <= 0.0 || (reqHmDaily <= 0.0 && reqHmAkhir <= reqHmAwal && reqWorkOutput <= 0.0)) {
+        // Terima realisasi valid termasuk HM Akhir == HM Awal (0.0 HM saat Breakdown / Standby)
+        if (reqHmAkhir <= 0.0 || reqHmAkhir < reqHmAwal) {
             return null
         }
 
@@ -1039,12 +1090,29 @@ class HeavyTrackRepository(
             "SPK-AUTO-$clientUuid"
         }
 
-        // Cari record yang sudah ada berdasarkan nomorSpk unik atau clientUuid (JANGAN mencocokkan renId buta jika SPK berbeda!)
+        // Cari record yang sudah ada berdasarkan nomorSpk unik, clientUuid, atau snapshot sebelum sync
+        val reqUnit = (req.kode_unit ?: req.unit_code ?: "").trim()
         val existingReport = (if (hasValidSpk) reportDao.getReportByNomorSpk(spk) else null)
             ?: reportDao.getReportByUuid(clientUuid)
-        val targetReportId = existingReport?.id ?: 0L
-        val effectiveClientUuid = existingReport?.clientUuid ?: clientUuid
-        val effectiveRenId = if (isPlanMatchValid) renId else (existingReport?.idRencanaKerja ?: 0L)
+            ?: previousReports.find { prev ->
+                (hasValidSpk && prev.nomorSpk.equals(spk, ignoreCase = true)) ||
+                    (clientUuid.isNotBlank() && prev.clientUuid.equals(clientUuid, ignoreCase = true)) ||
+                    (renId > 0 && prev.idRencanaKerja == renId) ||
+                    (reqUnit.isNotBlank() && prev.unitCode.equals(reqUnit, ignoreCase = true) && prev.hmAkhir == reqHmAkhir)
+            }
+        val existingMatchedHasil = (if (hasValidSpk) hasilDao.getHasilByNomorSpk(spk) else null)
+            ?: hasilDao.getHasilByTxId(clientUuid)
+            ?: previousHasil.find { prev ->
+                (hasValidSpk && prev.nomorSpk.equals(spk, ignoreCase = true)) ||
+                    (clientUuid.isNotBlank() && prev.clientTransactionId.equals(clientUuid, ignoreCase = true)) ||
+                    (renId > 0 && prev.rencanaId == renId) ||
+                    (reqUnit.isNotBlank() && prev.kodeUnit.equals(reqUnit, ignoreCase = true) && prev.hmAkhir == reqHmAkhir)
+            }
+        val targetReportId = (if (hasValidSpk) reportDao.getReportByNomorSpk(spk)?.id else null)
+            ?: reportDao.getReportByUuid(clientUuid)?.id
+            ?: 0L
+        val effectiveClientUuid = existingReport?.clientUuid?.takeIf { it.isNotBlank() } ?: clientUuid
+        val effectiveRenId = if (isPlanMatchValid) renId else (existingReport?.idRencanaKerja ?: existingMatchedHasil?.rencanaId ?: 0L)
 
         val dateVal = req.tanggal ?: req.report_date ?: existingReport?.reportDate ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
         val supervisor = req.nama_pengawas ?: req.supervisor_name ?: existingReport?.supervisorName ?: ""
@@ -1054,43 +1122,59 @@ class HeavyTrackRepository(
         val hmAwal = reqHmAwal
         val hmAkhir = reqHmAkhir
         val hmDaily = reqHmDaily
-        val stikAwalVal = req.stik_solar_awal ?: existingReport?.stikSolarAwal ?: 0.0
-        val stikAkhirVal = req.stik_solar_akhir ?: existingReport?.stikSolarAkhir ?: 0.0
-        val isIsiSolarVal = req.is_isi_solar == true || req.is_refueled == true || (req.jumlah_liter_solar ?: 0.0) > 0.0 || (existingReport?.isRefueled == true)
-        val fuelLitersVal = req.jumlah_liter_solar ?: req.fuel_liters ?: existingReport?.fuelLiters ?: 0.0
-        val computedPemakaian = if (stikAwalVal > 0.0 && stikAkhirVal > 0.0) {
-            (stikAwalVal + (if (isIsiSolarVal) fuelLitersVal else 0.0) - stikAkhirVal).coerceAtLeast(0.0)
+        val stikAwalVal = req.resolvedStikSolarAwal.takeIf { it > 0.0 } ?: existingReport?.stikSolarAwal?.takeIf { it > 0.0 } ?: existingMatchedHasil?.stikSolarAwal ?: 0.0
+        val stikAkhirVal = req.resolvedStikSolarAkhir.takeIf { it > 0.0 } ?: existingReport?.stikSolarAkhir?.takeIf { it > 0.0 } ?: existingMatchedHasil?.stikSolarAkhir ?: 0.0
+        val fuelLitersVal = req.resolvedIsiSolar.takeIf { it > 0.0 } ?: existingReport?.fuelLiters?.takeIf { it > 0.0 } ?: existingMatchedHasil?.jumlahLiterSolar ?: 0.0
+        val isIsiSolarVal = req.resolvedIsIsiSolar || fuelLitersVal > 0.0 || (existingReport?.isRefueled == true) || (existingMatchedHasil?.isIsiSolar == true)
+        val computedPemakaian = if (stikAwalVal > 0.0 || stikAkhirVal > 0.0) {
+            ((stikAwalVal + fuelLitersVal) - stikAkhirVal).coerceAtLeast(0.0)
         } else {
-            req.pemakaian_solar ?: fuelLitersVal.takeIf { it > 0.0 } ?: existingReport?.pemakaianSolar ?: 0.0
+            req.resolvedTotalKonsumsiSolar.takeIf { it > 0.0 } ?: fuelLitersVal.takeIf { it > 0.0 } ?: existingReport?.pemakaianSolar ?: existingMatchedHasil?.pemakaianSolar ?: 0.0
         }
         val isLocked = existingReport?.isLocked == true || req.is_locked == true || req.approval_status.equals("Disetujui Kasie", ignoreCase = true)
         val approvalStatus = if (isLocked) "Disetujui Kasie" else (req.approval_status ?: existingReport?.approvalStatus ?: "Menunggu Approval")
 
         // Parse & normalisasi kendala lapangan
-        val kendalaPayloads = req.kendala_lapangan ?: req.kendala_list ?: req.daftar_kendala
-        val kendalaJsonVal = if (!kendalaPayloads.isNullOrEmpty()) {
+        val kendalaPayloads = req.resolvedKendalaList
+        val kendalaJsonVal = if (kendalaPayloads.isNotEmpty()) {
             com.example.data.remote.KendalaJsonConverter.toJson(kendalaPayloads)
         } else {
-            existingReport?.daftarKendalaJson
+            req.daftar_kendala_json?.takeIf { it.isNotBlank() }
+                ?: req.daftarKendalaJson?.takeIf { it.isNotBlank() }
+                ?: existingReport?.daftarKendalaJson?.takeIf { it.isNotBlank() }
+                ?: existingMatchedHasil?.daftarKendalaJson
         }
-        val firstKendala = kendalaPayloads?.firstOrNull()
+        val firstKendala = kendalaPayloads.firstOrNull()
         val kendalaIdVal = req.kendala_id?.takeIf { it.isNotBlank() }
             ?: firstKendala?.resolvedKode?.takeIf { it.isNotBlank() }
-            ?: existingReport?.kendalaId
+            ?: existingReport?.kendalaId?.takeIf { it.isNotBlank() }
+            ?: existingMatchedHasil?.kendalaId
         val kendalaNamaVal = req.kendala_nama?.takeIf { it.isNotBlank() }
+            ?: req.jenis_kendala?.takeIf { it.isNotBlank() }
             ?: firstKendala?.resolvedNama?.takeIf { it.isNotBlank() }
-            ?: existingReport?.kendalaNama
+            ?: existingReport?.kendalaNama?.takeIf { it.isNotBlank() }
+            ?: existingMatchedHasil?.kendalaNama
         val catatanKendalaVal = req.catatan_kendala?.takeIf { it.isNotBlank() }
-            ?: existingReport?.catatanKendala
+            ?: existingReport?.catatanKendala?.takeIf { it.isNotBlank() }
+            ?: existingMatchedHasil?.catatanKendala
 
-        // Parse & normalisasi foto dokumentasi
-        val photoPathVal = req.photo_path?.takeIf { it.isNotBlank() } ?: existingReport?.photoPath
-        val photoBase64Val = req.photo_base64?.takeIf { it.isNotBlank() }
-            ?: req.foto_bukti?.takeIf { it.isNotBlank() }
-            ?: req.foto?.takeIf { it.isNotBlank() }
-            ?: existingReport?.photoBase64
-        val photoSizeKbVal = req.photo_size_kb ?: existingReport?.photoSizeKb
-        val photoDimensionsVal = req.photo_dimensions?.takeIf { it.isNotBlank() } ?: existingReport?.photoDimensions
+        // Parse & normalisasi foto dokumentasi (prioritaskan dari server, fallback ke lokal jika ada)
+        val photoPathVal = req.resolvedPhotoPath
+            ?: existingReport?.photoPath?.takeIf { it.isNotBlank() }
+            ?: existingMatchedHasil?.photoPath?.takeIf { it.isNotBlank() }
+        val photoBase64Val = req.resolvedPhotoBase64
+            ?: existingReport?.photoBase64?.takeIf { it.isNotBlank() }
+            ?: existingMatchedHasil?.photoBase64?.takeIf { it.isNotBlank() }
+        val photoSizeKbVal = req.resolvedPhotoSizeKb
+            ?: existingReport?.photoSizeKb?.takeIf { it > 0L }
+            ?: existingMatchedHasil?.photoSizeKb?.takeIf { it > 0L }
+            ?: photoBase64Val?.let { b64 ->
+                val clean = b64.substringAfter("base64,", b64).trim()
+                ((clean.length * 3L) / 4L / 1024L).coerceAtLeast(1L)
+            }
+        val photoDimensionsVal = req.resolvedPhotoDimensions
+            ?: existingReport?.photoDimensions?.takeIf { it.isNotBlank() }
+            ?: existingMatchedHasil?.photoDimensions?.takeIf { it.isNotBlank() }
 
         val isHmAwalCorrectedVal = req.is_hm_awal_corrected == true || (existingReport?.isHmAwalCorrected == true)
         val alasanKoreksiHmVal = req.alasan_koreksi_hm?.takeIf { it.isNotBlank() } ?: existingReport?.alasanKoreksiHm
@@ -1415,6 +1499,17 @@ class HeavyTrackRepository(
                 satuan = savedHasil.satuan,
                 status_unit = savedHasil.unitStatus,
                 foto_bukti = savedHasil.photoBase64,
+                fotoBukti = savedHasil.photoBase64,
+                bukti_foto = savedHasil.photoBase64,
+                foto = savedHasil.photoBase64,
+                photo_base64 = savedHasil.photoBase64,
+                photoBase64 = savedHasil.photoBase64,
+                photo_path = savedHasil.photoPath,
+                photoPath = savedHasil.photoPath,
+                photo_size_kb = savedHasil.photoSizeKb,
+                photoSizeKb = savedHasil.photoSizeKb,
+                photo_dimensions = savedHasil.photoDimensions,
+                photoDimensions = savedHasil.photoDimensions,
                 is_hm_awal_corrected = savedHasil.isHmAwalCorrected,
                 alasan_koreksi_hm = savedHasil.alasanKoreksiHm,
                 client_transaction_id = savedHasil.clientTransactionId,

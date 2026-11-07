@@ -225,13 +225,26 @@ fun HeavyTrackApp() {
         }
     }
 
-    // Collect UI messages / notifications
+    // Collect UI messages / notifications (menyembunyikan seluruh notifikasi sinkronisasi rutin)
     LaunchedEffect(viewModel) {
         viewModel.uiEvents.collectLatest { event ->
-            when (event) {
-                is UiMessage.Success -> snackbarHostState.showSnackbar(event.message)
-                is UiMessage.Error -> snackbarHostState.showSnackbar(event.message)
-                is UiMessage.Info -> snackbarHostState.showSnackbar(event.message)
+            val msg = when (event) {
+                is UiMessage.Success -> event.message
+                is UiMessage.Error -> event.message
+                is UiMessage.Info -> event.message
+            }
+            val lower = msg.lowercase()
+            val isSyncNotification = lower.contains("disinkronkan") ||
+                lower.contains("menyinkronkan") ||
+                lower.contains("auto-sync") ||
+                lower.contains("sinkron berhasil") ||
+                lower.contains("sinkron server") ||
+                lower.contains("tersinkron") ||
+                lower.contains("memperbarui data") ||
+                lower.contains("diperbarui") ||
+                lower.contains("draft inputan formulir")
+            if (!isSyncNotification) {
+                snackbarHostState.showSnackbar(msg)
             }
         }
     }
@@ -593,7 +606,6 @@ fun HeavyTrackApp() {
                             selected = currentTab == 0,
                             onClick = {
                                 currentTab = 0
-                                viewModel.autoFetchMasterDataOnResume()
                             },
                             icon = {
                                 Icon(
@@ -1042,89 +1054,7 @@ fun HeavyTrackApp() {
         }
     }
 
-    // OVERLAY RINGAN: SINKRONISASI DATA OPERASIONAL & RIWAYAT (DATA HYDRATION)
-    if (isBootstrapping) {
-        Dialog(
-            onDismissRequest = { /* Non-dismissible during initial hydration */ },
-            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color.White,
-                shadowElevation = 8.dp,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .testTag("bootstrap_loading_overlay")
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(Emerald50, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = Emerald600,
-                            modifier = Modifier.size(32.dp),
-                            strokeWidth = 3.dp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = "Menyinkronkan data operasional & riwayat...",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = Slate900,
-                            textAlign = TextAlign.Center
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Mengunduh rencana kerja SPK, riwayat aktivitas terverifikasi, dan master data dari server admin...",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = Slate500,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 16.sp
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFF1F5F9)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudSync,
-                                contentDescription = null,
-                                tint = Emerald600,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Database Hydration • SQLite Room",
-                                fontSize = 11.sp,
-                                color = Slate700,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Sinkronisasi berjalan 100% senyap di belakang layar (tanpa modal overlay "Menyinkronkan data...")
 }
 
 private fun getInitials(name: String): String {

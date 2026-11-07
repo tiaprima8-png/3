@@ -374,6 +374,7 @@ class ApiClientManager(val context: Context) {
             val role = u.resolvedRole
             val wil = u.wilayah ?: "Geodesi PG1"
             val isOp = role.equals("OPERATOR", ignoreCase = true)
+            val isSuperAdmin = com.example.data.local.isSuperAdminRoleString(role)
             com.example.data.local.entity.UserEntity(
                 username = uname,
                 password = if (isOp) uname else "",
@@ -382,8 +383,8 @@ class ApiClientManager(val context: Context) {
                 name = nama,
                 namaLengkap = nama,
                 nik = uname,
-                role = if (isOp) "operator" else role,
-                roleTitle = if (role.contains("SUPER")) "Super Admin" else if (role.contains("MANAGER")) "Manager Operasional" else if (isOp) "Operator Alat Berat" else "Kasie Lapangan",
+                role = if (isOp) "operator" else if (isSuperAdmin) "SUPER ADMIN" else if (role.contains("MANAGER")) "MANAGER" else "KASIE",
+                roleTitle = if (isSuperAdmin) "Super Admin" else if (role.contains("MANAGER")) "Manager Operasional" else if (isOp) "Operator Alat Berat" else "Kasie Lapangan",
                 kasieAtasan = u.resolvedKasieAtasan,
                 wilayah = wil,
                 status = "Aktif",
@@ -608,13 +609,15 @@ class ApiClientManager(val context: Context) {
                     val role = optStringFirst(u, "role", "hak_akses", "jabatan", "level").uppercase()
                     val kasieAtasan = optStringFirst(u, "kasie_atasan", "kasie_penanggung_jawab", "kasie")
                     val wil = optStringFirst(u, "wilayah").ifBlank { "Geodesi PG1" }
-                    val knownKasie = setOf("agung", "zainudin", "jahidi", "hisar", "yono", "yono1", "nyoman", "saipul", "galung")
+                    val knownKasie = setOf("agung", "zainudin", "jahidi", "jaidi", "hisar", "yono", "yono1", "suyono", "nyoman", "saipul", "galung")
+                    val isSuperAdmin = com.example.data.local.isSuperAdminRoleString(role) && uname.lowercase() !in knownKasie
+                    val isManager = role.contains("MANAGER") && uname.lowercase() !in knownKasie
                     val isOp = role.contains("OPERATOR") ||
                         uname.equals("achmad", ignoreCase = true) ||
                         uname.lowercase().startsWith("achmad") ||
                         nama.contains("achmad", ignoreCase = true) ||
                         (uname.all { it.isDigit() } && uname.length >= 6) ||
-                        (kasieAtasan.isNotBlank() && uname.lowercase() !in knownKasie && !role.contains("SUPER") && !role.contains("MANAGER"))
+                        (kasieAtasan.isNotBlank() && uname.lowercase() !in knownKasie && !isSuperAdmin && !isManager)
                     userMap[uname.lowercase()] = com.example.data.local.entity.UserEntity(
                         username = uname,
                         id = optStringFirst(u, "id").ifBlank { (userMap.size + 1).toString() },
@@ -622,8 +625,8 @@ class ApiClientManager(val context: Context) {
                         name = nama,
                         namaLengkap = nama,
                         nik = uname,
-                        role = if (role.contains("SUPER")) "SUPER ADMIN" else if (role.contains("MANAGER")) "MANAGER" else if (isOp) "operator" else "KASIE",
-                        roleTitle = if (role.contains("SUPER")) "Super Admin" else if (role.contains("MANAGER")) "Manager Operasional" else if (isOp) "Operator Alat Berat" else "Kasie Lapangan",
+                        role = if (isSuperAdmin) "SUPER ADMIN" else if (isManager) "MANAGER" else if (isOp) "operator" else "KASIE",
+                        roleTitle = if (isSuperAdmin) "Super Admin" else if (isManager) "Manager Operasional" else if (isOp) "Operator Alat Berat" else "Kasie Lapangan",
                         kasieAtasan = if (isOp) kasieAtasan.ifBlank { "Jahidi" } else kasieAtasan,
                         wilayah = wil,
                         status = "Aktif",
@@ -674,8 +677,14 @@ class ApiClientManager(val context: Context) {
                     val wil = optStringFirst(un, "wilayah", "divisi").ifBlank { "Geodesi PG1" }
                     val brand = optStringFirst(un, "brand_model", "model_unit", "brandModel")
                     val lastHm = un.optDouble("hm_terakhir", un.optDouble("hm_unit_terakhir_diinputkan", un.optDouble("last_hm", 0.0)))
+                    val isDumpTruck = code.trim().uppercase().startsWith("TTM") || uType.contains("Dump", ignoreCase = true)
                     val minHm = un.optDouble("hm_min_standar", if (uType.contains("Compactor") || uType.contains("Grader")) 5.0 else 6.0)
-                    val maxHm = un.optDouble("hm_max_standar", if (uType.contains("Compactor") || uType.contains("Grader")) 8.5 else 10.0)
+                    val rawMaxHm = un.optDouble("hm_max_standar", when {
+                        isDumpTruck -> 1000000.0
+                        uType.contains("Compactor") || uType.contains("Grader") -> 8.5
+                        else -> 10.0
+                    })
+                    val maxHm = if (isDumpTruck) maxOf(1000000.0, rawMaxHm) else rawMaxHm
                     unitList.add(
                         com.example.data.local.entity.UnitEntity(
                             unitCode = code,
@@ -1126,21 +1135,113 @@ class ApiClientManager(val context: Context) {
         val namaPengawas = optStringFirst(obj, "nama_pengawas", "kasie", "supervisor_name", "supervisorName", "namaKasie")
         val tanggal = optStringFirst(obj, "tanggal", "report_date", "reportDate", "tanggal_kerja")
         val shift = optStringFirst(obj, "shift", "shift_kerja").ifBlank { "SIANG" }
-        val lokasi = optStringFirst(obj, "lokasi_kerja", "kode_lokasi", "workLocation")
+        val lokasi = optStringFirst(obj, "lokasi_kerja", "kode_lokasi", "workLocation", "work_location")
         val wilayah = optStringFirst(obj, "wilayah").ifBlank { "PG1" }
         val aktivitas = optStringFirst(obj, "nama_aktivitas", "activity_name", "activityName")
         val kodeSap = optStringFirst(obj, "kode_sap", "sap_code", "sapCode")
-        val satuan = optStringFirst(obj, "satuan", "unitOfMeasure").ifBlank { "m3" }
+        val satuan = optStringFirst(obj, "satuan", "unitOfMeasure", "unit_of_measure").ifBlank { "m3" }
         val statusUnit = optStringFirst(obj, "status_unit", "unit_status", "unitStatus").ifBlank { "OPERASI" }
-        val keterangan = optStringFirst(obj, "keterangan", "notes")
-        val durasiJamKerja = obj.optDouble("durasi_jam_kerja", obj.optDouble("jam_kerja", obj.optDouble("workDurationHours", 7.0)))
-        val hmAwal = obj.optDouble("hm_awal", obj.optDouble("hmAwal", 0.0))
-        val hmAkhir = obj.optDouble("hm_akhir", obj.optDouble("hmAkhir", 0.0))
-        val hmDaily = obj.optDouble("hm_harian_berjalan", obj.optDouble("hmDailyRunning", obj.optDouble("total_hm", if (hmAkhir > hmAwal) hmAkhir - hmAwal else 0.0)))
-        val hasilKerja = obj.optDouble("hasil_kerja", obj.optDouble("work_output", obj.optDouble("workOutput", 0.0)))
-        val isSolar = obj.optBoolean("is_isi_solar", obj.optBoolean("isRefueled", false))
-        val literSolar = obj.optDouble("jumlah_liter_solar", obj.optDouble("fuelLiters", 0.0))
-        val pemakaianSolar = obj.optDouble("pemakaian_solar", obj.optDouble("pemakaianSolar", literSolar))
+        val keterangan = optStringFirst(obj, "keterangan", "notes", "catatan")
+        val durasiJamKerja = optDoubleFirst(obj, 7.0, "durasi_jam_kerja", "jam_kerja", "workDurationHours", "work_duration_hours", "durasiJamKerja")
+        val hmAwal = optDoubleFirst(obj, 0.0, "hm_awal", "hmAwal")
+        val hmAkhir = optDoubleFirst(obj, 0.0, "hm_akhir", "hmAkhir")
+        val hmDaily = optDoubleFirst(
+            obj,
+            if (hmAkhir > hmAwal) hmAkhir - hmAwal else 0.0,
+            "hm_harian_berjalan", "hmDailyRunning", "total_hm", "totalHm", "hmHarianBerjalan"
+        )
+        val hasilKerja = optDoubleFirst(obj, 0.0, "hasil_kerja", "work_output", "workOutput", "hasilKerja")
+
+        // Eksplisit baca stik solar awal, stik solar akhir, dan isi solar tanpa fallback ke 0 jika data tersedia
+        val stikSolarAwal = optDoubleNullable(obj, "stik_solar_awal", "stikSolarAwal", "stik_awal", "stikAwal") ?: 0.0
+        val stikSolarAkhir = optDoubleNullable(obj, "stik_solar_akhir", "stikSolarAkhir", "stik_akhir", "stikAkhir") ?: 0.0
+        val literSolar = optDoubleNullable(obj, "isi_solar", "isiSolar", "jumlahIsiSolar", "jumlah_isi_solar", "jumlah_liter_solar", "jumlahLiterSolar", "fuelLiters", "fuel_liters") ?: 0.0
+        val isSolarFlag = obj.optBoolean("is_isi_solar", obj.optBoolean("isIsiSolar", obj.optBoolean("isRefueled", obj.optBoolean("is_refueled", false))))
+        val isSolar = isSolarFlag || literSolar > 0.0
+
+        // Rumus universal konsumsi solar: ((stikAwal + isiSolar) - stikAkhir)
+        val serverTotalKonsumsi = optDoubleNullable(obj, "total_konsumsi_solar", "totalKonsumsiSolar", "pemakaian_solar", "pemakaianSolar")
+        val pemakaianSolar = if (stikSolarAwal > 0.0 || stikSolarAkhir > 0.0) {
+            ((stikSolarAwal + literSolar) - stikSolarAkhir).coerceAtLeast(0.0)
+        } else {
+            serverTotalKonsumsi ?: literSolar
+        }
+
+        // Parse daftar_kendala_json / kendalaList secara utuh
+        val kendalaJsonRaw = extractKendalaJsonString(
+            obj,
+            "daftar_kendala_json",
+            "daftarKendalaJson",
+            "kendalaList",
+            "kendala_list",
+            "daftar_kendala",
+            "daftarKendala",
+            "kendala_lapangan",
+            "kendalaLapangan"
+        )
+        val parsedKendalaList = if (kendalaJsonRaw.isNotBlank()) {
+            KendalaJsonConverter.fromJson(kendalaJsonRaw)
+        } else {
+            emptyList()
+        }
+        val singleKendalaId = optStringFirst(obj, "kendala_id", "kendalaId", "kode_kendala", "kodeKendala")
+            .ifBlank { parsedKendalaList.firstOrNull()?.resolvedKode ?: "" }
+        val singleKendalaNama = optStringFirst(obj, "kendala_nama", "kendalaNama", "jenis_kendala", "jenisKendala", "nama_kendala", "namaKendala")
+            .ifBlank { parsedKendalaList.firstOrNull()?.resolvedNama ?: "" }
+        val catatanKendala = optStringFirst(obj, "catatan_kendala", "catatanKendala")
+        val finalKendalaList = if (parsedKendalaList.isNotEmpty()) {
+            parsedKendalaList
+        } else if (singleKendalaNama.isNotBlank()) {
+            listOf(
+                KendalaItemPayload.create(
+                    namaKendala = singleKendalaNama,
+                    kodeKendala = singleKendalaId.ifBlank { KendalaItemPayload.resolveKodeKendala(null, singleKendalaNama) },
+                    jamMulai = optStringFirst(obj, "jam_mulai", "jamMulai", "waktu_mulai").ifBlank { "08:00" },
+                    jamSelesai = optStringFirst(obj, "jam_selesai", "jamSelesai", "waktu_selesai").ifBlank { "09:00" },
+                    durasiJam = optDoubleNullable(obj, "durasi_jam", "durasiJam", "durasi") ?: 1.0
+                )
+            )
+        } else {
+            null
+        }
+
+        val photoBase64 = optStringFirst(
+            obj,
+            "photoBase64",
+            "photo_base64",
+            "foto_bukti",
+            "fotoBukti",
+            "foto",
+            "bukti_foto",
+            "buktiFoto",
+            "photo",
+            "image",
+            "image_base64",
+            "imageBase64",
+            "foto_dokumentasi",
+            "fotoDokumentasi",
+            "dokumentasi",
+            "photo_url",
+            "photoUrl",
+            "url_foto"
+        ).takeIf { it.isNotBlank() }
+        val photoPath = optStringFirst(
+            obj,
+            "photoPath",
+            "photo_path",
+            "file_path",
+            "filePath",
+            "path_foto"
+        ).takeIf { it.isNotBlank() }
+        val rawPhotoSizeKb = optDoubleNullable(obj, "photoSizeKb", "photo_size_kb", "ukuran_foto_kb", "size_kb")?.toLong()?.takeIf { it > 0L }
+            ?: photoBase64?.let { b64 ->
+                val clean = b64.substringAfter("base64,", b64).trim()
+                ((clean.length * 3L) / 4L / 1024L).coerceAtLeast(1L)
+            }
+        val photoDimensions = optStringFirst(obj, "photoDimensions", "photo_dimensions", "dimensi_foto").takeIf { it.isNotBlank() }
+        val isHmCorrected = obj.optBoolean("is_hm_awal_corrected", obj.optBoolean("isHmAwalCorrected", false))
+        val alasanKoreksiHm = optStringFirst(obj, "alasan_koreksi_hm", "alasanKoreksiHm").takeIf { it.isNotBlank() }
+
         val rawLocked = if (obj.has("is_locked")) obj.opt("is_locked") else obj.opt("isLocked")
         val isLocked = when (rawLocked) {
             is Boolean -> rawLocked
@@ -1157,7 +1258,7 @@ class ApiClientManager(val context: Context) {
             "Menunggu"
         }
         val nomorSpk = optStringFirst(obj, "nomor_spk", "nomorSpk", "spk")
-        val clientTxId = optStringFirst(obj, "client_transaction_id", "client_uuid", "clientUuid")
+        val clientTxId = optStringFirst(obj, "client_transaction_id", "client_uuid", "clientUuid", "clientTransactionId")
 
         return PostActivityReportRequest(
             id_rencana_kerja = renId,
@@ -1182,13 +1283,93 @@ class ApiClientManager(val context: Context) {
             hm_harian_berjalan = hmDaily,
             hasil_kerja = hasilKerja,
             is_isi_solar = isSolar,
+            is_refueled = isSolar,
             jumlah_liter_solar = literSolar,
+            fuel_liters = literSolar,
+            isi_solar = literSolar,
+            isiSolar = literSolar,
+            jumlahIsiSolar = literSolar,
+            jumlah_isi_solar = literSolar,
+            stik_solar_awal = stikSolarAwal,
+            stikSolarAwal = stikSolarAwal,
+            stik_solar_akhir = stikSolarAkhir,
+            stikSolarAkhir = stikSolarAkhir,
             pemakaian_solar = pemakaianSolar,
+            pemakaianSolar = pemakaianSolar,
+            total_konsumsi_solar = pemakaianSolar,
+            totalKonsumsiSolar = pemakaianSolar,
+            kendala_id = singleKendalaId.takeIf { it.isNotBlank() },
+            kendala_nama = singleKendalaNama.takeIf { it.isNotBlank() },
+            jenis_kendala = singleKendalaNama.takeIf { it.isNotBlank() },
+            catatan_kendala = catatanKendala.takeIf { it.isNotBlank() },
+            kendala_lapangan = finalKendalaList,
+            kendala_list = finalKendalaList,
+            kendalaList = finalKendalaList,
+            daftar_kendala = finalKendalaList,
+            daftar_kendala_json = kendalaJsonRaw.takeIf { it.isNotBlank() },
+            daftarKendalaJson = kendalaJsonRaw.takeIf { it.isNotBlank() },
+            foto_bukti = photoBase64,
+            fotoBukti = photoBase64,
+            bukti_foto = photoBase64,
+            foto = photoBase64,
+            photo_base64 = photoBase64,
+            photoBase64 = photoBase64,
+            photo_path = photoPath,
+            photoPath = photoPath,
+            photo_size_kb = rawPhotoSizeKb,
+            photoSizeKb = rawPhotoSizeKb,
+            photo_dimensions = photoDimensions,
+            photoDimensions = photoDimensions,
+            is_hm_awal_corrected = isHmCorrected,
+            alasan_koreksi_hm = alasanKoreksiHm,
             nomor_spk = nomorSpk,
             approval_status = approvalStatus,
             is_locked = isLocked,
             client_transaction_id = clientTxId
         )
+    }
+
+    private fun optDoubleNullable(obj: JSONObject, vararg keys: String): Double? {
+        for (key in keys) {
+            if (obj.has(key) && !obj.isNull(key)) {
+                val raw = obj.opt(key)
+                when (raw) {
+                    is Number -> return raw.toDouble()
+                    is String -> {
+                        val parsed = raw.trim().replace(',', '.').toDoubleOrNull()
+                        if (parsed != null) return parsed
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun optDoubleFirst(obj: JSONObject, defaultVal: Double, vararg keys: String): Double {
+        return optDoubleNullable(obj, *keys) ?: defaultVal
+    }
+
+    private fun extractKendalaJsonString(obj: JSONObject, vararg keys: String): String {
+        for (key in keys) {
+            if (obj.has(key) && !obj.isNull(key)) {
+                val raw = obj.opt(key)
+                when (raw) {
+                    is org.json.JSONArray -> {
+                        if (raw.length() > 0) return raw.toString()
+                    }
+                    is org.json.JSONObject -> {
+                        return "[${raw}]"
+                    }
+                    is String -> {
+                        val trimmed = raw.trim()
+                        if (trimmed.isNotBlank() && !trimmed.equals("null", ignoreCase = true) && trimmed != "[]") {
+                            return trimmed
+                        }
+                    }
+                }
+            }
+        }
+        return ""
     }
 
     private fun optStringFirst(obj: JSONObject, vararg keys: String): String {
@@ -1669,7 +1850,8 @@ class ApiClientManager(val context: Context) {
                         .uppercase()
 
                     // Cek apakah akun adalah Executive (Super Admin / Manager)
-                    if (role.contains("SUPER") || role.contains("MANAGER")) {
+                    val isSuperAdminLogin = com.example.data.local.isSuperAdminRoleString(role)
+                    if (isSuperAdminLogin || role.contains("MANAGER")) {
                         return@withContext LoginResult.Error(
                             "Akses Ditolak: Akun Super Admin & Manager hanya dapat digunakan pada Website Portal Admin (https://1-portalce.ai.studio/). Aplikasi mobile RKCE ini khusus untuk Kasie & Operator Lapangan."
                         )

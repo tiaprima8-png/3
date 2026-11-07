@@ -126,7 +126,10 @@ class RealisasiRepository(
             kendalaLapangan = request.kendala_lapangan,
             kendalaList = request.kendala_list,
             daftarKendala = request.daftar_kendala,
-            photoBase64 = request.foto_bukti,
+            photoBase64 = request.photoBase64 ?: request.photo_base64 ?: request.foto_bukti ?: request.foto,
+            photoPath = request.photoPath ?: request.photo_path,
+            photoSizeKb = request.photoSizeKb ?: request.photo_size_kb,
+            photoDimensions = request.photoDimensions ?: request.photo_dimensions,
             isHmAwalCorrected = request.is_hm_awal_corrected ?: false,
             alasanKoreksiHm = request.alasan_koreksi_hm,
             clientTransactionId = txId,
@@ -232,6 +235,17 @@ class RealisasiRepository(
                         satuan = hasil.satuan,
                         status_unit = hasil.unitStatus,
                         foto_bukti = hasil.photoBase64,
+                        fotoBukti = hasil.photoBase64,
+                        bukti_foto = hasil.photoBase64,
+                        foto = hasil.photoBase64,
+                        photo_base64 = hasil.photoBase64,
+                        photoBase64 = hasil.photoBase64,
+                        photo_path = hasil.photoPath,
+                        photoPath = hasil.photoPath,
+                        photo_size_kb = hasil.photoSizeKb,
+                        photoSizeKb = hasil.photoSizeKb,
+                        photo_dimensions = hasil.photoDimensions,
+                        photoDimensions = hasil.photoDimensions,
                         is_hm_awal_corrected = hasil.isHmAwalCorrected,
                         alasan_koreksi_hm = hasil.alasanKoreksiHm,
                         client_transaction_id = hasil.clientTransactionId,
@@ -273,6 +287,9 @@ class RealisasiRepository(
                         kendalaNama = hasil.kendalaNama,
                         catatanKendala = hasil.catatanKendala,
                         photoBase64 = hasil.photoBase64,
+                        photoPath = hasil.photoPath,
+                        photoSizeKb = hasil.photoSizeKb,
+                        photoDimensions = hasil.photoDimensions,
                         isHmAwalCorrected = hasil.isHmAwalCorrected,
                         alasanKoreksiHm = hasil.alasanKoreksiHm,
                         clientTransactionId = hasil.clientTransactionId,
@@ -313,12 +330,12 @@ class RealisasiRepository(
         val isiLiters = request.jumlah_liter_solar ?: 0.0
         val isIsi = (request.is_isi_solar == true) || isiLiters > 0.0
         val calculatedSolar = if (stikAwal > 0.0 || stikAkhir > 0.0) {
-            if (isIsi) ((stikAwal + isiLiters) - stikAkhir).coerceAtLeast(0.0) else (stikAwal - stikAkhir).coerceAtLeast(0.0)
+            ((stikAwal + isiLiters) - stikAkhir).coerceAtLeast(0.0)
         } else {
             request.pemakaian_solar ?: (if (isIsi) isiLiters else 0.0)
         }
         val kendalaItems = request.daftar_kendala ?: request.kendala_list ?: request.kendala_lapangan
-        val kendalaJson = kendalaItems?.let { com.example.data.remote.KendalaJsonConverter.toJson(it) }
+        val kendalaJson = kendalaItems?.takeIf { it.isNotEmpty() }?.let { com.example.data.remote.KendalaJsonConverter.toJson(it) }
 
         return HasilInputAktivitasEntity(
             id = request.id ?: 0L,
@@ -346,16 +363,16 @@ class RealisasiRepository(
             stikSolarAwal = stikAwal,
             stikSolarAkhir = stikAkhir,
             pemakaianSolar = calculatedSolar,
-            kendalaId = request.kendala_id,
-            kendalaNama = request.kendala_nama,
+            kendalaId = request.kendala_id ?: kendalaItems?.firstOrNull()?.resolvedKode,
+            kendalaNama = request.kendala_nama ?: kendalaItems?.firstOrNull()?.resolvedNama,
             catatanKendala = request.catatan_kendala,
             daftarKendalaJson = kendalaJson,
             hasilKerja = request.hasil_kerja ?: 0.0,
             keterangan = request.keterangan ?: "",
-            photoBase64 = request.foto_bukti ?: request.foto ?: request.photo_base64,
-            photoPath = request.photo_path,
-            photoSizeKb = request.photo_size_kb,
-            photoDimensions = request.photo_dimensions,
+            photoBase64 = request.photoBase64 ?: request.photo_base64 ?: request.foto_bukti ?: request.fotoBukti ?: request.bukti_foto ?: request.foto,
+            photoPath = request.photoPath ?: request.photo_path,
+            photoSizeKb = request.photoSizeKb ?: request.photo_size_kb,
+            photoDimensions = request.photoDimensions ?: request.photo_dimensions,
             isHmAwalCorrected = request.is_hm_awal_corrected ?: false,
             alasanKoreksiHm = request.alasan_koreksi_hm,
             statusKirim = if (isSynced) "SYNCED" else "PENDING",

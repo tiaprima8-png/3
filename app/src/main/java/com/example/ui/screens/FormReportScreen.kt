@@ -163,6 +163,7 @@ import com.example.ui.theme.WarningAmber
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.ui.viewmodel.HeavyTrackViewModel
+import com.example.ui.viewmodel.formatTanggalHeaderLengkap
 import com.example.ui.viewmodel.isTaskOlder
 import com.example.ui.viewmodel.isPriorTask
 import com.example.ui.viewmodel.getShiftWeight
@@ -191,6 +192,7 @@ fun FormReportScreen(
     val isOperatorSession by viewModel.isOperatorSession.collectAsState()
     val isKasieSession by viewModel.isKasieSession.collectAsState()
     val myReports by viewModel.reports.collectAsState()
+    val hasilList by viewModel.hasilList.collectAsState()
     val kendalaList by viewModel.kendalaList.collectAsState()
     val activeRencanaList by viewModel.activeRencanaList.collectAsState()
     val allRencanaList by viewModel.allRencanaList.collectAsState()
@@ -198,6 +200,8 @@ fun FormReportScreen(
 
     val rencanaState by viewModel.rencanaFormState.collectAsState()
     val realisasiState by viewModel.realisasiFormState.collectAsState()
+    val selectedPhotoBase64 by viewModel.selectedPhotoBase64State.collectAsState()
+    val hasExistingPhoto by viewModel.hasExistingPhotoState.collectAsState()
     val fleetProgress by viewModel.fleetShiftProgress.collectAsState()
     val isSocketConnected by viewModel.isSocketConnected.collectAsState()
     var reportPendingApproveOnHome by remember { mutableStateOf<com.example.data.local.entity.ActivityReportEntity?>(null) }
@@ -352,13 +356,46 @@ fun FormReportScreen(
     // ======================================================================
     // KOMPONEN DAFTAR KARTU GRID & PENGURUTAN TERKUNCI (TANGGAL ASC -> SHIFT SIANG/MALAM -> UNIT ASC)
     // ======================================================================
-    val unapprovedReports = remember(myReports) {
+    val unapprovedReports = remember(myReports, hasilList) {
         myReports.filter { rep ->
             !rep.isLocked &&
             !rep.approvalStatus.equals("Disetujui Kasie", ignoreCase = true) &&
             !rep.approvalStatus.equals("Approved", ignoreCase = true) &&
             rep.hmAkhir > 0.0 &&
-            (rep.hmDailyRunning > 0.0 || rep.hmAkhir > rep.hmAwal || rep.workOutput > 0.0)
+            (rep.hmDailyRunning >= 0.0 && rep.hmAkhir >= rep.hmAwal)
+        }.map { rep ->
+            val matchedHasil = hasilList.firstOrNull { h ->
+                (rep.nomorSpk.isNotBlank() && rep.nomorSpk != "-" && rep.nomorSpk != "SPK Menyusul" && h.nomorSpk.equals(rep.nomorSpk, ignoreCase = true)) ||
+                (rep.idRencanaKerja > 0 && h.rencanaId == rep.idRencanaKerja) ||
+                (rep.clientUuid.isNotBlank() && h.clientTransactionId == rep.clientUuid) ||
+                (h.kodeUnit.equals(rep.unitCode, ignoreCase = true) &&
+                    normalizeDateToIso(h.tanggalFormat) == normalizeDateToIso(rep.reportDate) &&
+                    h.shift.equals(rep.shift, ignoreCase = true))
+            }
+            if (matchedHasil != null) {
+                val sAwal = if (rep.stikSolarAwal > 0.0) rep.stikSolarAwal else matchedHasil.stikSolarAwal
+                val sAkhir = if (rep.stikSolarAkhir > 0.0) rep.stikSolarAkhir else matchedHasil.stikSolarAkhir
+                val fLiters = if (rep.fuelLiters > 0.0) rep.fuelLiters else matchedHasil.jumlahLiterSolar
+                val pSolar = if (sAwal > 0.0 || sAkhir > 0.0) {
+                    ((sAwal + fLiters) - sAkhir).coerceAtLeast(0.0)
+                } else if (rep.pemakaianSolar > 0.0) rep.pemakaianSolar else matchedHasil.pemakaianSolar
+                rep.copy(
+                    stikSolarAwal = sAwal,
+                    stikSolarAkhir = sAkhir,
+                    fuelLiters = fLiters,
+                    isRefueled = rep.isRefueled || matchedHasil.isIsiSolar || fLiters > 0.0,
+                    pemakaianSolar = pSolar,
+                    daftarKendalaJson = rep.daftarKendalaJson?.takeIf { it.isNotBlank() } ?: matchedHasil.daftarKendalaJson,
+                    kendalaNama = rep.kendalaNama?.takeIf { it.isNotBlank() } ?: matchedHasil.kendalaNama,
+                    kendalaId = rep.kendalaId?.takeIf { it.isNotBlank() } ?: matchedHasil.kendalaId,
+                    photoPath = rep.photoPath?.takeIf { it.isNotBlank() } ?: matchedHasil.photoPath,
+                    photoBase64 = rep.photoBase64?.takeIf { it.isNotBlank() } ?: matchedHasil.photoBase64,
+                    photoSizeKb = rep.photoSizeKb ?: matchedHasil.photoSizeKb,
+                    photoDimensions = rep.photoDimensions?.takeIf { it.isNotBlank() } ?: matchedHasil.photoDimensions
+                )
+            } else {
+                rep
+            }
         }
     }
 
@@ -460,12 +497,12 @@ fun FormReportScreen(
         }
 
         // Pengurutan Terkunci:
-        // 1. Tanggal Pelaksanaan (ASC / tanggal terlama di atas)
+        // 1. Tanggal Pelaksanaan Terbaru di Atas (DESC / YYYY-MM-DD)
         // 2. Shift Operasional (Shift SIANG terlebih dahulu, baru Shift MALAM)
-        // 3. Kode Unit (ASC)
+        // 3. Kode Unit (ASC A-Z)
         list.sortedWith(
-            compareBy<RkceGridCardItem> { normalizeDateToIso(it.rencana.tanggalFormat) }
-                .thenBy { if (it.rencana.shiftKerja.equals("SIANG", ignoreCase = true)) 0 else 1 }
+            compareByDescending<RkceGridCardItem> { normalizeDateToIso(it.rencana.tanggalFormat) }
+                .thenBy { getShiftWeight(it.rencana.shiftKerja) }
                 .thenBy { it.rencana.kodeUnit.trim().uppercase() }
                 .thenBy { it.rencana.subIndex }
                 .thenBy { it.rencana.id }
@@ -505,6 +542,10 @@ fun FormReportScreen(
 
             matchesQuery && matchesStatus && matchesShift
         }
+    }
+
+    val groupedGridItems = remember(filteredGridItems) {
+        filteredGridItems.groupBy { normalizeDateToIso(it.rencana.tanggalFormat) }
     }
 
     Column(
@@ -738,39 +779,23 @@ fun FormReportScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .padding(end = 10.dp)
+                                    .padding(end = 12.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = "PROGRES HARI INI: ${fleetProgress.realizedUnitsCount}/${fleetProgress.totalUnitsCount} TERENCANA",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF0F172A),
-                                        maxLines = 1
-                                    )
-                                    Surface(
-                                        color = Color(0xFFE8F5E9),
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "✓ Aktif",
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF2E7D32),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(5.dp))
+                                Text(
+                                    text = "PROGRES HARI INI: ${fleetProgress.realizedUnitsCount}/${fleetProgress.totalUnitsCount} TERENCANA",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F172A),
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
                                 LinearProgressIndicator(
                                     progress = { fleetProgress.progressPercentage.coerceIn(0f, 1f) },
                                     modifier = Modifier
@@ -781,6 +806,8 @@ fun FormReportScreen(
                                     trackColor = Color(0xFFE2E8F0)
                                 )
                             }
+
+                            Spacer(modifier = Modifier.width(6.dp))
 
                             Button(
                                 onClick = { showNewPlanForm = true },
@@ -921,46 +948,100 @@ fun FormReportScreen(
                         }
                     }
                 } else {
-                    items(filteredGridItems, key = { it.key }) { cardItem ->
-                        val ren = cardItem.rencana
-                        val rep = cardItem.reviewReport
-                        if (!isOperatorSession && cardItem.isReview && rep != null) {
-                            RkceReviewGridCard(
-                                rencana = ren,
-                                report = rep,
-                                onKoreksiClick = {
-                                    reportBeingCorrected = rep
-                                    viewModel.selectRencanaForKoreksi(ren, rep)
-                                    isInputRealisasiOpen = true
-                                },
-                                onSetujuiClick = {
-                                    viewModel.approveRealisasi(rep, context)
-                                }
-                            )
-                        } else {
-                            RkceNormalGridCard(
-                                rencana = ren,
-                                onInputRealisasiClick = {
-                                    val olderTask = activeRencanaList.firstOrNull { other ->
-                                        other.kodeUnit.equals(ren.kodeUnit, ignoreCase = true) &&
-                                        other.id != ren.id &&
-                                        isPriorTask(currentTask = ren, otherTask = other)
+                    groupedGridItems.forEach { (dateIso, itemsForDate) ->
+                        item(
+                            key = "form_date_header_$dateIso",
+                            span = { GridItemSpan(2) }
+                        ) {
+                            Surface(
+                                color = Color(0xFFF1F5F9),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp, bottom = 2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DateRange,
+                                            contentDescription = null,
+                                            tint = Color(0xFF002677),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = formatTanggalHeaderLengkap(dateIso),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF1E293B)
+                                        )
                                     }
-                                    if (olderTask != null) {
-                                        backlogLockedAlertTask = Pair(ren, olderTask)
-                                    } else {
-                                        val existingRep = cardItem.reviewReport
-                                        if (existingRep != null) {
-                                            reportBeingCorrected = existingRep
-                                            viewModel.selectRencanaForKoreksi(ren, existingRep)
-                                        } else {
-                                            reportBeingCorrected = null
-                                            viewModel.selectRencanaForRealisasi(ren)
-                                        }
+                                    Surface(
+                                        color = Color(0xFFE0E7FF),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "${itemsForDate.size} ${if (isOperatorSession) "Tugas" else "Rencana"}",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF1E3A8A),
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        items(itemsForDate, key = { it.key }) { cardItem ->
+                            val ren = cardItem.rencana
+                            val rep = cardItem.reviewReport
+                            if (!isOperatorSession && cardItem.isReview && rep != null) {
+                                RkceReviewGridCard(
+                                    rencana = ren,
+                                    report = rep,
+                                    onKoreksiClick = {
+                                        reportBeingCorrected = rep
+                                        viewModel.selectRencanaForKoreksi(ren, rep)
                                         isInputRealisasiOpen = true
+                                    },
+                                    onSetujuiClick = {
+                                        viewModel.approveRealisasi(rep, context)
                                     }
-                                }
-                            )
+                                )
+                            } else {
+                                RkceNormalGridCard(
+                                    rencana = ren,
+                                    onInputRealisasiClick = {
+                                        val olderTask = activeRencanaList.firstOrNull { other ->
+                                            other.kodeUnit.equals(ren.kodeUnit, ignoreCase = true) &&
+                                            other.id != ren.id &&
+                                            isPriorTask(currentTask = ren, otherTask = other)
+                                        }
+                                        if (olderTask != null) {
+                                            backlogLockedAlertTask = Pair(ren, olderTask)
+                                        } else {
+                                            val existingRep = cardItem.reviewReport
+                                            if (existingRep != null) {
+                                                reportBeingCorrected = existingRep
+                                                viewModel.selectRencanaForKoreksi(ren, existingRep)
+                                            } else {
+                                                reportBeingCorrected = null
+                                                viewModel.selectRencanaForRealisasi(ren)
+                                            }
+                                            isInputRealisasiOpen = true
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -2606,7 +2687,7 @@ fun FormReportScreen(
 
                                 // HASIL KALKULASI HM BERJALAN & STATUS EVALUASI STANDAR
                                 val runningHm = realisasiState.hmHarianBerjalan
-                                val isUnderMin = runningHm > 0.0 && runningHm < realisasiState.hmMinStandar
+                                val isUnderMin = realisasiState.hmAkhirInput.isNotBlank() && runningHm >= 0.0 && runningHm < realisasiState.hmMinStandar
                                 val isOverMax = runningHm > realisasiState.hmMaxStandar
 
                                 Surface(
@@ -2770,7 +2851,10 @@ fun FormReportScreen(
                                 // VALIDASI HM KURANG DARI STANDAR MINIMAL
                                 // DUKUNGAN MULTI-KENDALA & INPUT WAKTU KEJADIAN
                                 // ==========================================
-                                if (isUnderMin) {
+                                val hasRestoredKendala = realisasiState.daftarKendala.any {
+                                    it.selectedKendala != null || it.waktuMulai.isNotBlank() || it.waktuSelesai.isNotBlank()
+                                }
+                                if (isUnderMin || hasRestoredKendala) {
                                     val minStdNotice = if (realisasiState.hmMinStandar % 1.0 == 0.0) realisasiState.hmMinStandar.toInt().toString() else String.format(Locale.US, "%.1f", realisasiState.hmMinStandar)
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Surface(
@@ -3415,7 +3499,8 @@ fun FormReportScreen(
 
                         val rawHasilKerja = realisasiState.hasilKerjaInput.trim().replace(',', '.')
                         val parsedHasilKerja = rawHasilKerja.toDoubleOrNull()
-                        val isHasilKerjaValid = rawHasilKerja.isNotEmpty() && parsedHasilKerja != null && parsedHasilKerja >= 0.0
+                        val isZeroHmOrNonOperasi = !isOperasi || (realisasiState.hmAkhirInput.isNotBlank() && realisasiState.hmHarianBerjalan == 0.0)
+                        val isHasilKerjaValid = (rawHasilKerja.isNotEmpty() && parsedHasilKerja != null && parsedHasilKerja >= 0.0) || isZeroHmOrNonOperasi
                         val showHasilKerjaError = realisasiState.isHasilKerjaError && !isHasilKerjaValid
 
                         Surface(
@@ -3531,6 +3616,8 @@ fun FormReportScreen(
                                 )
                                 PhotoProofCard(
                                     photoPath = realisasiState.photoPath,
+                                    photoBase64 = realisasiState.photoBase64 ?: selectedPhotoBase64,
+                                    hasExistingPhoto = realisasiState.hasExistingPhoto || hasExistingPhoto || !realisasiState.photoBase64.isNullOrBlank() || !realisasiState.photoPath.isNullOrBlank(),
                                     photoSizeKb = realisasiState.photoSizeKb,
                                     photoDimensions = realisasiState.photoDimensions,
                                     isCompressing = realisasiState.isCompressingPhoto,
@@ -3647,14 +3734,14 @@ fun FormReportScreen(
                         // 3. Koreksi Manual HM Awal: Alasan wajib diisi jika koreksi aktif (kecuali mode Koreksi Kasie)
                         val isLockedDueToHmAwalKoreksi = !realisasiState.isEditKoreksiMode && realisasiState.isHmAwalCorrected && realisasiState.alasanKoreksiHm.isBlank()
 
-                        // 4. HM Akhir wajib lebih besar dari HM Awal
+                        // 4. HM Akhir wajib >= HM Awal (boleh sama dengan HM Awal = 0.0 HM untuk Breakdown/Standby)
                         val isHmAkhirEntered = realisasiState.hmAkhirInput.isNotBlank()
-                        val isHmAkhirGreater = realisasiState.isHmValid && ((realisasiState.hmAkhirInput.replace(',', '.').toDoubleOrNull() ?: 0.0) > realisasiState.hmAwal)
+                        val isHmAkhirGreater = realisasiState.isHmValid && ((realisasiState.hmAkhirInput.replace(',', '.').toDoubleOrNull() ?: 0.0) >= realisasiState.hmAwal)
 
                         // 5. Validasi Solar BBM: Wajib isi liter jika toggle aktif & cegah konsumsi bernilai negatif
                         val isLockedDueToSolar = realisasiState.isRefuelLitersMissing || realisasiState.isSolarConsumptionNegative
 
-                        // 6. Validasi Lonjakan HM Ekstrem (> 24.0 jam)
+                        // 6. Validasi Lonjakan HM Ekstrem (menggunakan batas efektif unit; Dump Truck TTM 1.000.000 HM bebas blokir 24 jam)
                         val isLockedDueToExtremeHm24h = realisasiState.isHmJumpExtreme24h
 
                         val isSubmitEnabled = !realisasiState.isSubmitting &&
@@ -3710,8 +3797,8 @@ fun FormReportScreen(
                                     text = when {
                                         realisasiState.selectedRencana == null -> "Pilih Unit / Rencana Kerja Terlebih Dahulu"
                                         !isHmAkhirEntered -> "Masukkan HM Akhir Lapangan"
-                                        isLockedDueToExtremeHm24h -> "Lonjakan HM > 24 Jam! Periksa HM Akhir"
-                                        !isHmAkhirGreater -> realisasiState.hmErrorMessage ?: "HM Akhir Wajib Lebih Besar dari HM Awal"
+                                        isLockedDueToExtremeHm24h -> "Lonjakan HM Melebihi Batas! Periksa HM Akhir"
+                                        !isHmAkhirGreater -> realisasiState.hmErrorMessage ?: "HM Akhir Tidak Boleh Kurang dari HM Awal"
                                         isLockedDueToHmAwalKoreksi -> "Isi Alasan Koreksi HM Awal"
                                         hasAnyKendalaOverlap -> "Jam Kendala Bertabrakan!"
                                         isTotalKendalaExceedingShift -> "Durasi Kendala Melebihi Jam Shift!"
@@ -4607,8 +4694,8 @@ fun RkceReviewGridCard(
     } else {
         (report.hmAkhir - report.hmAwal).coerceAtLeast(0.0)
     }
-    val solarVal = if (report.stikSolarAwal > 0.0 && report.stikSolarAkhir > 0.0) {
-        (report.stikSolarAwal + (if (report.isRefueled) report.fuelLiters else 0.0) - report.stikSolarAkhir).coerceAtLeast(0.0)
+    val solarVal = if (report.stikSolarAwal > 0.0 || report.stikSolarAkhir > 0.0) {
+        ((report.stikSolarAwal + report.fuelLiters) - report.stikSolarAkhir).coerceAtLeast(0.0)
     } else if (report.pemakaianSolar > 0.0) {
         report.pemakaianSolar
     } else report.fuelLiters

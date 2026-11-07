@@ -15,6 +15,9 @@ interface ActivityReportDao {
     @Query("SELECT * FROM activity_reports ORDER BY createdAt DESC")
     fun getAllReports(): Flow<List<ActivityReportEntity>>
 
+    @Query("SELECT * FROM activity_reports ORDER BY createdAt DESC")
+    suspend fun getAllReportsList(): List<ActivityReportEntity>
+
     @Query("""
         SELECT * FROM activity_reports 
         WHERE LOWER(TRIM(supervisorName)) = LOWER(TRIM(:supervisor)) 
@@ -44,7 +47,7 @@ interface ActivityReportDao {
             )
         )
         AND hmAkhir > 0
-        AND (hmDailyRunning > 0 OR hmAkhir > hmAwal OR workOutput > 0)
+        AND hmAkhir >= hmAwal
         ORDER BY createdAt DESC, id DESC
     """)
     fun getRealisasiForKasie(namaKasie: String, username: String): Flow<List<ActivityReportEntity>>
@@ -64,12 +67,12 @@ interface ActivityReportDao {
         )
         AND isLocked = 0
         AND hmAkhir > 0
-        AND (hmDailyRunning > 0 OR hmAkhir > hmAwal OR workOutput > 0)
+        AND hmAkhir >= hmAwal
         ORDER BY createdAt DESC, id DESC
     """)
     fun getPendingVerificationForKasie(kasieNama: String): Flow<List<ActivityReportEntity>>
 
-    @Query("DELETE FROM activity_reports WHERE hmAkhir <= 0 OR (hmDailyRunning <= 0 AND hmAkhir <= hmAwal AND workOutput <= 0)")
+    @Query("DELETE FROM activity_reports WHERE hmAkhir <= 0 OR hmAkhir < hmAwal")
     suspend fun deleteInvalidEmptyReports(): Int
 
     @Query("""
@@ -247,7 +250,7 @@ interface ActivityReportDao {
         insertReports(listBaru)
     }
 
-    @Query("DELETE FROM activity_reports WHERE unitCode NOT IN (SELECT unitCode FROM units) OR LOWER(unitType) IN ('dump truck', 'bulldozer')")
+    @Query("DELETE FROM activity_reports WHERE EXISTS (SELECT 1 FROM units) AND unitCode NOT IN (SELECT unitCode FROM units)")
     suspend fun deleteOrphanedReports(): Int
 }
 

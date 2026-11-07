@@ -36,21 +36,40 @@ data class PostActivityReportRequest(
     @Json(name = "status_unit") val status_unit: String? = "OPERASI", // "OPERASI" | "STANDBY" | "BREAKDOWN"
     @Json(name = "is_isi_solar") val is_isi_solar: Boolean? = false,
     @Json(name = "jumlah_liter_solar") val jumlah_liter_solar: Double? = 0.0,
+    @Json(name = "isi_solar") val isi_solar: Double? = null,
+    @Json(name = "isiSolar") val isiSolar: Double? = null,
+    @Json(name = "jumlahIsiSolar") val jumlahIsiSolar: Double? = null,
+    @Json(name = "jumlah_isi_solar") val jumlah_isi_solar: Double? = null,
     @Json(name = "stik_solar_awal") val stik_solar_awal: Double? = null,
+    @Json(name = "stikSolarAwal") val stikSolarAwal: Double? = null,
     @Json(name = "stik_solar_akhir") val stik_solar_akhir: Double? = null,
+    @Json(name = "stikSolarAkhir") val stikSolarAkhir: Double? = null,
     @Json(name = "pemakaian_solar") val pemakaian_solar: Double? = null,
+    @Json(name = "pemakaianSolar") val pemakaianSolar: Double? = null,
+    @Json(name = "total_konsumsi_solar") val total_konsumsi_solar: Double? = null,
+    @Json(name = "totalKonsumsiSolar") val totalKonsumsiSolar: Double? = null,
     @Json(name = "kendala_id") val kendala_id: String? = null,
     @Json(name = "kendala_nama") val kendala_nama: String? = null,
+    @Json(name = "jenis_kendala") val jenis_kendala: String? = null,
     @Json(name = "catatan_kendala") val catatan_kendala: String? = null,
     @Json(name = "kendala_lapangan") val kendala_lapangan: List<KendalaItemPayload>? = null,
     @Json(name = "kendala_list") val kendala_list: List<KendalaItemPayload>? = null,
+    @Json(name = "kendalaList") val kendalaList: List<KendalaItemPayload>? = null,
     @Json(name = "daftar_kendala") val daftar_kendala: List<KendalaItemPayload>? = null,
+    @Json(name = "daftar_kendala_json") val daftar_kendala_json: String? = null,
+    @Json(name = "daftarKendalaJson") val daftarKendalaJson: String? = null,
     @Json(name = "foto_bukti") val foto_bukti: String? = null,
+    @Json(name = "fotoBukti") val fotoBukti: String? = null,
+    @Json(name = "bukti_foto") val bukti_foto: String? = null,
     @Json(name = "foto") val foto: String? = null,
     @Json(name = "photo_base64") val photo_base64: String? = null,
+    @Json(name = "photoBase64") val photoBase64: String? = null,
     @Json(name = "photo_path") val photo_path: String? = null,
+    @Json(name = "photoPath") val photoPath: String? = null,
     @Json(name = "photo_size_kb") val photo_size_kb: Long? = null,
+    @Json(name = "photoSizeKb") val photoSizeKb: Long? = null,
     @Json(name = "photo_dimensions") val photo_dimensions: String? = null,
+    @Json(name = "photoDimensions") val photoDimensions: String? = null,
     // Audit log koreksi HM Awal manual
     @Json(name = "is_hm_awal_corrected") val is_hm_awal_corrected: Boolean? = false,
     @Json(name = "alasan_koreksi_hm") val alasan_koreksi_hm: String? = null,
@@ -82,6 +101,79 @@ data class PostActivityReportRequest(
     @Json(name = "work_output") val work_output: Double? = null,
     @Json(name = "notes") val notes: String? = null
 ) {
+    val resolvedStikSolarAwal: Double
+        get() = stik_solar_awal ?: stikSolarAwal ?: 0.0
+
+    val resolvedStikSolarAkhir: Double
+        get() = stik_solar_akhir ?: stikSolarAkhir ?: 0.0
+
+    val resolvedIsiSolar: Double
+        get() = listOfNotNull(isi_solar, isiSolar, jumlahIsiSolar, jumlah_isi_solar, jumlah_liter_solar, fuel_liters)
+            .firstOrNull { it > 0.0 } ?: (isi_solar ?: isiSolar ?: jumlahIsiSolar ?: jumlah_isi_solar ?: jumlah_liter_solar ?: fuel_liters ?: 0.0)
+
+    val resolvedIsIsiSolar: Boolean
+        get() = is_isi_solar == true || is_refueled == true || resolvedIsiSolar > 0.0
+
+    val resolvedTotalKonsumsiSolar: Double
+        get() {
+            val awal = resolvedStikSolarAwal
+            val akhir = resolvedStikSolarAkhir
+            val isi = resolvedIsiSolar
+            return if (awal > 0.0 || akhir > 0.0) {
+                ((awal + isi) - akhir).coerceAtLeast(0.0)
+            } else {
+                total_konsumsi_solar ?: totalKonsumsiSolar ?: pemakaian_solar ?: pemakaianSolar ?: isi
+            }
+        }
+
+    val resolvedKendalaList: List<KendalaItemPayload>
+        get() {
+            val direct = kendala_lapangan ?: kendala_list ?: kendalaList ?: daftar_kendala
+            if (!direct.isNullOrEmpty()) return direct
+            val jsonStr = daftar_kendala_json ?: daftarKendalaJson
+            if (!jsonStr.isNullOrBlank()) {
+                val parsed = KendalaJsonConverter.fromJson(jsonStr)
+                if (parsed.isNotEmpty()) return parsed
+            }
+            val singleName = (kendala_nama ?: jenis_kendala ?: "").trim()
+            if (singleName.isNotBlank()) {
+                return listOf(
+                    KendalaItemPayload.create(
+                        namaKendala = singleName,
+                        kodeKendala = kendala_id ?: KendalaItemPayload.resolveKodeKendala(null, singleName),
+                        jamMulai = "08:00",
+                        jamSelesai = "09:00",
+                        durasiJam = 1.0
+                    )
+                )
+            }
+            return emptyList()
+        }
+
+    val resolvedPhotoBase64: String?
+        get() = sequenceOf(photoBase64, photo_base64, foto_bukti, fotoBukti, bukti_foto, foto)
+            .firstOrNull { !it.isNullOrBlank() && !it.equals("null", ignoreCase = true) }
+
+    val resolvedPhotoPath: String?
+        get() = sequenceOf(photoPath, photo_path)
+            .firstOrNull { !it.isNullOrBlank() && !it.equals("null", ignoreCase = true) }
+
+    val resolvedPhotoSizeKb: Long?
+        get() {
+            val explicit = photoSizeKb ?: photo_size_kb
+            if (explicit != null && explicit > 0L) return explicit
+            val b64 = resolvedPhotoBase64
+            if (!b64.isNullOrBlank()) {
+                val clean = b64.substringAfter("base64,", b64).trim()
+                return ((clean.length * 3L) / 4L / 1024L).coerceAtLeast(1L)
+            }
+            return null
+        }
+
+    val resolvedPhotoDimensions: String?
+        get() = sequenceOf(photoDimensions, photo_dimensions)
+            .firstOrNull { !it.isNullOrBlank() && !it.equals("null", ignoreCase = true) }
+
     companion object {
         fun create(
             clientUuid: String,
@@ -131,6 +223,14 @@ data class PostActivityReportRequest(
             rolePenginput: String? = null
         ): PostActivityReportRequest {
             val resolvedKendalaItems = (kendalaLapangan ?: kendalaList ?: daftarKendala)?.map { it.toCanonical() }
+            val resolvedJson = resolvedKendalaItems?.takeIf { it.isNotEmpty() }?.let { KendalaJsonConverter.toJson(it) }
+            val stikAwal = stikSolarAwal ?: 0.0
+            val stikAkhir = stikSolarAkhir ?: 0.0
+            val calcPemakaian = if (stikAwal > 0.0 || stikAkhir > 0.0) {
+                ((stikAwal + fuelLiters) - stikAkhir).coerceAtLeast(0.0)
+            } else {
+                pemakaianSolar ?: fuelLiters
+            }
             return PostActivityReportRequest(
                 // Indonesian exact fields for 1-portalce.ai.studio
                 tanggal = reportDate,
@@ -151,23 +251,42 @@ data class PostActivityReportRequest(
                 hasil_kerja = workOutput,
                 keterangan = notes,
                 status_unit = unitStatus,
-                is_isi_solar = isRefueled,
+                is_isi_solar = isRefueled || fuelLiters > 0.0,
                 jumlah_liter_solar = fuelLiters,
+                isi_solar = fuelLiters,
+                isiSolar = fuelLiters,
+                jumlahIsiSolar = fuelLiters,
+                jumlah_isi_solar = fuelLiters,
                 stik_solar_awal = stikSolarAwal,
+                stikSolarAwal = stikSolarAwal,
                 stik_solar_akhir = stikSolarAkhir,
-                pemakaian_solar = pemakaianSolar,
+                stikSolarAkhir = stikSolarAkhir,
+                pemakaian_solar = calcPemakaian,
+                pemakaianSolar = calcPemakaian,
+                total_konsumsi_solar = calcPemakaian,
+                totalKonsumsiSolar = calcPemakaian,
                 kendala_id = kendalaId,
                 kendala_nama = kendalaNama,
+                jenis_kendala = kendalaNama,
                 catatan_kendala = catatanKendala,
                 kendala_lapangan = resolvedKendalaItems,
                 kendala_list = resolvedKendalaItems,
+                kendalaList = resolvedKendalaItems,
                 daftar_kendala = resolvedKendalaItems,
+                daftar_kendala_json = resolvedJson,
+                daftarKendalaJson = resolvedJson,
                 foto_bukti = photoBase64,
+                fotoBukti = photoBase64,
+                bukti_foto = photoBase64,
                 foto = photoBase64,
                 photo_base64 = photoBase64,
+                photoBase64 = photoBase64,
                 photo_path = photoPath,
+                photoPath = photoPath,
                 photo_size_kb = photoSizeKb,
+                photoSizeKb = photoSizeKb,
                 photo_dimensions = photoDimensions,
+                photoDimensions = photoDimensions,
                 is_hm_awal_corrected = isHmAwalCorrected,
                 alasan_koreksi_hm = alasanKoreksiHm,
                 client_transaction_id = clientTransactionId,
@@ -187,7 +306,7 @@ data class PostActivityReportRequest(
                 unit_code = unitCode,
                 unit_type = unitType,
                 unit_status = unitStatus,
-                is_refueled = isRefueled,
+                is_refueled = isRefueled || fuelLiters > 0.0,
                 fuel_liters = fuelLiters,
                 activity_name = activityName,
                 sap_code = sapCode,
@@ -208,24 +327,35 @@ typealias AktivitasUnitRequest = PostActivityReportRequest
 @JsonClass(generateAdapter = true)
 data class KendalaItemPayload(
     @Json(name = "nama_kendala") val nama_kendala: String? = null,
+    @Json(name = "namaKendala") val namaKendala: String? = null,
+    @Json(name = "jenis_kendala") val jenis_kendala: String? = null,
+    @Json(name = "jenisKendala") val jenisKendala: String? = null,
     @Json(name = "kode_kendala") val kode_kendala: String? = null,
+    @Json(name = "kodeKendala") val kodeKendala: String? = null,
     @Json(name = "jam_mulai") val jam_mulai: String? = null,
+    @Json(name = "jamMulai") val jamMulai: String? = null,
     @Json(name = "jam_selesai") val jam_selesai: String? = null,
+    @Json(name = "jamSelesai") val jamSelesai: String? = null,
     @Json(name = "durasi_jam") val durasi_jam: Double? = null,
+    @Json(name = "durasiJam") val durasiJam: Double? = null,
 
     // Backward-compatible keys
     @Json(name = "id_kendala") val id_kendala: String? = null,
+    @Json(name = "idKendala") val idKendala: String? = null,
     @Json(name = "waktu_mulai") val waktu_mulai: String? = null,
+    @Json(name = "waktuMulai") val waktuMulai: String? = null,
     @Json(name = "waktu_selesai") val waktu_selesai: String? = null,
+    @Json(name = "waktuSelesai") val waktuSelesai: String? = null,
     @Json(name = "durasi_menit") val durasi_menit: Int? = null,
+    @Json(name = "durasiMenit") val durasiMenit: Int? = null,
     @Json(name = "durasi") val durasi: Double? = null
 ) {
-    val resolvedNama: String get() = (nama_kendala ?: "").trim()
-    val resolvedKode: String get() = (kode_kendala ?: id_kendala ?: "").trim()
-    val resolvedJamMulai: String get() = (jam_mulai ?: waktu_mulai ?: "").trim()
-    val resolvedJamSelesai: String get() = (jam_selesai ?: waktu_selesai ?: "").trim()
-    val resolvedDurasiMenit: Int get() = durasi_menit ?: ((durasi_jam ?: durasi ?: 0.0) * 60).toInt()
-    val resolvedDurasiJam: Double get() = durasi_jam ?: durasi ?: ((durasi_menit ?: 0) / 60.0)
+    val resolvedNama: String get() = (nama_kendala ?: namaKendala ?: jenis_kendala ?: jenisKendala ?: "").trim()
+    val resolvedKode: String get() = (kode_kendala ?: kodeKendala ?: id_kendala ?: idKendala ?: "").trim()
+    val resolvedJamMulai: String get() = (jam_mulai ?: jamMulai ?: waktu_mulai ?: waktuMulai ?: "").trim()
+    val resolvedJamSelesai: String get() = (jam_selesai ?: jamSelesai ?: waktu_selesai ?: waktuSelesai ?: "").trim()
+    val resolvedDurasiMenit: Int get() = durasi_menit ?: durasiMenit ?: ((durasi_jam ?: durasiJam ?: durasi ?: 0.0) * 60).toInt()
+    val resolvedDurasiJam: Double get() = durasi_jam ?: durasiJam ?: durasi ?: ((durasi_menit ?: durasiMenit ?: 0) / 60.0)
 
     fun toCanonical(): KendalaItemPayload {
         val kode = Companion.resolveKodeKendala(resolvedKode, resolvedNama)
@@ -237,14 +367,25 @@ data class KendalaItemPayload(
         val legacyId = id_kendala ?: kode
         return KendalaItemPayload(
             nama_kendala = nama,
+            namaKendala = nama,
+            jenis_kendala = nama,
+            jenisKendala = nama,
             kode_kendala = kode,
+            kodeKendala = kode,
             jam_mulai = start,
+            jamMulai = start,
             jam_selesai = end,
+            jamSelesai = end,
             durasi_jam = durJam,
+            durasiJam = durJam,
             id_kendala = legacyId,
+            idKendala = legacyId,
             waktu_mulai = start,
+            waktuMulai = start,
             waktu_selesai = end,
+            waktuSelesai = end,
             durasi_menit = durMin,
+            durasiMenit = durMin,
             durasi = durJam
         )
     }
@@ -608,7 +749,13 @@ data class UnitPayload(
         get() = (kasie ?: kasie_penanggung_jawab ?: kasiePenanggungJawab ?: nama_kasie ?: nama_pengawas ?: pengawas ?: kasie_atasan ?: supervisor_assigned ?: supervisorAssigned ?: "").trim()
     val resolvedStatus: String get() = status ?: "OPERASIONAL"
     val resolvedHmMinStandar: Double get() = hm_min_standar ?: hm_min ?: min_standar ?: hmMinStandar ?: 6.0
-    val resolvedHmMaxStandar: Double get() = hm_max_standar ?: hm_max ?: max_standar ?: hmMaxStandar ?: 10.0
+    val resolvedHmMaxStandar: Double
+        get() {
+            val raw = hm_max_standar ?: hm_max ?: max_standar ?: hmMaxStandar
+            val isDumpTruck = resolvedUnitCode.trim().uppercase().startsWith("TTM") ||
+                resolvedUnitType.contains("Dump", ignoreCase = true)
+            return if (isDumpTruck) maxOf(1000000.0, raw ?: 1000000.0) else (raw ?: 10.0)
+        }
     val resolvedWilayah: String get() = (wilayah ?: divisi)?.takeIf { it.isNotBlank() } ?: when {
         resolvedSupervisor.contains("Agus", ignoreCase = true) || resolvedSupervisor.contains("Zainudin", ignoreCase = true) -> "Geodesi PG2"
         resolvedSupervisor.contains("Rudi", ignoreCase = true) || resolvedSupervisor.contains("Jahidi", ignoreCase = true) || resolvedSupervisor.contains("Hisar", ignoreCase = true) -> "RC PG1"
@@ -907,16 +1054,29 @@ data class PostHasilAktivitasRequest(
     @Json(name = "hm_akhir") val hm_akhir: Double? = null,
     @Json(name = "hm_harian_berjalan") val hm_harian_berjalan: Double? = null,
     @Json(name = "is_isi_solar") val is_isi_solar: Boolean? = false,
+    @Json(name = "isIsiSolar") val isIsiSolar: Boolean? = null,
     @Json(name = "jumlah_liter_solar") val jumlah_liter_solar: Double? = 0.0,
+    @Json(name = "jumlahLiterSolar") val jumlahLiterSolar: Double? = null,
+    @Json(name = "isi_solar") val isi_solar: Double? = null,
+    @Json(name = "isiSolar") val isiSolar: Double? = null,
+    @Json(name = "jumlahIsiSolar") val jumlahIsiSolar: Double? = null,
     @Json(name = "stik_solar_awal") val stik_solar_awal: Double? = null,
+    @Json(name = "stikSolarAwal") val stikSolarAwal: Double? = null,
     @Json(name = "stik_solar_akhir") val stik_solar_akhir: Double? = null,
+    @Json(name = "stikSolarAkhir") val stikSolarAkhir: Double? = null,
     @Json(name = "pemakaian_solar") val pemakaian_solar: Double? = null,
+    @Json(name = "pemakaianSolar") val pemakaianSolar: Double? = null,
+    @Json(name = "total_konsumsi_solar") val total_konsumsi_solar: Double? = null,
+    @Json(name = "totalKonsumsiSolar") val totalKonsumsiSolar: Double? = null,
     @Json(name = "kendala_id") val kendala_id: String? = null,
     @Json(name = "kendala_nama") val kendala_nama: String? = null,
     @Json(name = "catatan_kendala") val catatan_kendala: String? = null,
     @Json(name = "kendala_lapangan") val kendala_lapangan: List<KendalaItemPayload>? = null,
     @Json(name = "kendala_list") val kendala_list: List<KendalaItemPayload>? = null,
+    @Json(name = "kendalaList") val kendalaList: List<KendalaItemPayload>? = null,
     @Json(name = "daftar_kendala") val daftar_kendala: List<KendalaItemPayload>? = null,
+    @Json(name = "daftar_kendala_json") val daftar_kendala_json: String? = null,
+    @Json(name = "daftarKendalaJson") val daftarKendalaJson: String? = null,
     @Json(name = "hasil_kerja") val hasil_kerja: Double? = 0.0,
     @Json(name = "keterangan") val keterangan: String? = null,
     @Json(name = "nama_pengawas") val nama_pengawas: String? = null,
@@ -932,11 +1092,17 @@ data class PostHasilAktivitasRequest(
     @Json(name = "satuan") val satuan: String? = null,
     @Json(name = "status_unit") val status_unit: String? = null,
     @Json(name = "foto_bukti") val foto_bukti: String? = null,
+    @Json(name = "fotoBukti") val fotoBukti: String? = null,
+    @Json(name = "bukti_foto") val bukti_foto: String? = null,
     @Json(name = "foto") val foto: String? = null,
     @Json(name = "photo_base64") val photo_base64: String? = null,
+    @Json(name = "photoBase64") val photoBase64: String? = null,
     @Json(name = "photo_path") val photo_path: String? = null,
+    @Json(name = "photoPath") val photoPath: String? = null,
     @Json(name = "photo_size_kb") val photo_size_kb: Long? = null,
+    @Json(name = "photoSizeKb") val photoSizeKb: Long? = null,
     @Json(name = "photo_dimensions") val photo_dimensions: String? = null,
+    @Json(name = "photoDimensions") val photoDimensions: String? = null,
     // Audit log koreksi HM Awal manual
     @Json(name = "is_hm_awal_corrected") val is_hm_awal_corrected: Boolean? = false,
     @Json(name = "alasan_koreksi_hm") val alasan_koreksi_hm: String? = null,
@@ -1229,10 +1395,156 @@ object KendalaJsonConverter {
         }
     }
 
+    private fun normalizeTimeStr(raw: String): String {
+        val trimmed = raw.trim().replace('.', ':')
+        val parts = trimmed.split(":")
+        if (parts.size >= 2) {
+            val h = parts[0].trim().toIntOrNull()
+            val m = parts[1].trim().take(2).toIntOrNull()
+            if (h != null && m != null && h in 0..23 && m in 0..59) {
+                return String.format(java.util.Locale.US, "%02d:%02d", h, m)
+            }
+        }
+        return trimmed
+    }
+
+    private fun parseMinutes(timeStr: String): Int? {
+        val norm = normalizeTimeStr(timeStr)
+        val parts = norm.split(":")
+        if (parts.size != 2) return null
+        val h = parts[0].toIntOrNull() ?: return null
+        val m = parts[1].toIntOrNull() ?: return null
+        if (h !in 0..23 || m !in 0..59) return null
+        return h * 60 + m
+    }
+
+    private fun formatMinutesToTime(totalMinutes: Int): String {
+        val wrapped = ((totalMinutes % 1440) + 1440) % 1440
+        val h = wrapped / 60
+        val m = wrapped % 60
+        return String.format(java.util.Locale.US, "%02d:%02d", h, m)
+    }
+
+    private fun parseObjToKendalaPayload(obj: org.json.JSONObject): KendalaItemPayload? {
+        val rawNama = sequenceOf("nama_kendala", "namaKendala", "jenis_kendala", "jenisKendala", "kendala_nama", "kendalaNama", "nama", "kendala", "penyebab")
+            .map { obj.optString(it, "").trim() }
+            .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: ""
+        val rawKode = sequenceOf("kode_kendala", "kodeKendala", "id_kendala", "idKendala", "kode", "id")
+            .map { obj.optString(it, "").trim() }
+            .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: ""
+
+        if (rawNama.isBlank() && rawKode.isBlank()) return null
+
+        val rawStart = sequenceOf("jam_mulai", "jamMulai", "waktu_mulai", "waktuMulai", "start_time", "startTime", "mulai")
+            .map { obj.optString(it, "").trim() }
+            .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "08:00"
+        val rawEnd = sequenceOf("jam_selesai", "jamSelesai", "waktu_selesai", "waktuSelesai", "end_time", "endTime", "selesai")
+            .map { obj.optString(it, "").trim() }
+            .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: ""
+
+        val durJamVal = when {
+            obj.has("durasi_jam") && !obj.isNull("durasi_jam") -> obj.optDouble("durasi_jam", 0.0)
+            obj.has("durasiJam") && !obj.isNull("durasiJam") -> obj.optDouble("durasiJam", 0.0)
+            obj.has("durasi") && !obj.isNull("durasi") -> obj.optDouble("durasi", 0.0)
+            else -> 0.0
+        }
+        val durMenitVal = when {
+            obj.has("durasi_menit") && !obj.isNull("durasi_menit") -> obj.optInt("durasi_menit", 0)
+            obj.has("durasiMenit") && !obj.isNull("durasiMenit") -> obj.optInt("durasiMenit", 0)
+            else -> 0
+        }
+
+        val startNorm = normalizeTimeStr(rawStart).ifBlank { "08:00" }
+        val startMin = parseMinutes(startNorm) ?: (8 * 60)
+        val computedDurationMin = when {
+            durMenitVal > 0 -> durMenitVal
+            durJamVal > 0.0 -> (durJamVal * 60.0).toInt().coerceAtLeast(1)
+            else -> 60
+        }
+        val endNorm = if (rawEnd.isNotBlank()) {
+            val candidate = normalizeTimeStr(rawEnd)
+            val endMin = parseMinutes(candidate)
+            if (endMin != null && endMin != startMin) candidate else formatMinutesToTime(startMin + computedDurationMin)
+        } else {
+            formatMinutesToTime(startMin + computedDurationMin)
+        }
+
+        return KendalaItemPayload.create(
+            namaKendala = rawNama.ifBlank {
+                when (KendalaItemPayload.resolveKodeKendala(rawKode, null)) {
+                    "1.0" -> "Antar - jemput"
+                    "2.0" -> "Pemanasan & Cek Unit / Implement"
+                    "3.0" -> "Transport"
+                    "4.0" -> "Kerja"
+                    "5.0" -> "Istirahat"
+                    else -> "Transport"
+                }
+            },
+            kodeKendala = rawKode,
+            jamMulai = startNorm,
+            jamSelesai = endNorm,
+            durasiJam = if (durJamVal > 0.0) durJamVal else null,
+            durasiMenit = if (durMenitVal > 0) durMenitVal else null
+        )
+    }
+
     fun fromJson(json: String?): List<KendalaItemPayload> {
         if (json.isNullOrBlank()) return emptyList()
+        val trimmed = json.trim()
+        if (trimmed.equals("null", ignoreCase = true) || trimmed == "[]") return emptyList()
+
+        // First parse with org.json for full support of jenis_kendala, durasi, jam_mulai, camelCase & snake_case
+        try {
+            if (trimmed.startsWith("[")) {
+                val arr = org.json.JSONArray(trimmed)
+                val list = mutableListOf<KendalaItemPayload>()
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i)
+                    if (item != null) {
+                        parseObjToKendalaPayload(item)?.let { list.add(it) }
+                    } else {
+                        val strItem = arr.optString(i, "").trim()
+                        if (strItem.isNotBlank() && !strItem.equals("null", ignoreCase = true)) {
+                            list.add(
+                                KendalaItemPayload.create(
+                                    namaKendala = strItem,
+                                    kodeKendala = KendalaItemPayload.resolveKodeKendala(null, strItem),
+                                    jamMulai = "08:00",
+                                    jamSelesai = "09:00",
+                                    durasiJam = 1.0,
+                                    durasiMenit = 60
+                                )
+                            )
+                        }
+                    }
+                }
+                if (list.isNotEmpty()) return list
+            } else if (trimmed.startsWith("{")) {
+                val obj = org.json.JSONObject(trimmed)
+                parseObjToKendalaPayload(obj)?.let { return listOf(it) }
+            }
+        } catch (_: Exception) {}
+
         return try {
-            adapter.fromJson(json) ?: emptyList()
+            (adapter.fromJson(trimmed) ?: emptyList()).map { item ->
+                val startNorm = normalizeTimeStr(item.resolvedJamMulai.ifBlank { "08:00" })
+                val startMin = parseMinutes(startNorm) ?: 480
+                val durMin = item.resolvedDurasiMenit.takeIf { it > 0 } ?: 60
+                val rawEnd = item.resolvedJamSelesai
+                val endNorm = if (rawEnd.isNotBlank() && parseMinutes(rawEnd) != null && parseMinutes(rawEnd) != startMin) {
+                    normalizeTimeStr(rawEnd)
+                } else {
+                    formatMinutesToTime(startMin + durMin)
+                }
+                KendalaItemPayload.create(
+                    namaKendala = item.resolvedNama,
+                    kodeKendala = item.resolvedKode,
+                    jamMulai = startNorm,
+                    jamSelesai = endNorm,
+                    durasiJam = item.resolvedDurasiJam.takeIf { it > 0.0 },
+                    durasiMenit = item.resolvedDurasiMenit.takeIf { it > 0 }
+                )
+            }
         } catch (_: Exception) {
             emptyList()
         }

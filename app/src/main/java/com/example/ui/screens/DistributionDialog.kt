@@ -71,8 +71,8 @@ import com.example.ui.theme.Slate900
 fun DistributionDialog(
     onDismiss: () -> Unit,
     currentApkUrl: String,
-    appVersionName: String = "1.7",
-    apkFileSize: String = "24.8 MB",
+    appVersionName: String = "2.0",
+    apkFileSize: String = "21.5 MB",
     onSaveApkLocally: () -> Unit,
     onShareWhatsApp: () -> Unit,
     onShareGeneral: () -> Unit,
@@ -205,7 +205,7 @@ fun DistributionDialog(
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Installer APK v$appVersionName mencakup Validasi Antrean Strict FIFO Backlog, Lock Card Tugas Lampau, Pewarisan Tanggal Kerja & Shift, Approval Realisasi, dan Sinkronisasi Cepat.",
+                            text = "Installer APK v$appVersionName mencakup Pengurutan Tanggal Terbaru & Sekat Pemisah Tanggal (Formulir & Riwayat), Dukungan HM Akhir == HM Awal (0.0 HM Breakdown/Standby), Pembebasan Batas Odometer Dump Truck (TTM), Optimasi Zero-Lag Anti-Kedip, serta Pratinjau Foto & Kalkulasi Stik Solar Universal.",
                             fontSize = 11.5.sp,
                             color = Emerald800,
                             lineHeight = 16.sp

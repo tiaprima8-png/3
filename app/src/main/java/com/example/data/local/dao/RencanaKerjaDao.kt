@@ -41,14 +41,14 @@ interface RencanaKerjaDao {
             WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
               AND h.nomor_spk = rk.nomor_spk
               AND h.hm_akhir > 0
-              AND (h.hm_harian_berjalan > 0 OR h.hm_akhir > h.hm_awal OR h.hasil_kerja > 0)
+              AND h.hm_akhir >= h.hm_awal
         )
         AND NOT EXISTS (
             SELECT 1 FROM activity_reports r
             WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
               AND r.nomorSpk = rk.nomor_spk
               AND r.hmAkhir > 0
-              AND (r.hmDailyRunning > 0 OR r.hmAkhir > r.hmAwal OR r.workOutput > 0)
+              AND r.hmAkhir >= r.hmAwal
         )
         ORDER BY 
             CASE 
@@ -56,8 +56,9 @@ interface RencanaKerjaDao {
                     SUBSTR(rk.tanggal_format, 7, 4) || '-' || SUBSTR(rk.tanggal_format, 4, 2) || '-' || SUBSTR(rk.tanggal_format, 1, 2)
                 WHEN rk.tanggal_format LIKE '____-__-__' THEN rk.tanggal_format
                 ELSE CAST(rk.created_at AS TEXT)
-            END ASC,
+            END DESC,
             CASE UPPER(rk.shift_kerja) WHEN 'SIANG' THEN 1 ELSE 2 END ASC,
+            UPPER(TRIM(rk.kode_unit)) ASC,
             rk.sub_index ASC,
             rk.id ASC
     """)
@@ -82,14 +83,14 @@ interface RencanaKerjaDao {
             WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
               AND h.nomor_spk = rk.nomor_spk
               AND h.hm_akhir > 0
-              AND (h.hm_harian_berjalan > 0 OR h.hm_akhir > h.hm_awal OR h.hasil_kerja > 0)
+              AND h.hm_akhir >= h.hm_awal
         )
         AND NOT EXISTS (
             SELECT 1 FROM activity_reports r
             WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
               AND r.nomorSpk = rk.nomor_spk
               AND r.hmAkhir > 0
-              AND (r.hmDailyRunning > 0 OR r.hmAkhir > r.hmAwal OR r.workOutput > 0)
+              AND r.hmAkhir >= r.hmAwal
         )
         ORDER BY 
             CASE 
@@ -97,8 +98,9 @@ interface RencanaKerjaDao {
                     SUBSTR(rk.tanggal_format, 7, 4) || '-' || SUBSTR(rk.tanggal_format, 4, 2) || '-' || SUBSTR(rk.tanggal_format, 1, 2)
                 WHEN rk.tanggal_format LIKE '____-__-__' THEN rk.tanggal_format
                 ELSE CAST(rk.created_at AS TEXT)
-            END ASC,
+            END DESC,
             CASE UPPER(rk.shift_kerja) WHEN 'SIANG' THEN 1 ELSE 2 END ASC,
+            UPPER(TRIM(rk.kode_unit)) ASC,
             rk.sub_index ASC,
             rk.id ASC
     """)
@@ -158,14 +160,14 @@ interface RencanaKerjaDao {
             WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
               AND h.nomor_spk = rk.nomor_spk
               AND h.hm_akhir > 0
-              AND (h.hm_harian_berjalan > 0 OR h.hm_akhir > h.hm_awal OR h.hasil_kerja > 0)
+              AND h.hm_akhir >= h.hm_awal
         )
         AND NOT EXISTS (
             SELECT 1 FROM activity_reports r
             WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
               AND r.nomorSpk = rk.nomor_spk
               AND r.hmAkhir > 0
-              AND (r.hmDailyRunning > 0 OR r.hmAkhir > r.hmAwal OR r.workOutput > 0)
+              AND r.hmAkhir >= r.hmAwal
         )
         ORDER BY 
             CASE 
@@ -173,8 +175,9 @@ interface RencanaKerjaDao {
                     SUBSTR(rk.tanggal_format, 7, 4) || '-' || SUBSTR(rk.tanggal_format, 4, 2) || '-' || SUBSTR(rk.tanggal_format, 1, 2)
                 WHEN rk.tanggal_format LIKE '____-__-__' THEN rk.tanggal_format
                 ELSE CAST(rk.created_at AS TEXT)
-            END ASC,
+            END DESC,
             CASE UPPER(rk.shift_kerja) WHEN 'SIANG' THEN 1 ELSE 2 END ASC,
+            UPPER(TRIM(rk.kode_unit)) ASC,
             rk.sub_index ASC,
             rk.id ASC
     """)
@@ -248,14 +251,14 @@ interface RencanaKerjaDao {
               WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
                 AND h.nomor_spk = rk.nomor_spk
                 AND h.hm_akhir > 0
-                AND (h.hm_harian_berjalan > 0 OR h.hm_akhir > h.hm_awal OR h.hasil_kerja > 0)
+                AND h.hm_akhir >= h.hm_awal
           )
           AND NOT EXISTS (
               SELECT 1 FROM activity_reports r
               WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
                 AND r.nomorSpk = rk.nomor_spk
                 AND r.hmAkhir > 0
-                AND (r.hmDailyRunning > 0 OR r.hmAkhir > r.hmAwal OR r.workOutput > 0)
+                AND r.hmAkhir >= r.hmAwal
           )
         ORDER BY 
             CASE 
@@ -263,8 +266,9 @@ interface RencanaKerjaDao {
                     SUBSTR(rk.tanggal_format, 7, 4) || '-' || SUBSTR(rk.tanggal_format, 4, 2) || '-' || SUBSTR(rk.tanggal_format, 1, 2)
                 WHEN rk.tanggal_format LIKE '____-__-__' THEN rk.tanggal_format
                 ELSE CAST(rk.created_at AS TEXT)
-            END ASC,
+            END DESC,
             CASE UPPER(rk.shift_kerja) WHEN 'SIANG' THEN 1 ELSE 2 END ASC,
+            UPPER(TRIM(rk.kode_unit)) ASC,
             rk.sub_index ASC,
             rk.id ASC
     """)
@@ -297,14 +301,14 @@ interface RencanaKerjaDao {
               WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
                 AND h.nomor_spk = rk.nomor_spk
                 AND h.hm_akhir > 0
-                AND (h.hm_harian_berjalan > 0 OR h.hm_akhir > h.hm_awal OR h.hasil_kerja > 0)
+                AND h.hm_akhir >= h.hm_awal
           )
           AND NOT EXISTS (
               SELECT 1 FROM activity_reports r
               WHERE rk.nomor_spk != '' AND rk.nomor_spk != 'SPK Menyusul' AND rk.nomor_spk != '-'
                 AND r.nomorSpk = rk.nomor_spk
                 AND r.hmAkhir > 0
-                AND (r.hmDailyRunning > 0 OR r.hmAkhir > r.hmAwal OR r.workOutput > 0)
+                AND r.hmAkhir >= r.hmAwal
           )
         ORDER BY 
             CASE 
@@ -312,8 +316,9 @@ interface RencanaKerjaDao {
                     SUBSTR(rk.tanggal_format, 7, 4) || '-' || SUBSTR(rk.tanggal_format, 4, 2) || '-' || SUBSTR(rk.tanggal_format, 1, 2)
                 WHEN rk.tanggal_format LIKE '____-__-__' THEN rk.tanggal_format
                 ELSE CAST(rk.created_at AS TEXT)
-            END ASC,
+            END DESC,
             CASE UPPER(rk.shift_kerja) WHEN 'SIANG' THEN 1 ELSE 2 END ASC,
+            UPPER(TRIM(rk.kode_unit)) ASC,
             rk.sub_index ASC,
             rk.id ASC
     """)
@@ -329,7 +334,7 @@ interface RencanaKerjaDao {
           AND NOT EXISTS (
               SELECT 1 FROM activity_reports r
               WHERE r.hmAkhir > 0
-                AND (r.hmDailyRunning > 0 OR r.hmAkhir > r.hmAwal OR r.workOutput > 0)
+                AND r.hmAkhir >= r.hmAwal
                 AND (
                     (rencana_kerja.nomor_spk != '' AND rencana_kerja.nomor_spk != 'SPK Menyusul' AND rencana_kerja.nomor_spk != '-' AND r.nomorSpk = rencana_kerja.nomor_spk)
                     OR (rencana_kerja.nomor_spk = '' AND r.idRencanaKerja = rencana_kerja.id)
@@ -338,7 +343,7 @@ interface RencanaKerjaDao {
           AND NOT EXISTS (
               SELECT 1 FROM hasil_input_aktivitas h
               WHERE h.hm_akhir > 0
-                AND (h.hm_harian_berjalan > 0 OR h.hm_akhir > h.hm_awal OR h.hasil_kerja > 0)
+                AND h.hm_akhir >= h.hm_awal
                 AND (
                     (rencana_kerja.nomor_spk != '' AND rencana_kerja.nomor_spk != 'SPK Menyusul' AND rencana_kerja.nomor_spk != '-' AND h.nomor_spk = rencana_kerja.nomor_spk)
                     OR (rencana_kerja.nomor_spk = '' AND h.rencana_id = rencana_kerja.id)

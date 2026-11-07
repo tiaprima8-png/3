@@ -1068,10 +1068,11 @@ const fs = require('fs');
 
 const handleDownloadApk = (req, res) => {
   const candidatePaths = [
-    path.resolve(__dirname, '../public/RKCE_Installer_v1.7.apk'),
-    path.resolve(__dirname, '../public/RKCE_Installer_latest.apk'),
     path.resolve(__dirname, '../.build-outputs/app-debug.apk'),
     path.resolve(__dirname, '../app/build/outputs/apk/debug/app-debug.apk'),
+    path.resolve(__dirname, '../public/RKCE_Installer_v1.8.apk'),
+    path.resolve(__dirname, '../public/RKCE_Installer_latest.apk'),
+    path.resolve(__dirname, '../public/RKCE_Installer_v1.7.apk'),
     path.resolve(__dirname, '../public/RKCE_Installer_v1.6.apk')
   ];
   const existingApk = candidatePaths.find((p) => {
@@ -1084,20 +1085,23 @@ const handleDownloadApk = (req, res) => {
 
   if (existingApk) {
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-    res.setHeader('Content-Disposition', 'attachment; filename="RKCE_Installer_v1.7.apk"');
-    return res.download(existingApk, 'RKCE_Installer_v1.7.apk');
+    res.setHeader('Content-Disposition', 'attachment; filename="RKCE_Installer_v1.8.apk"');
+    return res.download(existingApk, 'RKCE_Installer_v1.8.apk');
   }
 
   return res.status(404).json({
     success: false,
-    message: 'Berkas installer APK pembaruan (v1.7) belum tersedia di server.'
+    message: 'Berkas installer APK pembaruan (v1.8) belum tersedia di server.'
   });
 };
 
 router.get('/download-apk', handleDownloadApk);
 router.get('/api/mobile/download-apk', handleDownloadApk);
+router.get('/RKCE_Installer_v1.8.apk', handleDownloadApk);
+router.get('/api/mobile/RKCE_Installer_v1.8.apk', handleDownloadApk);
 router.get('/RKCE_Installer_v1.7.apk', handleDownloadApk);
 router.get('/api/mobile/RKCE_Installer_v1.7.apk', handleDownloadApk);
+router.get('/RKCE_Installer_latest.apk', handleDownloadApk);
 
 module.exports = router;
 module.exports.autoSeedOperatorsToUsers = autoSeedOperatorsToUsers;

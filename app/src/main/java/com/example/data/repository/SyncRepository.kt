@@ -36,6 +36,9 @@ class SyncRepository(
                 hmAkhir > 0.0 && (totalHm > 0.0 || hmAkhir > hmAwal || hasilKerja > 0.0)
             }
 
+            val previousReports = realisasiDao.getAllReportsList()
+            val previousHasil = hasilDao.getAllHasilList()
+
             // FULL SYNC: Hapus data lokal lama, lalu isi dengan data remote terkini
             realisasiDao.deleteAll()
             hasilDao.deleteAll()
@@ -47,6 +50,16 @@ class SyncRepository(
                 val spk = (req.nomor_spk ?: "").trim()
                 val renId = req.id_rencana_kerja ?: 0L
                 val resolvedSpk = spk.ifBlank { "SPK-AUTO-${if (renId > 0) renId else uuid}" }
+                val existingRep = previousReports.find { prev ->
+                    (spk.isNotBlank() && prev.nomorSpk.equals(spk, ignoreCase = true)) ||
+                        prev.clientUuid.equals(uuid, ignoreCase = true) ||
+                        (renId > 0 && prev.idRencanaKerja == renId)
+                }
+                val existingHas = previousHasil.find { prev ->
+                    (spk.isNotBlank() && prev.nomorSpk.equals(spk, ignoreCase = true)) ||
+                        prev.clientTransactionId.equals(uuid, ignoreCase = true) ||
+                        (renId > 0 && prev.rencanaId == renId)
+                }
                 val statusStr = req.approval_status?.lowercase()?.trim() ?: ""
                 val isLocked = req.is_locked == true ||
                     statusStr.startsWith("disetujui") ||
@@ -62,29 +75,31 @@ class SyncRepository(
                     req.approval_status?.takeIf { it.isNotBlank() } ?: "Menunggu"
                 }
 
-                val stikAwalVal = req.stik_solar_awal ?: 0.0
-                val stikAkhirVal = req.stik_solar_akhir ?: 0.0
-                val isIsiSolarVal = req.is_isi_solar == true || (req.jumlah_liter_solar ?: 0.0) > 0.0
-                val fuelLitersVal = req.jumlah_liter_solar ?: req.fuel_liters ?: 0.0
-                val computedPemakaian = if (stikAwalVal > 0.0 && stikAkhirVal > 0.0) {
-                    (stikAwalVal + (if (isIsiSolarVal) fuelLitersVal else 0.0) - stikAkhirVal).coerceAtLeast(0.0)
+                val stikAwalVal = req.resolvedStikSolarAwal.takeIf { it > 0.0 } ?: existingRep?.stikSolarAwal ?: existingHas?.stikSolarAwal ?: 0.0
+                val stikAkhirVal = req.resolvedStikSolarAkhir.takeIf { it > 0.0 } ?: existingRep?.stikSolarAkhir ?: existingHas?.stikSolarAkhir ?: 0.0
+                val fuelLitersVal = req.resolvedIsiSolar.takeIf { it > 0.0 } ?: existingRep?.fuelLiters ?: existingHas?.jumlahLiterSolar ?: 0.0
+                val isIsiSolarVal = req.resolvedIsIsiSolar || fuelLitersVal > 0.0
+                val computedPemakaian = if (stikAwalVal > 0.0 || stikAkhirVal > 0.0) {
+                    ((stikAwalVal + fuelLitersVal) - stikAkhirVal).coerceAtLeast(0.0)
                 } else {
-                    req.pemakaian_solar ?: fuelLitersVal
+                    req.resolvedTotalKonsumsiSolar.takeIf { it > 0.0 } ?: existingRep?.pemakaianSolar ?: existingHas?.pemakaianSolar ?: 0.0
                 }
                 val durasiJam = req.durasi_jam_kerja ?: req.work_duration_hours ?: 7.0
-                val kendalaPayloads = req.kendala_lapangan ?: req.kendala_list ?: req.daftar_kendala
-                val kendalaJsonVal = if (!kendalaPayloads.isNullOrEmpty()) {
+                val kendalaPayloads = req.resolvedKendalaList
+                val kendalaJsonVal = if (kendalaPayloads.isNotEmpty()) {
                     com.example.data.remote.KendalaJsonConverter.toJson(kendalaPayloads)
-                } else null
-                val firstKendala = kendalaPayloads?.firstOrNull()
-                val kendalaIdVal = req.kendala_id?.takeIf { it.isNotBlank() } ?: firstKendala?.resolvedKode
-                val kendalaNamaVal = req.kendala_nama?.takeIf { it.isNotBlank() } ?: firstKendala?.resolvedNama
-                val catatanKendalaVal = req.catatan_kendala?.takeIf { it.isNotBlank() }
-                val notesVal = req.keterangan ?: req.notes ?: ""
-                val photoPathVal = req.photo_path
-                val photoBase64Val = req.photo_base64 ?: req.foto_bukti ?: req.foto
-                val photoSizeKbVal = req.photo_size_kb
-                val photoDimensionsVal = req.photo_dimensions
+                } else {
+                    req.daftar_kendala_json ?: req.daftarKendalaJson ?: existingRep?.daftarKendalaJson ?: existingHas?.daftarKendalaJson
+                }
+                val firstKendala = kendalaPayloads.firstOrNull()
+                val kendalaIdVal = req.kendala_id?.takeIf { it.isNotBlank() } ?: firstKendala?.resolvedKode ?: existingRep?.kendalaId
+                val kendalaNamaVal = req.kendala_nama?.takeIf { it.isNotBlank() } ?: req.jenis_kendala?.takeIf { it.isNotBlank() } ?: firstKendala?.resolvedNama ?: existingRep?.kendalaNama
+                val catatanKendalaVal = req.catatan_kendala?.takeIf { it.isNotBlank() } ?: existingRep?.catatanKendala
+                val notesVal = req.keterangan ?: req.notes ?: existingRep?.notes ?: ""
+                val photoPathVal = req.resolvedPhotoPath ?: existingRep?.photoPath ?: existingHas?.photoPath
+                val photoBase64Val = req.resolvedPhotoBase64 ?: existingRep?.photoBase64 ?: existingHas?.photoBase64
+                val photoSizeKbVal = req.resolvedPhotoSizeKb ?: existingRep?.photoSizeKb ?: existingHas?.photoSizeKb
+                val photoDimensionsVal = req.resolvedPhotoDimensions ?: existingRep?.photoDimensions ?: existingHas?.photoDimensions
                 val isHmAwalCorrectedVal = req.is_hm_awal_corrected == true
                 val alasanKoreksiHmVal = req.alasan_koreksi_hm
 

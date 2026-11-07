@@ -71,7 +71,25 @@ data class ActivityReportEntity(
     val idRencanaKerja: Long = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val syncedAt: Long? = null
-)
+) {
+    @get:androidx.room.Ignore
+    val isiSolar: Double
+        get() = fuelLiters
+
+    @get:androidx.room.Ignore
+    val jumlahIsiSolar: Double
+        get() = fuelLiters
+
+    @get:androidx.room.Ignore
+    val totalKonsumsiSolar: Double
+        get() = if (stikSolarAwal > 0.0 || stikSolarAkhir > 0.0) {
+            ((stikSolarAwal + fuelLiters) - stikSolarAkhir).coerceAtLeast(0.0)
+        } else if (pemakaianSolar > 0.0) {
+            pemakaianSolar
+        } else {
+            fuelLiters
+        }
+}
 
 typealias RealisasiEntity = ActivityReportEntity
 

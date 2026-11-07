@@ -60,12 +60,16 @@ data class UserEntity(
     @ColumnInfo(name = "last_login_at")
     val lastLoginAt: Long = System.currentTimeMillis()
 ) {
-    val isManager: Boolean get() = role.equals("MANAGER", ignoreCase = true)
-    val isSuperAdmin: Boolean get() = role.equals("SUPER ADMIN", ignoreCase = true) || role.equals("SUPERADMIN", ignoreCase = true)
+    private val isKnownKasieUser: Boolean
+        get() = com.example.data.local.isKnownKasieIdentifier(username) ||
+            com.example.data.local.isKnownKasieIdentifier(name) ||
+            com.example.data.local.isKnownKasieIdentifier(namaLengkap)
+    val isManager: Boolean get() = !isKnownKasieUser && role.equals("MANAGER", ignoreCase = true)
+    val isSuperAdmin: Boolean get() = !isKnownKasieUser && com.example.data.local.isSuperAdminRoleString(role)
     val isOperator: Boolean get() = com.example.data.local.isOperatorRole(role) || com.example.data.local.isOperatorRole(roleTitle)
     val isExecutive: Boolean get() = isManager || isSuperAdmin
     val isSupervisor: Boolean get() = !isExecutive && !isOperator
-    val isKasie: Boolean get() = com.example.data.local.isKasieRole(role) || com.example.data.local.isKasieRole(roleTitle) || (!isExecutive && !isOperator)
+    val isKasie: Boolean get() = isKnownKasieUser || com.example.data.local.isKasieRole(role) || com.example.data.local.isKasieRole(roleTitle) || (!isExecutive && !isOperator)
     val isAktif: Boolean get() = status.equals("Aktif", ignoreCase = true) || status.equals("Active", ignoreCase = true)
 
     val resolvedNamaLengkap: String

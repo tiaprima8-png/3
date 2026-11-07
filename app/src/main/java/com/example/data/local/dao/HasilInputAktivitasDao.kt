@@ -13,6 +13,9 @@ interface HasilInputAktivitasDao {
     @Query("SELECT * FROM hasil_input_aktivitas ORDER BY created_at DESC")
     fun getAllHasil(): Flow<List<HasilInputAktivitasEntity>>
 
+    @Query("SELECT * FROM hasil_input_aktivitas ORDER BY created_at DESC")
+    suspend fun getAllHasilList(): List<HasilInputAktivitasEntity>
+
     @Query("""
         SELECT * FROM hasil_input_aktivitas 
         WHERE LOWER(TRIM(supervisor_name)) = LOWER(TRIM(:supervisor))
@@ -40,12 +43,12 @@ interface HasilInputAktivitasDao {
             )
         )
         AND hm_akhir > 0
-        AND (hm_harian_berjalan > 0 OR hm_akhir > hm_awal OR hasil_kerja > 0)
+        AND hm_akhir >= hm_awal
         ORDER BY created_at DESC, id DESC
     """)
     fun getHasilForKasie(namaKasie: String, username: String): Flow<List<HasilInputAktivitasEntity>>
 
-    @Query("DELETE FROM hasil_input_aktivitas WHERE hm_akhir <= 0 OR (hm_harian_berjalan <= 0 AND hm_akhir <= hm_awal AND hasil_kerja <= 0)")
+    @Query("DELETE FROM hasil_input_aktivitas WHERE hm_akhir <= 0 OR hm_akhir < hm_awal")
     suspend fun deleteInvalidEmptyHasil(): Int
 
     @Query("""

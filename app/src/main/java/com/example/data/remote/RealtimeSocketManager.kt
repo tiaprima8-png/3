@@ -507,20 +507,44 @@ class RealtimeSocketManager(
             if (src.has("hm_harian_berjalan") || src.has("hmDailyRunning") || src.has("total_hm")) {
                 totalHm = src.optDouble("hm_harian_berjalan", src.optDouble("hmDailyRunning", src.optDouble("total_hm", totalHm)))
             }
-            if (src.has("jumlah_liter_solar") || src.has("fuelLiters") || src.has("fuel_liters")) {
-                jumlahLiterSolar = src.optDouble("jumlah_liter_solar", src.optDouble("fuelLiters", src.optDouble("fuel_liters", jumlahLiterSolar)))
+            for (solarKey in arrayOf("isi_solar", "isiSolar", "jumlahIsiSolar", "jumlah_isi_solar", "jumlah_liter_solar", "jumlahLiterSolar", "fuelLiters", "fuel_liters")) {
+                if (src.has(solarKey) && !src.isNull(solarKey)) {
+                    val v = src.optDouble(solarKey, Double.NaN)
+                    if (!v.isNaN()) {
+                        jumlahLiterSolar = v
+                        break
+                    }
+                }
             }
-            if (src.has("stik_solar_awal") || src.has("stikSolarAwal")) {
-                stikSolarAwal = src.optDouble("stik_solar_awal", src.optDouble("stikSolarAwal", stikSolarAwal))
+            for (stikAwalKey in arrayOf("stik_solar_awal", "stikSolarAwal", "stik_awal", "stikAwal")) {
+                if (src.has(stikAwalKey) && !src.isNull(stikAwalKey)) {
+                    val v = src.optDouble(stikAwalKey, Double.NaN)
+                    if (!v.isNaN()) {
+                        stikSolarAwal = v
+                        break
+                    }
+                }
             }
-            if (src.has("stik_solar_akhir") || src.has("stikSolarAkhir")) {
-                stikSolarAkhir = src.optDouble("stik_solar_akhir", src.optDouble("stikSolarAkhir", stikSolarAkhir))
+            for (stikAkhirKey in arrayOf("stik_solar_akhir", "stikSolarAkhir", "stik_akhir", "stikAkhir")) {
+                if (src.has(stikAkhirKey) && !src.isNull(stikAkhirKey)) {
+                    val v = src.optDouble(stikAkhirKey, Double.NaN)
+                    if (!v.isNaN()) {
+                        stikSolarAkhir = v
+                        break
+                    }
+                }
             }
             if (src.has("is_isi_solar") || src.has("isIsiSolar") || src.has("is_refueled") || src.has("isRefueled")) {
                 isIsiSolar = src.optBoolean("is_isi_solar", src.optBoolean("isIsiSolar", src.optBoolean("is_refueled", src.optBoolean("isRefueled", isIsiSolar))))
             }
-            if (src.has("pemakaian_solar") || src.has("pemakaianSolar")) {
-                pemakaianSolar = src.optDouble("pemakaian_solar", src.optDouble("pemakaianSolar", pemakaianSolar))
+            for (konsumsiKey in arrayOf("total_konsumsi_solar", "totalKonsumsiSolar", "pemakaian_solar", "pemakaianSolar")) {
+                if (src.has(konsumsiKey) && !src.isNull(konsumsiKey)) {
+                    val v = src.optDouble(konsumsiKey, Double.NaN)
+                    if (!v.isNaN()) {
+                        pemakaianSolar = v
+                        break
+                    }
+                }
             }
             if (src.has("approval_status") || src.has("approvalStatus")) {
                 approvalStatus = src.optString("approval_status", src.optString("approvalStatus", approvalStatus))
@@ -528,18 +552,31 @@ class RealtimeSocketManager(
             if (src.has("is_locked") || src.has("isLocked")) {
                 isLocked = src.optBoolean("is_locked", src.optBoolean("isLocked", isLocked))
             }
-            if (src.has("kendala_id") || src.has("kendalaId")) {
-                kendalaId = src.optString("kendala_id", src.optString("kendalaId", kendalaId ?: "")).takeIf { it.isNotBlank() }
+            if (src.has("kendala_id") || src.has("kendalaId") || src.has("kode_kendala") || src.has("kodeKendala")) {
+                val kId = extractFirstNonEmpty(src, keys = arrayOf("kendala_id", "kendalaId", "kode_kendala", "kodeKendala"))
+                if (kId.isNotBlank()) kendalaId = kId
             }
-            if (src.has("kendala_nama") || src.has("kendalaNama") || src.has("kendala_lapangan") || src.has("kendalaLapangan")) {
-                kendalaNama = src.optString("kendala_nama", src.optString("kendalaNama", src.optString("kendala_lapangan", src.optString("kendalaLapangan", kendalaNama ?: "")))).takeIf { it.isNotBlank() }
+            if (src.has("kendala_nama") || src.has("kendalaNama") || src.has("jenis_kendala") || src.has("jenisKendala") || src.has("nama_kendala") || src.has("namaKendala")) {
+                val kNama = extractFirstNonEmpty(src, keys = arrayOf("kendala_nama", "kendalaNama", "jenis_kendala", "jenisKendala", "nama_kendala", "namaKendala"))
+                if (kNama.isNotBlank()) kendalaNama = kNama
             }
             if (src.has("catatan_kendala") || src.has("catatanKendala")) {
                 catatanKendala = src.optString("catatan_kendala", src.optString("catatanKendala", catatanKendala ?: "")).takeIf { it.isNotBlank() }
             }
-            if (src.has("daftar_kendala") || src.has("daftar_kendala_json") || src.has("daftarKendalaJson") || src.has("kendala_list") || src.has("kendalaList")) {
-                val rawK = extractFirstNonEmpty(src, keys = arrayOf("daftar_kendala", "daftar_kendala_json", "daftarKendalaJson", "kendala_list", "kendalaList"))
-                if (rawK.isNotBlank()) daftarKendalaJson = rawK
+            for (kKey in arrayOf("daftar_kendala_json", "daftarKendalaJson", "kendalaList", "kendala_list", "daftar_kendala", "daftarKendala", "kendala_lapangan", "kendalaLapangan")) {
+                if (src.has(kKey) && !src.isNull(kKey)) {
+                    val rawVal = src.opt(kKey)
+                    val jsonStr = when (rawVal) {
+                        is org.json.JSONArray -> if (rawVal.length() > 0) rawVal.toString() else ""
+                        is org.json.JSONObject -> "[${rawVal}]"
+                        is String -> rawVal.trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) && it != "[]" } ?: ""
+                        else -> ""
+                    }
+                    if (jsonStr.isNotBlank()) {
+                        daftarKendalaJson = jsonStr
+                        break
+                    }
+                }
             }
             if (src.has("hasil_kerja") || src.has("hasilKerja") || src.has("work_output") || src.has("workOutput")) {
                 hasilKerja = src.optDouble("hasil_kerja", src.optDouble("hasilKerja", src.optDouble("work_output", src.optDouble("workOutput", hasilKerja))))
@@ -548,16 +585,38 @@ class RealtimeSocketManager(
                 val rawNotes = extractFirstNonEmpty(src, keys = arrayOf("keterangan", "notes", "catatan"))
                 if (rawNotes.isNotBlank()) keterangan = rawNotes
             }
-            if (src.has("foto") || src.has("foto_bukti") || src.has("photo_base64") || src.has("photoBase64")) {
-                val rawP = extractFirstNonEmpty(src, keys = arrayOf("photo_base64", "photoBase64", "foto_bukti", "foto"))
-                if (rawP.isNotBlank()) photoBase64 = rawP
-            }
-            if (src.has("photo_path") || src.has("photoPath")) {
-                val rawPath = extractFirstNonEmpty(src, keys = arrayOf("photo_path", "photoPath"))
-                if (rawPath.isNotBlank()) photoPath = rawPath
-            }
+            val rawP = extractFirstNonEmpty(
+                src,
+                keys = arrayOf(
+                    "photoBase64",
+                    "photo_base64",
+                    "foto_bukti",
+                    "fotoBukti",
+                    "foto",
+                    "bukti_foto",
+                    "buktiFoto",
+                    "photo",
+                    "image",
+                    "image_base64",
+                    "imageBase64",
+                    "foto_dokumentasi",
+                    "fotoDokumentasi",
+                    "dokumentasi",
+                    "photo_url",
+                    "photoUrl"
+                )
+            )
+            if (rawP.isNotBlank()) photoBase64 = rawP
+
+            val rawPath = extractFirstNonEmpty(src, keys = arrayOf("photoPath", "photo_path", "file_path", "filePath", "path_foto"))
+            if (rawPath.isNotBlank()) photoPath = rawPath
+
             if (src.has("photo_size_kb") || src.has("photoSizeKb")) {
                 photoSizeKb = src.optLong("photo_size_kb", src.optLong("photoSizeKb", photoSizeKb ?: 0L)).takeIf { it > 0L }
+            }
+            if (photoSizeKb == null && !photoBase64.isNullOrBlank()) {
+                val clean = photoBase64!!.substringAfter("base64,", photoBase64!!).trim()
+                photoSizeKb = ((clean.length * 3L) / 4L / 1024L).coerceAtLeast(1L)
             }
             if (src.has("photo_dimensions") || src.has("photoDimensions")) {
                 photoDimensions = extractFirstNonEmpty(src, keys = arrayOf("photo_dimensions", "photoDimensions")).takeIf { it.isNotBlank() }
@@ -573,18 +632,22 @@ class RealtimeSocketManager(
             }
         }
 
+        if (jumlahLiterSolar > 0.0) {
+            isIsiSolar = true
+        }
+
         if (totalHm <= 0.0 && hmAkhir > hmAwal) {
             totalHm = hmAkhir - hmAwal
         }
 
         if (stikSolarAwal > 0.0 || stikSolarAkhir > 0.0) {
-            val calc = if (isIsiSolar) ((stikSolarAwal + jumlahLiterSolar) - stikSolarAkhir).coerceAtLeast(0.0)
-                       else (stikSolarAwal - stikSolarAkhir).coerceAtLeast(0.0)
+            val calc = ((stikSolarAwal + jumlahLiterSolar) - stikSolarAkhir).coerceAtLeast(0.0)
             pemakaianSolar = calc
             solar = calc
         } else if (pemakaianSolar > 0.0) {
             solar = pemakaianSolar
-        } else if (isIsiSolar && jumlahLiterSolar > 0.0) {
+        } else if (jumlahLiterSolar > 0.0) {
+            pemakaianSolar = jumlahLiterSolar
             solar = jumlahLiterSolar
         }
 

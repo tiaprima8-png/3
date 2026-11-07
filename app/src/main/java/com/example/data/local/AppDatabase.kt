@@ -152,17 +152,34 @@ abstract class AppDatabase : RoomDatabase() {
         if (currentUser != null && !activeUsername.isNullOrBlank()) {
             val activeKey = activeUsername.lowercase()
             val existing = combinedUsersMap[activeKey]
+            val isKasieAccount = com.example.data.local.isKnownKasieIdentifier(activeKey) ||
+                com.example.data.local.isKnownKasieIdentifier(currentUser.namaLengkap) ||
+                currentUser.isKasie
             if (existing != null) {
                 val preserveOp = currentUser.isOperator || existing.isOperator || activeKey == "achmad"
+                val safeRole = when {
+                    preserveOp -> "operator"
+                    isKasieAccount -> "KASIE"
+                    else -> existing.role
+                }
+                val safeRoleTitle = when {
+                    preserveOp -> "Operator Alat Berat"
+                    isKasieAccount -> "Kasie Lapangan"
+                    else -> existing.roleTitle
+                }
                 combinedUsersMap[activeKey] = existing.copy(
-                    role = if (preserveOp) "operator" else existing.role,
-                    roleTitle = if (preserveOp) "Operator Alat Berat" else existing.roleTitle,
+                    role = safeRole,
+                    roleTitle = safeRoleTitle,
                     kasieAtasan = if (preserveOp) (currentUser.kasieAtasan?.takeIf { it.isNotBlank() } ?: existing.kasieAtasan ?: "Jahidi") else existing.kasieAtasan,
                     isActiveSession = true,
                     lastLoginAt = System.currentTimeMillis()
                 )
             } else {
+                val safeRole = if (currentUser.isOperator) "operator" else if (isKasieAccount) "KASIE" else currentUser.role
+                val safeRoleTitle = if (currentUser.isOperator) "Operator Alat Berat" else if (isKasieAccount) "Kasie Lapangan" else currentUser.roleTitle
                 combinedUsersMap[activeKey] = currentUser.copy(
+                    role = safeRole,
+                    roleTitle = safeRoleTitle,
                     isActiveSession = true,
                     lastLoginAt = System.currentTimeMillis()
                 )
@@ -171,7 +188,19 @@ abstract class AppDatabase : RoomDatabase() {
 
         val mappedUsers = combinedUsersMap.values.toList()
 
-        val unitOwnerMap = bootstrap.units.associate { it.unitCode.uppercase() to it.supervisorAssigned }
+        // Pastikan daftar unit dari bootstrap tidak tertimpa massal ke 1 Kasie (> 15 unit ke 1 pengawas)
+        val rawBootstrapUnits = bootstrap.units
+        val groupedUnitsBySpv = rawBootstrapUnits.groupBy { it.supervisorAssigned.trim().lowercase() }
+        val sanitizedUnits = if (rawBootstrapUnits.size > 15 && groupedUnitsBySpv.values.any { it.size > 15 }) {
+            rawBootstrapUnits.map { u ->
+                val defaultOwner = com.example.data.remote.CompanyServerSimulator.findDefaultKasieForUnit(u.unitCode)
+                if (defaultOwner.isNotBlank()) u.copy(supervisorAssigned = defaultOwner) else u
+            }
+        } else {
+            rawBootstrapUnits
+        }
+
+        val unitOwnerMap = sanitizedUnits.associate { it.unitCode.uppercase() to it.supervisorAssigned }
         val sanitizedRencana = bootstrap.rencanaKerja.map { ren ->
             val unitOwner = unitOwnerMap[ren.kodeUnit.uppercase()]
             val trueOwner = if (!unitOwner.isNullOrBlank()) {
@@ -199,7 +228,7 @@ abstract class AppDatabase : RoomDatabase() {
             val resolvedParentSpk = ren.parentSpk.ifBlank { matchedLocal?.parentSpk ?: parseParentSpk(ren.nomorSpk) }
             val reportForSpk = if (hasRenSpk) activityReportDao().getReportByNomorSpk(renSpk) else null
             val hasValidReport = reportForSpk != null && reportForSpk.hmAkhir > 0.0 &&
-                (reportForSpk.hmDailyRunning > 0.0 || reportForSpk.hmAkhir > reportForSpk.hmAwal || reportForSpk.workOutput > 0.0)
+                reportForSpk.hmAkhir >= reportForSpk.hmAwal
             if (matchedLocal != null && matchedLocal.isRealized && hasValidReport) {
                 ren.copy(
                     id = matchedLocal.id,
@@ -242,7 +271,7 @@ abstract class AppDatabase : RoomDatabase() {
         }.toMutableList()
 
         userDao().insertAll(mappedUsers)
-        unitDao().insertAll(bootstrap.units)
+        unitDao().insertAll(sanitizedUnits)
         operatorDao().insertAll(bootstrap.operators)
         com.example.data.model.SupervisorDirectory.updateFromOperatorEntities(bootstrap.operators)
         bootstrap.aktivitas.chunked(250).forEach { chunk ->

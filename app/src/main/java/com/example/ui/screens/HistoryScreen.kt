@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.History
@@ -101,6 +102,9 @@ import com.example.ui.theme.Slate600
 import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate900
 import com.example.ui.viewmodel.HeavyTrackViewModel
+import com.example.ui.viewmodel.formatTanggalHeaderLengkap
+import com.example.ui.viewmodel.getShiftWeight
+import com.example.ui.viewmodel.normalizeDateToIso
 
 /**
  * Representasi gabungan data komprehensif pekerjaan operasional selesai:
@@ -281,18 +285,50 @@ fun HistoryScreen(
             val opRencana = matchedRencana?.operator?.ifBlank { null } ?: rep.operatorName
             val opAktual = rep.operatorName
 
-            val solarKonsumsi = if (rep.stikSolarAwal > 0.0 || rep.stikSolarAkhir > 0.0) {
-                (rep.stikSolarAwal + (if (rep.isRefueled) rep.fuelLiters else 0.0) - rep.stikSolarAkhir).coerceAtLeast(0.0)
+            val effStikAwal = if (rep.stikSolarAwal > 0.0) rep.stikSolarAwal else (matchedHasil?.stikSolarAwal ?: 0.0)
+            val effStikAkhir = if (rep.stikSolarAkhir > 0.0) rep.stikSolarAkhir else (matchedHasil?.stikSolarAkhir ?: 0.0)
+            val effFuelLiters = if (rep.fuelLiters > 0.0) rep.fuelLiters else (matchedHasil?.jumlahLiterSolar ?: 0.0)
+            val effIsRefueled = rep.isRefueled || (matchedHasil?.isIsiSolar == true) || effFuelLiters > 0.0
+            val effKendalaJson = rep.daftarKendalaJson?.takeIf { it.isNotBlank() } ?: matchedHasil?.daftarKendalaJson
+            val effKendalaNama = rep.kendalaNama?.takeIf { it.isNotBlank() } ?: matchedHasil?.kendalaNama
+
+            val solarKonsumsi = if (effStikAwal > 0.0 || effStikAkhir > 0.0) {
+                ((effStikAwal + effFuelLiters) - effStikAkhir).coerceAtLeast(0.0)
             } else if (rep.pemakaianSolar > 0.0) {
                 rep.pemakaianSolar
-            } else if (rep.isRefueled && rep.fuelLiters > 0.0) {
-                rep.fuelLiters
+            } else if ((matchedHasil?.pemakaianSolar ?: 0.0) > 0.0) {
+                matchedHasil!!.pemakaianSolar
+            } else if (effFuelLiters > 0.0) {
+                effFuelLiters
             } else {
                 0.0
             }
 
+            val effPhotoPath = rep.photoPath?.takeIf { it.isNotBlank() } ?: matchedHasil?.photoPath
+            val effPhotoBase64 = rep.photoBase64?.takeIf { it.isNotBlank() } ?: matchedHasil?.photoBase64
+            val effPhotoSizeKb = rep.photoSizeKb?.takeIf { it > 0L }
+                ?: matchedHasil?.photoSizeKb?.takeIf { it > 0L }
+                ?: if (!effPhotoBase64.isNullOrBlank() || !effPhotoPath.isNullOrBlank()) {
+                    com.example.ui.components.resolvePhotoSizeKb(null, effPhotoPath, effPhotoBase64)
+                } else null
+            val effPhotoDimensions = rep.photoDimensions?.takeIf { it.isNotBlank() } ?: matchedHasil?.photoDimensions
+
+            val enrichedReport = rep.copy(
+                stikSolarAwal = effStikAwal,
+                stikSolarAkhir = effStikAkhir,
+                fuelLiters = effFuelLiters,
+                isRefueled = effIsRefueled,
+                pemakaianSolar = solarKonsumsi,
+                daftarKendalaJson = effKendalaJson,
+                kendalaNama = effKendalaNama,
+                photoPath = effPhotoPath,
+                photoBase64 = effPhotoBase64,
+                photoSizeKb = effPhotoSizeKb,
+                photoDimensions = effPhotoDimensions
+            )
+
             CompletedOperationalRecord(
-                report = rep,
+                report = enrichedReport,
                 matchedRencana = matchedRencana,
                 nomorSpk = displaySpk,
                 isSpkOfficial = isOfficial,
@@ -309,16 +345,16 @@ fun HistoryScreen(
                 hmAkhir = rep.hmAkhir,
                 hmRunning = rep.hmDailyRunning,
                 konsumsiSolar = solarKonsumsi,
-                isRefueled = rep.isRefueled,
-                refuelLiters = rep.fuelLiters,
-                kendalaNama = rep.kendalaNama,
+                isRefueled = effIsRefueled,
+                refuelLiters = effFuelLiters,
+                kendalaNama = effKendalaNama,
                 isSynced = rep.isSynced,
                 reportDate = rep.reportDate,
                 shift = rep.shift,
                 unitStatus = rep.unitStatus,
-                photoPath = rep.photoPath,
-                photoBase64 = rep.photoBase64,
-                photoSizeKb = rep.photoSizeKb
+                photoPath = effPhotoPath,
+                photoBase64 = effPhotoBase64,
+                photoSizeKb = effPhotoSizeKb
             )
         }
 
@@ -350,6 +386,9 @@ fun HistoryScreen(
             val displaySpk = if (isOfficial) cleanSpk else "SPK Menyusul"
             val matchedUnitType = baseUnits.find { it.unitCode.equals(ren.kodeUnit, ignoreCase = true) }?.unitType ?: "HE"
 
+            val matchingHasil = hasilAktivitasList.find { has ->
+                has.rencanaId == ren.id || (cleanSpk.isNotBlank() && has.nomorSpk.equals(cleanSpk, ignoreCase = true))
+            }
             val syntheticReport = ActivityReportEntity(
                 id = -ren.id,
                 reportDate = ren.tanggalFormat,
@@ -364,18 +403,22 @@ fun HistoryScreen(
                 workLocation = ren.kodeLokasi,
                 wilayah = ren.wilayah ?: "PG1",
                 shift = ren.shiftKerja,
-                workDurationHours = 7.0,
-                hmAwal = 0.0,
-                hmAkhir = 0.0,
-                hmDailyRunning = 0.0,
-                workOutput = 0.0,
-                notes = "",
+                workDurationHours = matchingHasil?.jamKerja ?: 7.0,
+                hmAwal = matchingHasil?.hmAwal ?: 0.0,
+                hmAkhir = matchingHasil?.hmAkhir ?: 0.0,
+                hmDailyRunning = matchingHasil?.hmHarianBerjalan ?: 0.0,
+                workOutput = matchingHasil?.hasilKerja ?: 0.0,
+                notes = matchingHasil?.keterangan ?: "",
                 unitStatus = ren.statusUnit,
                 isSynced = true,
                 approvalStatus = "Disetujui Kasie",
                 isLocked = true,
                 nomorSpk = displaySpk,
-                idRencanaKerja = ren.id
+                idRencanaKerja = ren.id,
+                photoPath = matchingHasil?.photoPath,
+                photoBase64 = matchingHasil?.photoBase64,
+                photoSizeKb = matchingHasil?.photoSizeKb,
+                photoDimensions = matchingHasil?.photoDimensions
             )
 
             CompletedOperationalRecord(
@@ -391,25 +434,30 @@ fun HistoryScreen(
                 operatorRencana = ren.operator.ifBlank { ren.namaOperator },
                 operatorAktual = ren.operator.ifBlank { ren.namaOperator },
                 supervisorName = ren.supervisorName.ifBlank { ren.kasie },
-                jamKerja = 7.0,
-                hmAwal = 0.0,
-                hmAkhir = 0.0,
-                hmRunning = 0.0,
-                konsumsiSolar = 0.0,
-                isRefueled = false,
-                refuelLiters = 0.0,
-                kendalaNama = null,
+                jamKerja = matchingHasil?.jamKerja ?: 7.0,
+                hmAwal = matchingHasil?.hmAwal ?: 0.0,
+                hmAkhir = matchingHasil?.hmAkhir ?: 0.0,
+                hmRunning = matchingHasil?.hmHarianBerjalan ?: 0.0,
+                konsumsiSolar = matchingHasil?.pemakaianSolar ?: 0.0,
+                isRefueled = matchingHasil?.isIsiSolar ?: false,
+                refuelLiters = matchingHasil?.jumlahLiterSolar ?: 0.0,
+                kendalaNama = matchingHasil?.kendalaNama,
                 isSynced = true,
                 reportDate = ren.tanggalFormat,
                 shift = ren.shiftKerja,
                 unitStatus = ren.statusUnit,
-                photoPath = null,
-                photoBase64 = null,
-                photoSizeKb = null
+                photoPath = matchingHasil?.photoPath,
+                photoBase64 = matchingHasil?.photoBase64,
+                photoSizeKb = matchingHasil?.photoSizeKb
             )
         }
 
-        reportRecords + standaloneRencanaRecords
+        (reportRecords + standaloneRencanaRecords).sortedWith(
+            compareByDescending<CompletedOperationalRecord> { normalizeDateToIso(it.reportDate) }
+                .thenBy { getShiftWeight(it.shift) }
+                .thenBy { it.report.unitCode.trim().uppercase() }
+                .thenByDescending { it.report.createdAt }
+        )
     }
 
     // Filter berdasarkan query pencarian cepat, status sinkronisasi, dan filter eksekutif
@@ -440,6 +488,10 @@ fun HistoryScreen(
             }
             matchWilayah && matchKode && matchJenis && matchesFilter && matchesQuery
         }
+    }
+
+    val groupedRecords = remember(filteredRecords) {
+        filteredRecords.groupBy { normalizeDateToIso(it.reportDate) }
     }
 
     val totalHm = remember(completedRecords) {
@@ -745,28 +797,6 @@ fun HistoryScreen(
                             lineHeight = 10.sp
                         )
                     }
-
-                    VerticalDivider(
-                        modifier = Modifier.height(24.dp),
-                        color = Color(0xFFE2E8F0)
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Kolom 3: Badge "● Tersinkron Cloud" (Surface #E8F5E9, rounded 6dp, teks 9sp Bold #2E7D32, padding horizontal 8dp, vertical 4dp)
-                    Surface(
-                        color = Color(0xFFE8F5E9),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = "● Tersinkron Cloud",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2E7D32),
-                            maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
                 }
             }
         }
@@ -806,14 +836,69 @@ fun HistoryScreen(
                     )
                 }
             } else {
-                items(
-                    items = filteredRecords,
-                    key = { rec -> "${rec.report.id}_${rec.nomorSpk}" }
-                ) { record ->
-                    RkceUnifiedHistoryCard(
-                        record = record,
-                        onClick = { selectedRecordForDetail = record }
-                    )
+                groupedRecords.forEach { (dateIso, recordsForDate) ->
+                    item(
+                        key = "history_date_header_$dateIso",
+                        span = { GridItemSpan(2) }
+                    ) {
+                        val groupHm = recordsForDate.sumOf { it.hmRunning }
+                        Surface(
+                            color = Color(0xFFF1F5F9),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp, bottom = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DateRange,
+                                        contentDescription = null,
+                                        tint = Color(0xFF002677),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = formatTanggalHeaderLengkap(dateIso),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1E293B)
+                                    )
+                                }
+                                Surface(
+                                    color = Color(0xFFE0E7FF),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = "${recordsForDate.size} Arsip • ${String.format(Locale.US, "%.1f", groupHm)} HM",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1E3A8A),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    items(
+                        items = recordsForDate,
+                        key = { rec -> "${rec.report.id}_${rec.nomorSpk}" }
+                    ) { record ->
+                        RkceUnifiedHistoryCard(
+                            record = record,
+                            onClick = { selectedRecordForDetail = record }
+                        )
+                    }
                 }
             }
         }
@@ -982,7 +1067,7 @@ fun HistoryScreen(
             photoBase64 = rep.photoBase64,
             unitCode = rep.unitCode,
             reportDate = rep.reportDate,
-            nomorSpk = null,
+            nomorSpk = rep.nomorSpk.takeIf { it.isNotBlank() && it != "SPK Menyusul" && it != "-" },
             photoSizeKb = rep.photoSizeKb,
             onDismiss = { photoPreviewReport = null }
         )
@@ -1309,10 +1394,13 @@ fun RkceAuditDetailDialog(
     val solarTotalStr = String.format(Locale.US, "%.1f L", record.konsumsiSolar)
     val solarDetailStr = when {
         record.report.stikSolarAwal > 0.0 || record.report.stikSolarAkhir > 0.0 -> {
-            val sAwal = String.format(Locale.US, "%.0f", record.report.stikSolarAwal)
-            val sAkhir = String.format(Locale.US, "%.0f", record.report.stikSolarAkhir)
-            val isiStr = if (record.isRefueled && record.refuelLiters > 0.0) " (+${String.format(Locale.US, "%.0f", record.refuelLiters)}L)" else ""
-            "Stik: $sAwal ➔ $sAkhir$isiStr"
+            val sAwal = if (record.report.stikSolarAwal % 1.0 == 0.0) record.report.stikSolarAwal.toInt().toString() else String.format(Locale.US, "%.1f", record.report.stikSolarAwal)
+            val sAkhir = if (record.report.stikSolarAkhir % 1.0 == 0.0) record.report.stikSolarAkhir.toInt().toString() else String.format(Locale.US, "%.1f", record.report.stikSolarAkhir)
+            val isiStr = if (record.refuelLiters > 0.0) {
+                val lStr = if (record.refuelLiters % 1.0 == 0.0) record.refuelLiters.toInt().toString() else String.format(Locale.US, "%.1f", record.refuelLiters)
+                " (+${lStr}L)"
+            } else ""
+            "Stik: $sAwal -> $sAkhir$isiStr"
         }
         record.isRefueled && record.refuelLiters > 0.0 -> {
             "Isi: +${String.format(Locale.US, "%.0f", record.refuelLiters)} L"
@@ -1346,7 +1434,10 @@ fun RkceAuditDetailDialog(
         }
     }.joinToString("\n")
 
-    val hasPhoto = !record.photoPath.isNullOrBlank() || !record.photoBase64.isNullOrBlank()
+    val resolvedDialogPhotoPath = record.photoPath?.takeIf { it.isNotBlank() } ?: record.report.photoPath
+    val resolvedDialogPhotoBase64 = record.photoBase64?.takeIf { it.isNotBlank() } ?: record.report.photoBase64
+    val resolvedDialogPhotoSizeKb = record.photoSizeKb ?: record.report.photoSizeKb
+    val hasPhoto = !resolvedDialogPhotoPath.isNullOrBlank() || !resolvedDialogPhotoBase64.isNullOrBlank()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1625,9 +1716,9 @@ fun RkceAuditDetailDialog(
                         ) {
                             if (hasPhoto) {
                                 ReportPhotoThumbnail(
-                                    photoPath = record.photoPath,
-                                    photoBase64 = record.photoBase64,
-                                    photoSizeKb = record.photoSizeKb,
+                                    photoPath = resolvedDialogPhotoPath,
+                                    photoBase64 = resolvedDialogPhotoBase64,
+                                    photoSizeKb = resolvedDialogPhotoSizeKb,
                                     onClick = onPhotoClick
                                 )
                             }
